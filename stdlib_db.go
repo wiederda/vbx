@@ -1,0 +1,929 @@
+package main
+
+import (
+	"database/sql"
+	"encoding/base64"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"regexp"
+	"strings"
+
+	_ "github.com/denisenkom/go-mssqldb" // MSSQL
+	_ "github.com/lib/pq"                // Postgres
+	_ "modernc.org/sqlite"               // SQLCipher (ersetzt das normale sqlite3)
+)
+
+var connections = make(map[string]*sql.DB)
+var drivers = make(map[string]string)
+var validNameMSSQL = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
+
+// SQLRunner erlaubt es uns, Funktionen zu schreiben, die sowohl
+// mit einer DB-Verbindung als auch mit einer Transaktion arbeiten.
+type SQLRunner interface {
+	Exec(query string, args ...interface{}) (sql.Result, error)
+	Query(query string, args ...interface{}) (*sql.Rows, error)
+}
+
+func InitDBFunctions() {
+	if builtins == nil {
+		builtins = make(map[string]BuiltinInfo)
+	}
+
+	ns := "db."
+
+	Register(ns+"Open", "db", "driver, connStr, alias", "Öffnet eine DB-Verbindung (MSSQL, SQLite, PG).", func(args []Value) Value {
+		if len(args) < 3 {
+			return ErrorVal("driver, connStr/path und alias benötigt")
+		}
+
+		driver := strings.ToLower(args[0].Str)
+		connStr := args[1].Str
+		alias := strings.ToLower(args[2].Str)
+
+		var db *sql.DB
+		var err error
+
+		switch driver {
+		case "sqlite", "sqlite3":
+			if !filepath.IsAbs(connStr) {
+				cwd, _ := os.Getwd()
+				connStr = filepath.Join(cwd, connStr)
+			}
+			db, err = sql.Open("sqlite", connStr)
+
+		case "postgres", "pg", "mssql", "sqlserver":
+			// Für MSSQL/PG nutzen wir direkt den Driver-Namen und den Connection-String
+			driverName := driver
+			if driver == "pg" {
+				driverName = "postgres"
+			}
+			if driver == "mssql" {
+				driverName = "sqlserver"
+			}
+
+			db, err = sql.Open(driverName, connStr)
+
+		default:
+			return ErrorVal("Unsupported driver: " + driver)
+		}
+
+		if err != nil {
+			return ErrorVal(driver + " Open Error: " + err.Error())
+		}
+
+		if err = db.Ping(); err != nil {
+			db.Close()
+			return ErrorVal(driver + " Ping failed: " + err.Error())
+		}
+
+		// In die globalen Maps speichern
+		connections[alias] = db
+		drivers[alias] = driver
+
+		return BoolVal(true) // WICHTIG für deine VB-Abfrage!
+	})
+
+	Register(ns+"Backup", "db", "alias, dbName, targetPath", "Internes Server-Backup via SQL.", func(args []Value) Value {
+		alias := strings.ToLower(args[0].Str)
+		dbName := args[1].Str
+		targetPath := args[2].Str
+
+		db, ok := connections[alias]
+		if !ok {
+			return ErrorVal("Alias nicht gefunden")
+		}
+		driver := drivers[alias]
+
+		var query string
+		switch driver {
+		case "mssql", "sqlserver":
+			query = fmt.Sprintf("BACKUP DATABASE [%s] TO DISK = '%s' WITH FORMAT", dbName, targetPath)
+		case "sqlite", "sqlite3":
+			query = fmt.Sprintf("VACUUM INTO '%s'", targetPath)
+		default:
+			return ErrorVal("Backup via SQL für " + driver + " nicht möglich.")
+		}
+
+		_, err := db.Exec(query)
+		if err != nil {
+			return ErrorVal(err.Error())
+		}
+		return BoolVal(true)
+	})
+
+	Register(ns+"Export", "db", "driver, connStr, dbName, targetPath", "Netzwerk-Export via System-Tools.", func(args []Value) Value {
+		driver := strings.ToLower(args[0].Str)
+		connStr := args[1].Str
+		dbName := args[2].Str
+
+		// Hier nutzen wir deine absPath Logik
+		// 'safePath' ist jetzt der bereinigte, absolute Pfad
+		safePath, errPtr := processTargetPath(args[3].Str)
+		if errPtr != nil {
+			return *errPtr
+		}
+
+		switch driver {
+		case "postgres", "pg":
+			pgPath, err := exec.LookPath("pg_dump")
+			if err != nil {
+				return ErrorVal("pg_dump nicht gefunden")
+			}
+
+			// WICHTIG: Nutze hier 'safePath'
+			cmd := exec.Command(pgPath, "--dbname="+connStr, "-f", safePath, dbName)
+
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				return ErrorVal(string(output))
+			}
+
+		case "mssql", "sqlserver":
+			sqlcmdPath, err := exec.LookPath("sqlcmd")
+			if err != nil {
+				return ErrorVal("sqlcmd nicht gefunden")
+			}
+
+			// WICHTIG: Auch hier 'safePath' nutzen
+			query := fmt.Sprintf("BACKUP DATABASE [%s] TO DISK = '%s' WITH FORMAT", dbName, safePath)
+
+			cmd := exec.Command(sqlcmdPath, "-S", connStr, "-Q", query)
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				return ErrorVal(string(output))
+			}
+
+		default:
+			return ErrorVal("Unsupported driver: " + driver)
+		}
+
+		return BoolVal(true)
+	})
+
+	Register(ns+"Query", "db", "alias, sql", "Führt ein SELECT aus und gibt ein Array von Zeilen-Arrays zurück.", func(args []Value) Value {
+		if len(args) < 2 {
+			return Value{Kind: KindArr, Arr: []Value{}}
+		}
+
+		alias := args[0].Str
+		query := args[1].Str
+
+		// Verbindung über Alias holen
+		db, _, err := getConn(alias)
+		if err != nil {
+			return ErrorVal(err.Error())
+		}
+
+		rows, err := db.Query(query)
+		if err != nil {
+			return ErrorVal(err.Error())
+		}
+		defer rows.Close()
+
+		cols, _ := rows.Columns()
+		allRows := make([]Value, 0)
+
+		vals := make([]interface{}, len(cols))
+		ptrs := make([]interface{}, len(cols))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+
+		// Deine bewährte Säuberungs-Logik
+		clean := func(s string) string {
+			s = strings.TrimSpace(s)
+			return strings.Map(func(r rune) rune {
+				if r >= 32 || r == 9 || r == 10 || r == 13 {
+					return r
+				}
+				return -1
+			}, s)
+		}
+
+		for rows.Next() {
+			row := make([]Value, len(cols))
+			if err := rows.Scan(ptrs...); err != nil {
+				continue
+			}
+
+			for i, v := range vals {
+				if v == nil {
+					row[i] = Value{Kind: KindNull}
+					continue
+				}
+
+				switch val := v.(type) {
+				case string:
+					row[i] = StrVal(clean(val))
+				case []byte:
+					// Hier greift die neue Binary-Logik für Blobs (MSSQL/SQLite)
+					if isBinaryData(val) {
+						row[i] = StrVal(base64.StdEncoding.EncodeToString(val))
+					} else {
+						row[i] = StrVal(clean(string(val)))
+					}
+				default:
+					row[i] = convertToValue(v)
+				}
+			}
+			// Jede Zeile ist ein KindArr
+			allRows = append(allRows, Value{Kind: KindArr, Arr: row})
+		}
+
+		// Das Gesamtergebnis ist ein KindArr von KindArrs
+		return Value{Kind: KindArr, Arr: allRows}
+	})
+
+	// ---------------- QueryArray (Unified) ----------------
+	Register(ns+"QueryArray", "db", "alias, sql", "Gibt 2D-Array zurück.", func(args []Value) Value {
+		if len(args) < 2 {
+			return ErrorVal("alias, sql benötigt")
+		}
+		db, _, err := getConn(args[0].Str)
+		if err != nil {
+			return ErrorVal(err.Error())
+		}
+
+		rows, err := db.Query(args[1].Str)
+		if err != nil {
+			return ErrorVal(err.Error())
+		}
+		return sqlToArr2D(rows)
+	})
+
+	// ---------------- Close (Unified) ----------------
+	Register(ns+"Close", "db", "alias", "Schließt eine spezifische DB-Verbindung.", func(args []Value) Value {
+		if len(args) < 1 {
+			return BoolVal(false)
+		}
+		alias := strings.ToLower(args[0].Str)
+
+		if db, ok := connections[alias]; ok {
+			db.Close()
+			delete(connections, alias)
+			delete(drivers, alias)
+			return BoolVal(true)
+		}
+		return BoolVal(false)
+	})
+
+	// ---------------- db.TableExists ----------------
+	Register(ns+"TableExists", "db", "alias, tableName", "Prüft, ob eine Tabelle existiert.", func(args []Value) Value {
+		if len(args) < 2 {
+			return BoolVal(false)
+		}
+		alias, tableName := args[0].Str, args[1].Str
+
+		db, driver, err := getConn(alias)
+		if err != nil {
+			return BoolVal(false)
+		}
+
+		query, params := getTableExistsSQL(driver, tableName)
+		if query == "" {
+			return BoolVal(false)
+		}
+
+		var count int
+		err = db.QueryRow(query, params...).Scan(&count)
+		return BoolVal(err == nil && count > 0)
+	})
+
+	// ---------------- db.ListTables ----------------
+	Register(ns+"ListTables", "db", "alias", "Gibt eine Liste aller Tabellen als Array zurück.", func(args []Value) Value {
+		if len(args) < 1 {
+			return Value{Kind: KindArr, Arr: []Value{}}
+		}
+		alias := args[0].Str
+
+		db, driver, err := getConn(alias)
+		if err != nil {
+			return Value{Kind: KindArr, Arr: []Value{}}
+		}
+
+		query := getListTablesSQL(driver)
+		if query == "" {
+			return Value{Kind: KindArr, Arr: []Value{}}
+		}
+
+		rows, err := db.Query(query)
+		if err != nil {
+			return Value{Kind: KindArr, Arr: []Value{}}
+		}
+		defer rows.Close()
+
+		var tables []Value
+		for rows.Next() {
+			var name string
+			if err := rows.Scan(&name); err == nil {
+				tables = append(tables, StrVal(name))
+			}
+		}
+		return Value{Kind: KindArr, Arr: tables}
+	})
+
+	// --- db.Count (Deine Count-Logik) ---
+	Register(ns+"Count", "db", "alias, table [, filter, val]", "Zählt Zeilen.", func(args []Value) Value {
+		if len(args) < 2 {
+			return NumVal(0)
+		}
+		alias, table := args[0].Str, args[1].Str
+
+		db, driver, err := getConn(alias)
+		if err != nil {
+			return NumVal(0)
+		}
+
+		if !isSafeDBName(table) {
+			return NumVal(0)
+		}
+
+		// Basis-Query (eckige Klammern funktionieren in MSSQL und SQLite)
+		query := fmt.Sprintf("SELECT COUNT(*) FROM [%s]", table)
+
+		var count int
+		if len(args) >= 4 {
+			filter := args[2].Str // z.B. "Status = ?" oder "ID > @p1"
+			val := args[3].Str
+
+			// Falls der User ein einfaches "Status = ?" schickt,
+			// passen wir es für MSSQL automatisch an, falls nötig.
+			if (driver == "mssql" || driver == "sqlserver") && strings.Contains(filter, "?") {
+				filter = strings.Replace(filter, "?", "@p1", 1)
+			}
+
+			query += " WHERE " + filter
+			err = db.QueryRow(query, val).Scan(&count)
+		} else {
+			err = db.QueryRow(query).Scan(&count)
+		}
+
+		if err != nil {
+			return NumVal(0)
+		}
+		return NumVal(float64(count))
+	})
+
+	Register(ns+"GetLastID", "db", "alias [, sql]", "Gibt die zuletzt erzeugte ID zurück.", func(args []Value) Value {
+		if len(args) < 1 {
+			return NumVal(0)
+		}
+		alias := args[0].Str
+
+		db, driver, err := getConn(alias)
+		if err != nil {
+			return NumVal(0)
+		}
+
+		// Fall 1: User übergibt eigenes SQL (wie in deinem Original)
+		if len(args) >= 2 && args[1].Str != "" {
+			var id int64
+			err := db.QueryRow(args[1].Str).Scan(&id)
+			if err != nil {
+				return NumVal(0)
+			}
+			return NumVal(float64(id))
+		}
+
+		// Fall 2: Automatik-Modus je nach Datenbank
+		var lastID int64
+		switch driver {
+		case "mssql", "sqlserver":
+			// Bei MSSQL muss man meist explizit nachfragen (SCOPE_IDENTITY ist am sichersten)
+			err = db.QueryRow("SELECT SCOPE_IDENTITY()").Scan(&lastID)
+		case "sqlite", "sqlite3":
+			// SQLite hat eine spezialisierte Abfrage
+			err = db.QueryRow("SELECT last_insert_rowid()").Scan(&lastID)
+		case "postgres", "pg":
+			// Postgres braucht meist ein "RETURNING id" im INSERT,
+			// oder man fragt die Sequence ab (falls bekannt):
+			return ErrorVal("Postgres benötigt 'RETURNING id' im INSERT-Statement")
+		}
+
+		if err != nil {
+			return NumVal(0)
+		}
+		return NumVal(float64(lastID))
+	})
+
+	Register(ns+"SetBlob", "db", "alias, table, col, whereCol, whereVal, b64Data", "Speichert Blobs (Base64-String erforderlich).", func(args []Value) Value {
+		if len(args) < 6 {
+			return ErrorVal("Argumente fehlen")
+		}
+		alias, table, col, wCol, wVal, data := args[0].Str, args[1].Str, args[2].Str, args[3].Str, args[4].Str, args[5].Str
+
+		db, driver, err := getConn(alias)
+		if err != nil {
+			return ErrorVal(err.Error())
+		}
+
+		if !isSafeDBName(table) || !isSafeDBName(col) || !isSafeDBName(wCol) {
+			return ErrorVal("Ungültige Struktur-Namen")
+		}
+
+		blobData, _ := base64.StdEncoding.DecodeString(data)
+
+		var query string
+		// Hier der Tagged Switch für die Dialekt-Unterscheidung
+		switch driver {
+		case "mssql", "sqlserver":
+			// MSSQL Dialekt mit @p1, @p2
+			query = fmt.Sprintf("UPDATE [%s] SET [%s]=@p1 WHERE [%s]=@p2", table, col, wCol)
+
+		case "postgres", "pg":
+			// Postgres Dialekt mit $1, $2
+			query = fmt.Sprintf("UPDATE \"%s\" SET \"%s\"=$1 WHERE \"%s\"=$2", table, col, wCol)
+
+		default:
+			// SQLite / MySQL Dialekt mit ?
+			query = fmt.Sprintf("UPDATE [%s] SET [%s]=? WHERE [%s]=?", table, col, wCol)
+		}
+
+		_, err = db.Exec(query, blobData, wVal)
+		if err != nil {
+			return ErrorVal(err.Error())
+		}
+		return BoolVal(true)
+	})
+
+	Register(ns+"GetBlob", "db", "alias, table, col, whereCol, whereVal", "Liest einen Blob und gibt ihn als Base64-String zurück.", func(args []Value) Value {
+		if len(args) < 5 {
+			return StrVal("error: missing arguments (alias, table, col, whereCol, whereVal)")
+		}
+
+		alias := args[0].Str
+		table := args[1].Str
+		column := args[2].Str
+		whereCol := args[3].Str
+		whereVal := args[4].Str
+
+		db, driver, err := getConn(alias)
+		if err != nil {
+			return StrVal("error: " + err.Error())
+		}
+
+		// Sicherheits-Check (nutzt deine existierende Funktion)
+		if !isSafeDBName(table) || !isSafeDBName(column) || !isSafeDBName(whereCol) {
+			return StrVal("error: invalid structure names")
+		}
+
+		var query string
+		var data []byte
+
+		// Dialekt-Anpassung
+		switch driver {
+		case "mssql", "sqlserver":
+			query = fmt.Sprintf("SELECT [%s] FROM [%s] WHERE [%s] = @p1", column, table, whereCol)
+		case "postgres", "pg":
+			query = fmt.Sprintf("SELECT \"%s\" FROM \"%s\" WHERE \"%s\" = $1", column, table, whereCol)
+		default: // sqlite, mysql
+			query = fmt.Sprintf("SELECT [%s] FROM [%s] WHERE [%s] = ?", column, table, whereCol)
+		}
+
+		err = db.QueryRow(query, whereVal).Scan(&data)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return StrVal("") // Oder NullVal, falls kein Datensatz gefunden wurde
+			}
+			return StrVal("error: " + err.Error())
+		}
+
+		// Rückgabe als Base64 (identisch zu deinem Original)
+		return StrVal(base64.StdEncoding.EncodeToString(data))
+	})
+
+	Register(ns+"ListProcedures", "db", "alias", "Listet Stored Procedures (MSSQL/Postgres).", func(args []Value) Value {
+		if len(args) < 1 {
+			return Value{Kind: KindArr, Arr: []Value{}}
+		}
+
+		alias := args[0].Str
+		db, driver, err := getConn(alias)
+		if err != nil {
+			return Value{Kind: KindArr, Arr: []Value{}}
+		}
+
+		var query string
+		switch driver {
+		case "mssql", "sqlserver":
+			// MSSQL nutzt INFORMATION_SCHEMA.ROUTINES
+			query = `
+            SELECT ROUTINE_SCHEMA, ROUTINE_NAME 
+            FROM INFORMATION_SCHEMA.ROUTINES 
+            WHERE ROUTINE_TYPE = 'PROCEDURE' 
+            ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME`
+		case "postgres", "pg":
+			// Postgres nutzt ebenfalls INFORMATION_SCHEMA, aber oft kleingeschrieben
+			query = `
+            SELECT routine_schema, routine_name 
+            FROM information_schema.routines 
+            WHERE routine_type = 'PROCEDURE' 
+            AND routine_schema NOT IN ('pg_catalog', 'information_schema')
+            ORDER BY routine_schema, routine_name`
+		default:
+			// SQLite unterstützt keine Stored Procedures
+			return Value{Kind: KindArr, Arr: []Value{}}
+		}
+
+		rows, err := db.Query(query)
+		if err != nil {
+			return Value{Kind: KindArr, Arr: []Value{}}
+		}
+		defer rows.Close()
+
+		var result []Value
+		for rows.Next() {
+			var schema, name string
+			if err := rows.Scan(&schema, &name); err != nil {
+				continue
+			}
+			// Format: dbo.MyProcedure oder public.my_proc
+			fullName := schema + "." + name
+			result = append(result, StrVal(fullName))
+		}
+
+		return Value{Kind: KindArr, Arr: result}
+	})
+
+	Register(ns+"ListViews", "db", "alias", "Listet Views der Datenbank auf.", func(args []Value) Value {
+		if len(args) < 1 {
+			return Value{Kind: KindArr, Arr: []Value{}}
+		}
+
+		alias := args[0].Str
+		db, driver, err := getConn(alias)
+		if err != nil {
+			return Value{Kind: KindArr, Arr: []Value{}}
+		}
+
+		var query string
+		switch driver {
+		case "mssql", "sqlserver":
+			// MSSQL: Standard-Views via INFORMATION_SCHEMA
+			query = `
+            SELECT TABLE_SCHEMA, TABLE_NAME 
+            FROM INFORMATION_SCHEMA.VIEWS 
+            ORDER BY TABLE_SCHEMA, TABLE_NAME`
+		case "postgres", "pg":
+			// Postgres: Views ohne System-Schemas
+			query = `
+            SELECT table_schema, table_name 
+            FROM information_schema.views 
+            WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+            ORDER BY table_schema, table_name`
+		case "sqlite", "sqlite3":
+			// SQLite: Views liegen in sqlite_master
+			query = "SELECT 'main', name FROM sqlite_master WHERE type = 'view' ORDER BY name"
+		default:
+			return Value{Kind: KindArr, Arr: []Value{}}
+		}
+
+		rows, err := db.Query(query)
+		if err != nil {
+			return Value{Kind: KindArr, Arr: []Value{}}
+		}
+		defer rows.Close()
+
+		var result []Value
+		for rows.Next() {
+			var schema, name string
+			if err := rows.Scan(&schema, &name); err != nil {
+				continue
+			}
+			// Konsistentes Format: Schema.Name (bzw. main.Name bei SQLite)
+			fullName := schema + "." + name
+			result = append(result, StrVal(fullName))
+		}
+
+		return Value{Kind: KindArr, Arr: result}
+	})
+
+	// ---------------- db.DatabaseName ----------------
+	Register(ns+"DatabaseName", "db", "alias", "Gibt den Namen der aktuellen DB zurück.", func(args []Value) Value {
+		alias := args[0].Str
+		db, driver, err := getConn(alias)
+		if err != nil {
+			return StrVal("")
+		}
+
+		query := getDatabaseNameSQL(driver)
+		var name string
+		err = db.QueryRow(query).Scan(&name)
+		if err != nil {
+			return StrVal("")
+		}
+		return StrVal(name)
+	})
+
+	// ---------------- db.ListDatabases (MSSQL Spezial) ----------------
+	Register(ns+"ListDatabases", "db", "alias", "Listet Datenbanken auf dem Server (MSSQL/PG) oder 'main' bei SQLite.", func(args []Value) Value {
+		if len(args) < 1 {
+			return Value{Kind: KindArr, Arr: []Value{}}
+		}
+		alias := args[0].Str
+		db, driver, err := getConn(alias)
+		if err != nil {
+			return Value{Kind: KindArr, Arr: []Value{}}
+		}
+
+		var query string
+		switch driver {
+		case "mssql", "sqlserver":
+			// MSSQL: Alle Datenbanken außer System-DBs (optional filterbar)
+			query = "SELECT name FROM sys.databases WHERE name NOT IN ('master', 'tempdb', 'model', 'msdb') ORDER BY name"
+		case "postgres", "pg":
+			// Postgres: Echte User-Datenbanken
+			query = "SELECT datname FROM pg_database WHERE datistemplate = false AND datname != 'postgres' ORDER BY datname"
+		case "sqlite", "sqlite3":
+			// SQLite: Hat keine Server-Liste, wir geben den Standard-Namespace zurück
+			return Value{Kind: KindArr, Arr: []Value{StrVal("main")}}
+		default:
+			return Value{Kind: KindArr, Arr: []Value{}}
+		}
+
+		rows, err := db.Query(query)
+		if err != nil {
+			return Value{Kind: KindArr, Arr: []Value{}}
+		}
+		defer rows.Close()
+
+		var res []Value
+		for rows.Next() {
+			var name string
+			if err := rows.Scan(&name); err == nil {
+				res = append(res, StrVal(strings.TrimSpace(name)))
+			}
+		}
+		return Value{Kind: KindArr, Arr: res}
+	})
+
+	Register(ns+"DriverName", "db", "alias", "Gibt den Treiber-Typ zurück (mssql, pg, sqlite).", func(args []Value) Value {
+		if len(args) < 1 {
+			return StrVal("")
+		}
+		_, driver, err := getConn(args[0].Str)
+		if err != nil {
+			return StrVal("unknown")
+		}
+		return StrVal(driver)
+	})
+
+	Register(ns+"Exec", "db", "alias, sqlString", "Führt SQL aus.", func(args []Value) Value {
+		alias := args[0].Str
+		sqlContent := args[1].Str
+
+		// 1. Verbindung holen (Alias wurde vorher per Open gesetzt)
+		db, driver, err := getConn(alias)
+		if err != nil {
+			return ErrorVal(err.Error())
+		}
+
+		// 2. Batch-Splitting je nach Driver
+		var batches []string
+		if driver == "mssql" || driver == "sqlserver" {
+			// MSSQL braucht GO-Splitting
+			re := regexp.MustCompile(`(?im)^\s*GO\s*$`)
+			batches = re.Split(sqlContent, -1)
+		} else {
+			// SQLite & Postgres trennen am Semikolon
+			batches = strings.Split(sqlContent, ";")
+		}
+
+		// 3. Ausführung (Transaktions-Check)
+		// Wir schauen kurz, ob der User selbst BEGIN/COMMIT im String hat
+		upper := strings.ToUpper(sqlContent)
+		hasManualTx := strings.Contains(upper, "COMMIT") || strings.Contains(upper, "ROLLBACK")
+
+		var finalResults []Value
+
+		// Fall A: User steuert Transaktion selbst (oder SQLite im Auto-Commit)
+		if hasManualTx {
+			for _, b := range batches {
+				if t := strings.TrimSpace(b); t != "" {
+					res, err := executeSQL(db, t) // Direkt auf DB
+					if err != nil {
+						return ErrorVal(err.Error())
+					}
+					finalResults = append(finalResults, res)
+				}
+			}
+		} else {
+			// Fall B: Wir kapseln alles in eine Go-Transaktion (Sicherheitsnetz)
+			tx, _ := db.Begin()
+			for _, b := range batches {
+				if t := strings.TrimSpace(b); t != "" {
+					res, err := executeSQL(tx, t) // Auf Transaktion
+					if err != nil {
+						tx.Rollback()
+						return ErrorVal(err.Error())
+					}
+					finalResults = append(finalResults, res)
+				}
+			}
+			tx.Commit()
+		}
+
+		return Value{Kind: KindArr, Arr: finalResults}
+	})
+
+	// ---------------- db.ListColumns ----------------
+	Register(ns+"ListColumns", "db", "alias, table", "Gibt Spaltennamen zurück.", func(args []Value) Value {
+		if len(args) < 2 {
+			return Value{Kind: KindArr, Arr: []Value{}}
+		}
+		alias, table := args[0].Str, args[1].Str
+		db, driver, err := getConn(alias)
+		if err != nil || !isSafeDBName(table) {
+			return Value{Kind: KindArr, Arr: []Value{}}
+		}
+
+		query, params := getListColumnsSQL(driver, table)
+		rows, err := db.Query(query, params...)
+		if err != nil {
+			return Value{Kind: KindArr, Arr: []Value{}}
+		}
+		defer rows.Close()
+
+		var columns []Value
+		for rows.Next() {
+			var col string
+			if driver == "sqlite" {
+				// SQLite PRAGMA gibt CID, Name, Type, NotNull, PK zurück (Name ist an Index 1)
+				var cid, notnull, pk int
+				var dType interface{}
+				rows.Scan(&cid, &col, &dType, &notnull, &dType, &pk)
+			} else {
+				rows.Scan(&col)
+			}
+			columns = append(columns, StrVal(col))
+		}
+		return Value{Kind: KindArr, Arr: columns}
+	})
+
+	// NOTE:
+	// Deaktiviert, da der verwendete SQLite-Treiber (z. B. modernc.org/sqlite)
+	// keine SQLCipher-Unterstützung bietet (kein PRAGMA key/rekey).
+	/*
+		Register(ns+"ChangePassword", "db", "alias, oldKey, newKey", "Ändert das Passwort einer verschlüsselten SQLite-DB.", func(args []Value) Value {
+			if len(args) < 3 {
+				return StrVal("error: alias, oldKey, newKey required")
+			}
+
+			alias := args[0].Str
+			oldKey := args[1].Str
+			newKey := args[2].Str
+
+			db, driver, err := getConn(alias)
+			if err != nil {
+				return StrVal("error: " + err.Error())
+			}
+
+			// Sicherheits-Check: Rekey funktioniert nur bei SQLite/SQLCipher
+			if driver != "sqlite" && driver != "sqlite3" {
+				return StrVal("error: ChangePassword is only supported for SQLite (SQLCipher)")
+			}
+
+			// 1. Alten Key zur Verifizierung/Öffnung setzen
+			// Wir nutzen fmt.Sprintf, da PRAGMAs oft keine Parameter-Platzhalter (?) unterstützen
+			if _, err := db.Exec(fmt.Sprintf("PRAGMA key = '%s'", oldKey)); err != nil {
+				return StrVal("error setting old key: " + err.Error())
+			}
+
+			// 2. Rekey (Verschlüsselung ändern oder setzen)
+			if _, err := db.Exec(fmt.Sprintf("PRAGMA rekey = '%s'", newKey)); err != nil {
+				return StrVal("error rekey failed: " + err.Error())
+			}
+
+			return StrVal("ok")
+		})*/
+
+	Register(ns+"ExecFile", "db", "alias, path [, dryRun]", "Führt SQL-Script aus.", func(args []Value) Value {
+		if len(args) < 2 {
+			return ErrorVal("alias und pfad benötigt")
+		}
+		alias, path := args[0].Str, args[1].Str
+
+		dryRun := len(args) > 2 && isTruthy(args[2])
+
+		db, driver, err := getConn(alias)
+		if err != nil {
+			return ErrorVal(err.Error())
+		}
+
+		sqlContent, err := readSQLFile(path)
+		if err != nil {
+			return ErrorVal("read error: " + err.Error())
+		}
+
+		// --- 1. WEICHE FÜR MANUELLE TRANSAKTIONEN ---
+		upperSql := strings.ToUpper(sqlContent)
+		hasManualTx := strings.Contains(upperSql, "COMMIT") || strings.Contains(upperSql, "ROLLBACK")
+
+		// --- 2. SPLITTING ---
+		var batches []string
+		if driver == "mssql" || driver == "sqlserver" {
+			re := regexp.MustCompile(`(?im)^\s*GO\s*$`)
+			batches = re.Split(sqlContent, -1)
+		} else {
+			batches = strings.Split(sqlContent, ";")
+		}
+
+		var tx *sql.Tx
+		var runner SQLRunner = db // Default: Direkt auf die DB
+
+		// Nur Transaktion starten, wenn der User keine eigenen Commits im File hat
+		if !hasManualTx {
+			tx, err = db.Begin()
+			if err != nil {
+				return ErrorVal("tx error: " + err.Error())
+			}
+			runner = tx
+		}
+
+		var finalResults []Value
+		for _, batch := range batches {
+			batch = strings.TrimSpace(batch)
+			if batch == "" {
+				continue
+			}
+
+			// runner ist entweder tx oder db
+			resVal, err := executeSQL(runner, batch)
+			if err != nil {
+				if tx != nil {
+					tx.Rollback()
+				}
+				return ErrorVal("Fehler im SQL-Abschnitt: " + err.Error() + "\nBatch: " + batch)
+			}
+
+			if resVal.Kind != KindNull {
+				finalResults = append(finalResults, resVal)
+			}
+		}
+
+		// --- 3. ABSCHLUSS ---
+		if tx != nil {
+			if dryRun {
+				tx.Rollback()
+			} else {
+				if err := tx.Commit(); err != nil {
+					return ErrorVal("commit error: " + err.Error())
+				}
+			}
+		}
+
+		return Value{Kind: KindArr, Arr: finalResults}
+	})
+
+	Register(ns+"Optimize", "db", "raw, dialect", "Bereinigt SQL intelligent nach Keywords.", func(args []Value) Value {
+		if len(args) < 2 {
+			return ErrorVal("SQL und Dialekt benötigt")
+		}
+
+		// Einfacher Aufruf der externen Funktion
+		result := OptimizeSQL(args[0].Str, args[1].Str)
+
+		return StrVal(result)
+	})
+
+	Register(ns+"OptimizeFile", "db", "path, dialect [, outPath]", "Optimiert eine SQL-Datei direkt.", func(args []Value) Value {
+		if len(args) < 2 {
+			return ErrorVal("Pfad und Dialekt benötigt")
+		}
+		path := args[0].Str
+		dialect := args[1].Str
+
+		// 1. Dateiendung prüfen (Case-Insensitive)
+		if !strings.HasSuffix(strings.ToLower(path), ".sql") {
+			return ErrorVal("Nur .sql Dateien sind erlaubt.")
+		}
+
+		// 2. Datei einlesen
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return ErrorVal("Datei konnte nicht gelesen werden: " + err.Error())
+		}
+
+		// 3. Optimierung anwenden
+		optimized := OptimizeSQL(string(content), dialect)
+
+		// 4. Zielpfad bestimmen (Überschreiben oder neuer Pfad)
+		targetPath := path
+		if len(args) > 2 && args[2].Str != "" {
+			targetPath = args[2].Str
+			if !strings.HasSuffix(strings.ToLower(targetPath), ".sql") {
+				return ErrorVal("Zielpfad muss ebenfalls auf .sql enden.")
+			}
+		}
+
+		// 5. Speichern
+		err = os.WriteFile(targetPath, []byte(optimized), 0644)
+		if err != nil {
+			return ErrorVal("Datei konnte nicht gespeichert werden: " + err.Error())
+		}
+
+		return StrVal("Erfolgreich optimiert: " + targetPath)
+	})
+}

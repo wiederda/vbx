@@ -1,0 +1,10 @@
+=== Tagesbericht {{.datum}} ===
+
+Benutzer:   {{.user}}
+Server:     {{.server}}
+Status:     {{if .ok}}OK{{else}}FEHLER{{end}}
+
+Verarbeitete Dateien:
+{{range .dateien}}- {{.}}
+{{end}}
+Gesamt: {{.anzahl}} Dateien
