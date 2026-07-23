@@ -39,7 +39,7 @@ vbx -file -h
 VBX kann Skripte in verschlüsselter Form bereitstellen.
 
 ```vbx
-Build("server.vb")
+vbx Build server.vb
 ```
 
 Erzeugt:
@@ -63,7 +63,7 @@ Eigenschaften:
 VBX kann Skripte direkt als Hintergrundprozess starten.
 
 ```vbx
-Dim pid = Worker("server.vbc")
+vbx Worker server.vb
 ```
 
 Eigenschaften:
