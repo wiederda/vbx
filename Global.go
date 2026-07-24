@@ -93,6 +93,45 @@ func InitGlobal() {
 		return StrVal(pidStr)
 	})
 
+	Register("Compare", "global", "v1, v2", "Vergleicht Versionsnummern im Format Major.Minor.Patch. Rückgabe: -1, 0, 1", func(args []Value) Value {
+		if len(args) < 2 {
+			return ErrorVal("version.Compare: zwei Versionen benötigt")
+		}
+
+		v1 := ToString(args[0])
+		v2 := ToString(args[1])
+
+		parseVersion := func(v string) []int {
+			parts := strings.Split(v, ".")
+
+			result := []int{0, 0, 0}
+
+			for i := 0; i < len(parts) && i < 3; i++ {
+				n, err := strconv.Atoi(parts[i])
+				if err == nil {
+					result[i] = n
+				}
+			}
+
+			return result
+		}
+
+		a := parseVersion(v1)
+		b := parseVersion(v2)
+
+		for i := 0; i < 3; i++ {
+			if a[i] > b[i] {
+				return NumVal(1)
+			}
+
+			if a[i] < b[i] {
+				return NumVal(-1)
+			}
+		}
+
+		return NumVal(0)
+	})
+
 	Register("GenerateSSHKey", "crypt", "[outFile, algo, bits, pass]",
 		"Erstellt ein SSH-Paar (RSA/Ed25519). Schreibt physisch in .ssh oder Zielpfad.",
 		func(args []Value) Value {
