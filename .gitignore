@@ -14,4 +14,4 @@ pic
 *.xml
 builds_count.sh
 build_info.html
-release.sh
+test_build.sh

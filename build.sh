@@ -88,33 +88,3 @@ LINUX_HASH=$(cat linux/${PRODUCT_NAME}.sha256 | awk '{print $1}')
 WIN_HASH=$(cat windows/${PRODUCT_NAME}.exe.sha256 | awk '{print $1}')
 
 rm -Rf linux/${PRODUCT_NAME}.sha256  windows/${PRODUCT_NAME}.exe.sha256
-
-# -----------------------
-# HTML Snippet generieren
-# -----------------------
-cat <<EOF > build_info.html
-# -----------------------
-# HTML AUTO-UPDATE (Styled)
-# -----------------------
-cat <<EOF > temp_release.html
-<section class="release-container">
-    <div class="release-header">
-        <span class="release-icon"></span> 
-        vbmini Release v$NEW_VERSION
-    </div>
-    <div class="release-body">
-        <div class="release-row">
-            <div class="rel-platform"><strong>Linux</strong> (amd64)</div>
-            <div class="rel-action"><a href="linux/vbmini" class="download-link">Download</a></div>
-            <div class="rel-hash"><code>$LINUX_HASH</code> <small>sha256</small></div>
-        </div>
-        <div class="release-row">
-            <div class="rel-platform"><strong>Windows</strong> (amd64)</div>
-            <div class="rel-action"><a href="windows/vbmini.exe" class="download-link">Download</a></div>
-            <div class="rel-hash"><code>$WIN_HASH</code> <small>sha256</small></div>
-        </div>
-    </div>
-</section>
-EOF
-
-echo "Die Datei 'build_info.html' wurde erfolgreich aktualisiert!"
