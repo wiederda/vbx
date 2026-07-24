@@ -78,9 +78,9 @@ var NilValue = Value{Kind: KindNil}
 
 // GetRef liefert einen Pointer auf den Wert in der Map
 type Environment struct {
-	vars        map[string]*Value // Hier muss das * hin!
-	parent      *Environment      // <-- Dieses Feld fehlte!
-	currentLine int               // <--- DAS brauchen wir für die Fehlermeldungen!
+	vars        map[string]*Value
+	parent      *Environment
+	currentLine int
 	currentFile string
 }
 

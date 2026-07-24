@@ -402,52 +402,91 @@ func InitNetFunctions() {
 	// =============================
 	// Download(url, [path], [token])
 	// =============================
-	Register(ns+"Download", "net", "url, [path], [token]", "Lädt eine Datei herunter. Gibt True bei Erfolg, False bei Fehler zurück.", func(args []Value) Value {
-		if len(args) < 1 {
-			return BoolVal(false)
+	Register(ns+"Download", "net", "url, [path], [token]",
+	"Lädt eine Datei herunter. Gibt [True/False, Fehlermeldung] zurück.",
+	func(args []Value) Value {
+
+		errorResult := func(msg string) Value {
+			return ArrVal([]Value{
+				BoolVal(false),
+				StrVal(msg),
+			})
 		}
+
+		successResult := func() Value {
+			return ArrVal([]Value{
+				BoolVal(true),
+				StrVal(""),
+			})
+		}
+
+		if len(args) < 1 {
+			return errorResult("URL fehlt")
+		}
+
 		u := strings.TrimSpace(ToString(args[0]))
+		if u == "" {
+			return errorResult("URL ist leer")
+		}
+
 		var p string
 
 		if len(args) >= 2 && strings.TrimSpace(ToString(args[1])) != "" {
 			absP, eVal := absPathVal(ToString(args[1]))
 			if eVal != nil {
-				return *eVal
+				return errorResult(ToString(*eVal))
 			}
 			p = absP
 		} else {
 			parts := strings.Split(u, "/")
 			p = parts[len(parts)-1]
+
 			if p == "" {
 				p = "downloaded_file"
 			}
 		}
 
-		req, _ := http.NewRequest("GET", u, nil)
+		req, err := http.NewRequest("GET", u, nil)
+		if err != nil {
+			return errorResult(err.Error())
+		}
+
 		req.Header.Set("User-Agent", "VBX/1.0")
 
 		if len(args) >= 3 {
 			setAuthHeader(req, ToString(args[2]))
 		}
 
-		dlClient := &http.Client{Timeout: 0} // Timeout für Downloads auf 0 (unendlich) oder via Context
-		resp, err := dlClient.Do(req)
-		if err != nil || resp.StatusCode != 200 {
-			return BoolVal(false)
+		dlClient := &http.Client{
+			Timeout: 0,
 		}
+
+		resp, err := dlClient.Do(req)
+		if err != nil {
+			return errorResult(err.Error())
+		}
+
 		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return errorResult(
+				fmt.Sprintf("HTTP %d: %s", resp.StatusCode, resp.Status),
+			)
+		}
 
 		file, err := os.Create(p)
 		if err != nil {
-			return BoolVal(false)
+			return errorResult(err.Error())
 		}
+
 		defer file.Close()
 
 		_, err = io.Copy(file, resp.Body)
 		if err != nil {
-			return BoolVal(false)
+			return errorResult(err.Error())
 		}
-		return BoolVal(true)
+
+		return successResult()
 	})
 
 	Register(ns+"Html", "Encode", "text",
@@ -512,26 +551,33 @@ func CustomHtmlEscape(s string) string {
 	return replacer.Replace(s)
 }
 
-func setAuthHeader(req *http.Request, token string) {
-	token = strings.TrimSpace(token)
-	if token == "" {
+func setAuthHeader(req *http.Request, auth string) {
+	auth = strings.TrimSpace(auth)
+
+	if auth == "" {
 		return
 	}
 
-	// 1. Explizite Präfixe prüfen
-	if strings.HasPrefix(token, "gl:") {
-		// GitLab Spezial-Header
-		req.Header.Set("PRIVATE-TOKEN", strings.TrimPrefix(token, "gl:"))
-	} else if strings.HasPrefix(token, "gh:") {
-		// GitHub Standard
-		req.Header.Set("Authorization", "token "+strings.TrimPrefix(token, "gh:"))
-	} else if strings.HasPrefix(token, "b:") {
-		// Erzwungener Bearer (FastAPI)
-		req.Header.Set("Authorization", "Bearer "+strings.TrimPrefix(token, "b:"))
-	} else {
-		// 2. Fallback: Wenn nichts angegeben ist, ist es ein Bearer (FastAPI Standard)
-		// Das deckt 90% der modernen APIs ab.
-		req.Header.Set("Authorization", "Bearer "+token)
+	switch {
+	case strings.HasPrefix(auth, "gl:"):
+		// GitLab Personal Access Token
+		req.Header.Set("PRIVATE-TOKEN", strings.TrimPrefix(auth, "gl:"))
+
+	case strings.HasPrefix(auth, "gh:"):
+		// GitHub Token
+		req.Header.Set("Authorization", "Bearer "+strings.TrimPrefix(auth, "gh:"))
+
+	case strings.HasPrefix(auth, "b:"):
+		// Bearer Token
+		req.Header.Set("Authorization", "Bearer "+strings.TrimPrefix(auth, "b:"))
+
+	case strings.HasPrefix(auth, "a:"):
+		// kompletter Authorization Header
+		req.Header.Set("Authorization", strings.TrimPrefix(auth, "a:"))
+
+	default:
+		// Standard: Bearer
+		req.Header.Set("Authorization", "Bearer "+auth)
 	}
 }
 

@@ -464,3 +464,72 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   - Beliebig viele Segmente als `StrVal`.
 - **Rückgabe:**
   `StrVal`
+
+---
+
+## file.ReadLines(path)
+- **Konkret:**
+  Liest eine Textdatei und gibt alle Zeilen als Array zurück.
+  Leerzeilen am Ende werden entfernt.
+- **Parameter:**
+  - `path`: Pfad zur Datei.
+- **Rückgabe:**
+  `ArrVal`
+  Array von `StrVal`-Einträgen. Leer bei Lesefehler.
+
+---
+
+## file.LineCount(path)
+- **Konkret:**
+  Gibt die Anzahl der Zeilen einer Textdatei zurück.
+- **Parameter:**
+  - `path`: Pfad zur Datei.
+- **Rückgabe:**
+  `NumVal`, `ErrorVal` bei Lesefehler.
+
+---
+
+## file.Head(path, n)
+- **Konkret:**
+  Gibt die ersten `n` Zeilen einer Datei zurück.
+- **Parameter:**
+  - `path`: Pfad zur Datei.
+  - `n`: Anzahl Zeilen.
+- **Rückgabe:**
+  `ArrVal`, `ErrorVal` bei Lesefehler.
+
+---
+
+## file.Tail(path, n)
+- **Konkret:**
+  Gibt die letzten `n` Zeilen einer Datei zurück.
+- **Parameter:**
+  - `path`: Pfad zur Datei.
+  - `n`: Anzahl Zeilen.
+- **Rückgabe:**
+  `ArrVal`, `ErrorVal` bei Lesefehler.
+
+---
+
+## file.AppendLine(path, line)
+- **Konkret:**
+  Hängt eine Zeile an eine bestehende Datei an.
+  Erstellt die Datei wenn sie noch nicht existiert.
+  Fügt automatisch einen Zeilenumbruch ein.
+- **Parameter:**
+  - `path`: Pfad zur Datei.
+  - `line`: Anzuhängende Zeile.
+- **Rückgabe:**
+  `BoolVal` (`true`) bei Erfolg, `ErrorVal` bei Fehler.
+
+---
+
+## file.ReplaceAfterRun(path)
+- **Konkret:**
+  Ersetzt das laufende Skript nach dessen Beendigung mit einer neuen Version.
+  Die neue Datei muss bereits vorhanden sein wenn die Funktion aufgerufen wird.
+  Typischer Usecase: Skript lädt ein Update via `net.Download` und tauscht sich selbst aus.
+- **Parameter:**
+  - `path`: Pfad zur neuen Version.
+- **Rückgabe:**
+  `BoolVal` (`true`) bei Erfolg, `ErrorVal` wenn Datei nicht gefunden.

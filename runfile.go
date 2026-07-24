@@ -59,26 +59,6 @@ func RunFile(filename string) (err error) {
 		LoadModules(env, scriptModules)
 	}
 
-	// 3. Zeilen-Verarbeitung (Strikte Header-Logik)
-	/*lines := strings.Split(string(data), "\n")
-	env := NewEnvironment(nil)
-	var scriptModules []string
-
-	// --- ZEILE 1: #use ---
-	if len(lines) >= 1 {
-		line1 := strings.TrimSpace(lines[0])
-		if strings.HasPrefix(strings.ToLower(line1), "#use") {
-			raw := strings.TrimSpace(line1[4:])
-			if raw != "" {
-				mods := strings.Split(raw, ",")
-				for _, m := range mods {
-					scriptModules = append(scriptModules, strings.TrimSpace(strings.ToLower(m)))
-				}
-			}
-			lines[0] = "" // Für Parser leeren
-		}
-	}*/
-
 	// --- ZEILE 2: #requires ---
 	if len(lines) >= 2 {
 		line2 := strings.TrimSpace(lines[1])

@@ -497,6 +497,7 @@ func getCLIShortcuts() map[string]Shortcut {
 		"pgpidentity":    {"pgp.SetupIdentity", "folder, name, email, [password]", "Erstellt PGP-Keys (id_pgp.pub / id_pgp). Optional mit Passwort."},
 		"printformat":    {"PrintFormat", "", "Gibt eine Übersicht der Format-Optionen auf der Konsole aus."},
 		"copyfolder":     {"folder.Copy", "src, dst, [progress]", "Kopiert einen Ordner rekursiv mit parallelen Workern an einen neuen Ort. progress=True zeigt Fortschritt auf der Konsole."},
+		"rename":         {"file.Rename", "alt, neu", "Benennt eine Datei um."},
 		"qcsignidentity": {"pqc.SetupSignIdentity", "path, encrypt", "Erzeugt Keys.(id_sig.pub / id_sig) Bei 'encrypt=false' erfolgt eine Sicherheitswarnung!"},
 		"generatesshkey": {"GenerateSSHKey", "[outFile, algo, bits, pass]",
 			"Erstellt ein SSH-Paar. RSA mit min. 4096 Bit. Ed25519 nutzt fix 256 Bit. Überschreibt keine vorhandenen Dateien im .ssh Ordner der Users."},

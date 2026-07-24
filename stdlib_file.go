@@ -21,6 +21,8 @@ import (
 	"time"
 )
 
+//var replaceAfterRunPath string
+
 // InitFileFunctions registriert File-Funktionen inkl. erweiterter Features
 func InitFileFunctions() {
 	if builtins == nil {
@@ -792,6 +794,21 @@ func InitFileFunctions() {
 
 		return NullVal()
 	})
+
+	/*Register(ns+"ReplaceAfterRun", "file", "path", "Ersetzt das laufende Skript nach Beendigung mit einer neuen Version.", func(args []Value) Value {
+		if len(args) < 1 {
+			return ErrorVal("file.ReplaceAfterRun: Pfad fehlt")
+		}
+		path, errVal := absPathVal(args[0].Str)
+		if errVal != nil {
+			return *errVal
+		}
+		if _, err := os.Stat(path); err != nil {
+			return ErrorVal("file.ReplaceAfterRun: Datei nicht gefunden: " + path)
+		}
+		replaceAfterRunPath = path
+		return BoolVal(true)
+	})*/
 
 	// ------------------------
 	// AppendAllText
