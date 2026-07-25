@@ -8,11 +8,13 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/md5"
+	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"hash"
 	"io"
 	"os"
 	"path/filepath"
@@ -723,50 +725,89 @@ func InitFileFunctions() {
 		return NullVal() // Erfolg
 	})
 
+	Register(ns+"GitBlobHash", "file", "path",
+		"Berechnet den Git-Blob-SHA1 einer Datei.",
+		func(args []Value) Value {
+
+			if len(args) < 1 {
+				return ErrorVal("file.GitBlobHash(path) benötigt einen Pfad")
+			}
+
+			path, errVal := absPathVal(args[0].Str)
+			if errVal != nil {
+				return *errVal
+			}
+
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return ErrorVal("GitHash-Fehler: " + err.Error())
+			}
+
+			header := fmt.Sprintf("blob %d\x00", len(data))
+
+			h := sha1.New()
+			h.Write([]byte(header))
+			h.Write(data)
+
+			return StrVal(hex.EncodeToString(h.Sum(nil)))
+		})
+
 	// ---------------- Hash ----------------
-	Register(ns+"Hash", "file", "path [, algo]", "Berechnet den Hash einer Datei. Unterstützt 'md5' (Standard), 'sha256' und 'sha512'.", func(args []Value) Value {
-		if len(args) < 1 {
-			return ErrorVal("file.Hash(path [, algo]) benötigt mindestens einen Pfad")
-		}
-		path, errVal := absPathVal(args[0].Str)
-		if errVal != nil {
-			return *errVal
-		}
+	Register(ns+"Hash", "file", "path [, algo]",
+		"Berechnet den Hash einer Datei. Unterstützt 'md5' (Standard), 'sha1', 'sha224', 'sha256', 'sha384' und 'sha512'.",
+		func(args []Value) Value {
 
-		algo := "md5"
-		if len(args) >= 2 {
-			algo = strings.ToLower(args[1].Str)
-		}
+			if len(args) < 1 {
+				return ErrorVal("file.Hash(path [, algo]) benötigt mindestens einen Pfad")
+			}
 
-		f, err := os.Open(path)
-		if err != nil {
-			return ErrorVal("Hash-Fehler: " + err.Error())
-		}
-		defer f.Close()
+			path, errVal := absPathVal(args[0].Str)
+			if errVal != nil {
+				return *errVal
+			}
 
-		// Interface-Tricks für die verschiedenen Algos
-		var h io.Writer
-		var hashObj interface{ Sum([]byte) []byte }
+			algo := "md5"
+			if len(args) >= 2 {
+				algo = strings.ToLower(strings.TrimSpace(args[1].Str))
+			}
 
-		switch algo {
-		case "sha256":
-			s256 := sha256.New()
-			h, hashObj = s256, s256
-		case "sha512":
-			s512 := sha512.New()
-			h, hashObj = s512, s512
-		default:
-			m := md5.New()
-			h, hashObj = m, m
-		}
+			f, err := os.Open(path)
+			if err != nil {
+				return ErrorVal("Hash-Fehler: " + err.Error())
+			}
+			defer f.Close()
 
-		// Streamt die Datei direkt in den Hash-Generator
-		if _, err := io.Copy(h, f); err != nil {
-			return ErrorVal("Lesefehler beim Hashing: " + err.Error())
-		}
+			var h hash.Hash
 
-		return StrVal(hex.EncodeToString(hashObj.Sum(nil)))
-	})
+			switch algo {
+			case "md5":
+				h = md5.New()
+
+			case "sha1":
+				h = sha1.New()
+
+			case "sha224":
+				h = sha256.New224()
+
+			case "sha256":
+				h = sha256.New()
+
+			case "sha384":
+				h = sha512.New384()
+
+			case "sha512":
+				h = sha512.New()
+
+			default:
+				return ErrorVal("unbekannter Hash-Algorithmus: " + algo)
+			}
+
+			if _, err := io.Copy(h, f); err != nil {
+				return ErrorVal("Lesefehler beim Hashing: " + err.Error())
+			}
+
+			return StrVal(hex.EncodeToString(h.Sum(nil)))
+		})
 
 	// ---------------- Rename ----------------
 	Register(ns+"Rename", "file", "alt, neu", "Benennt eine Datei um.", func(args []Value) Value {
