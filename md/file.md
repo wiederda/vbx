@@ -53,6 +53,18 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
 
 ---
 
+## file.AppendLine(path, line)
+- **Konkret:**
+  Hängt eine Zeile an eine Datei an. Fügt automatisch einen Zeilenumbruch (`\n`) ein.
+  Erstellt die Datei, falls sie noch nicht existiert. Das Zielverzeichnis muss vorhanden sein.
+- **Parameter:**
+  - `path`: Zieldatei.
+  - `line`: Anzuhängende Zeile (ohne eigenen Zeilenumbruch).
+- **Rückgabe:**
+  `BoolVal` (`true`) bei Erfolg, `ErrorVal` bei Fehler.
+
+---
+
 ## file.Exists(path)
 - **Konkret:**
   Prüft, ob eine Datei unter dem angegebenen Pfad existiert.
@@ -71,7 +83,7 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   - `path`: Zu löschende Datei.
 - **Rückgabe:**
   `ArrVal`
-  Format: `[OK, Msg]`
+  Format: `[OK, Msg]`. Bei Erfolg ist `Msg` immer `Null` (auch wenn intern eine leere Meldung übergeben wird).
 
 ---
 
@@ -111,6 +123,7 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   - `newPath`: Neuer Pfad.
 - **Rückgabe:**
   `NullVal`
+- **Hinweis:** Anders als `file.Move` gibt es hier **keinen** Cross-Drive-Fallback und **keine** Prüfung, ob `newPath` bereits existiert – Verhalten bei existierendem Ziel ist plattformabhängig.
 
 ---
 
@@ -144,7 +157,7 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   Streamt die Datei direkt in den Hash-Generator (speichereffizient).
 - **Parameter:**
   - `path`: Zieldatei.
-  - `algo`: Algorithmus. Unterstützt `"md5"` (Standard), `"sha256"`, `"sha512"`.
+  - `algo`: Algorithmus. Unterstützt `"md5"` (Standard), `"sha1"`, `"sha224"`, `"sha256"`, `"sha384"`, `"sha512"`.
 - **Rückgabe:**
   `StrVal`
   Hex-kodierter Hash-String.
@@ -205,6 +218,29 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
 - **Rückgabe:**
   `ArrVal`
   Array von `StrVal`-Einträgen, ein Eintrag pro Zeile.
+
+---
+
+## file.LineCount(path)
+- **Konkret:**
+  Gibt die Anzahl der Zeilen einer Textdatei zurück.
+  Nutzt Shared-Access (Windows-kompatibel), unterstützt Zeilen bis 1 MB Länge.
+- **Parameter:**
+  - `path`: Quelldatei.
+- **Rückgabe:**
+  `NumVal`, `ErrorVal` bei Lesefehler.
+
+---
+
+## file.Head(path, n)
+- **Konkret:**
+  Gibt die ersten `n` Zeilen einer Datei zurück.
+  Nutzt Shared-Access (Windows-kompatibel), unterstützt Zeilen bis 1 MB Länge.
+- **Parameter:**
+  - `path`: Quelldatei.
+  - `n`: Anzahl Zeilen (Max: 5000, analog zu `file.Tail`).
+- **Rückgabe:**
+  `ArrVal`, `ErrorVal` bei Lesefehler.
 
 ---
 
@@ -295,8 +331,8 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   - `path`: Quelldatei.
   - `prefix`: Präfix (z. B. `"Port="`).
 - **Rückgabe:**
-  `StrVal`
-  Wert nach dem Präfix, oder leerer String wenn nicht gefunden.
+  `StrVal` – Wert nach dem Präfix, oder leerer String wenn nicht gefunden. `ErrorVal` bei echtem Lesefehler (z. B. Datei fehlt).
+- **Fix:** Der Pfad läuft jetzt über `absPathVal` (vorher ungeprüft) – gleiche Absicherung wie bei den übrigen `file.*`-Funktionen. Außerdem war "nicht gefunden" vorher nicht von "Datei nicht lesbar" unterscheidbar (beides `""`); jetzt liefert ein Lesefehler `ErrorVal`.
 
 ---
 
@@ -311,6 +347,7 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
 - **Rückgabe:**
   `BoolVal`
   `true` = Zeile gefunden und ersetzt, `false` = nicht gefunden.
+- **Fix:** Der Pfad läuft jetzt über `absPathVal` (vorher ungeprüft).
 
 ---
 
@@ -336,7 +373,8 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   - `caseSensitive`: `BoolVal` – ob Groß-/Kleinschreibung berücksichtigt wird.
 - **Rückgabe:**
   `ArrVal`
-  Array der duplizierten Zeilen (als `StrVal`).
+  Array der duplizierten Zeilen (als `StrVal`), **alphabetisch sortiert**.
+- **Fix:** Vorher war die Reihenfolge undeterministisch (Go-Map-Iteration); jetzt wird vor der Rückgabe sortiert.
 
 ---
 
@@ -349,7 +387,7 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   - `lines`: Anzahl der Zeilen (Standard: 10, Max: 5000).
   - `refresh`: Aktualisierungsintervall (z. B. `"1s"`, `"500ms"` oder Zahl in ms).
 - **Rückgabe:**
-  `StrVal` (ohne Refresh) oder `NullVal` (mit Refresh, blockierend).
+  `StrVal` (ohne Refresh) oder `NullVal` (mit Refresh, blockierend – kehrt nur zurück, wenn die Datei währenddessen verschwindet).
 
 ---
 
@@ -393,11 +431,13 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
 ## file.Base64Encode(inFile, outFile)
 - **Konkret:**
   Liest eine Datei ein und speichert sie Base64-kodiert in einer neuen Datei.
+  Das Zielverzeichnis muss vorhanden sein.
 - **Parameter:**
   - `inFile`: Quelldatei.
   - `outFile`: Zieldatei.
 - **Rückgabe:**
   `NullVal`
+- **Fix:** Prüft jetzt wie `file.Base64Decode`, ob das Zielverzeichnis existiert, bevor geschrieben wird (vorher fehlte dieser Check, was zu einem rohen OS-Fehler statt einer sprechenden Meldung führte).
 
 ---
 
@@ -413,14 +453,16 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
 
 ---
 
-## file.CreateSymlink(target, linkPath)
+## file.CreateSymlink(target, linkPath, [replaceExisting])
 - **Konkret:**
   Erstellt einen symbolischen Link auf eine Datei.
 - **Parameter:**
   - `target`: Ziel des Symlinks.
   - `linkPath`: Pfad des zu erstellenden Links.
+  - `replaceExisting`: Optional, `BoolVal` (Standard `false`). Steuert, ob ein bereits vorhandener Link/Datei an `linkPath` ersetzt wird.
 - **Rückgabe:**
   `BoolVal`
+- **Fix:** Der dritte Parameter wurde bisher entgegengenommen, aber ignoriert (`createSymlinkInternal` erhielt intern immer `false`). Er wird jetzt tatsächlich ausgewertet und durchgereicht.
 
 ---
 
@@ -464,72 +506,3 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   - Beliebig viele Segmente als `StrVal`.
 - **Rückgabe:**
   `StrVal`
-
----
-
-## file.ReadLines(path)
-- **Konkret:**
-  Liest eine Textdatei und gibt alle Zeilen als Array zurück.
-  Leerzeilen am Ende werden entfernt.
-- **Parameter:**
-  - `path`: Pfad zur Datei.
-- **Rückgabe:**
-  `ArrVal`
-  Array von `StrVal`-Einträgen. Leer bei Lesefehler.
-
----
-
-## file.LineCount(path)
-- **Konkret:**
-  Gibt die Anzahl der Zeilen einer Textdatei zurück.
-- **Parameter:**
-  - `path`: Pfad zur Datei.
-- **Rückgabe:**
-  `NumVal`, `ErrorVal` bei Lesefehler.
-
----
-
-## file.Head(path, n)
-- **Konkret:**
-  Gibt die ersten `n` Zeilen einer Datei zurück.
-- **Parameter:**
-  - `path`: Pfad zur Datei.
-  - `n`: Anzahl Zeilen.
-- **Rückgabe:**
-  `ArrVal`, `ErrorVal` bei Lesefehler.
-
----
-
-## file.Tail(path, n)
-- **Konkret:**
-  Gibt die letzten `n` Zeilen einer Datei zurück.
-- **Parameter:**
-  - `path`: Pfad zur Datei.
-  - `n`: Anzahl Zeilen.
-- **Rückgabe:**
-  `ArrVal`, `ErrorVal` bei Lesefehler.
-
----
-
-## file.AppendLine(path, line)
-- **Konkret:**
-  Hängt eine Zeile an eine bestehende Datei an.
-  Erstellt die Datei wenn sie noch nicht existiert.
-  Fügt automatisch einen Zeilenumbruch ein.
-- **Parameter:**
-  - `path`: Pfad zur Datei.
-  - `line`: Anzuhängende Zeile.
-- **Rückgabe:**
-  `BoolVal` (`true`) bei Erfolg, `ErrorVal` bei Fehler.
-
----
-
-## file.ReplaceAfterRun(path)
-- **Konkret:**
-  Ersetzt das laufende Skript nach dessen Beendigung mit einer neuen Version.
-  Die neue Datei muss bereits vorhanden sein wenn die Funktion aufgerufen wird.
-  Typischer Usecase: Skript lädt ein Update via `net.Download` und tauscht sich selbst aus.
-- **Parameter:**
-  - `path`: Pfad zur neuen Version.
-- **Rückgabe:**
-  `BoolVal` (`true`) bei Erfolg, `ErrorVal` wenn Datei nicht gefunden.

@@ -18,6 +18,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -148,11 +149,17 @@ func InitFileFunctions() {
 		})
 
 	// --- Namespace: file. ---
-	Register(ns+"CreateSymlink", "file", "target, linkPath, bool", "Erstellt einen Symlink auf eine DATEI.", func(args []Value) Value {
+	Register(ns+"CreateSymlink", "file", "target, linkPath, [replaceExisting]", "Erstellt einen Symlink auf eine DATEI.", func(args []Value) Value {
 		if len(args) < 2 {
-			return ErrorVal("file.CreateSymlink(target, linkPath) benötigt 2 Pfade")
+			return ErrorVal("file.CreateSymlink(target, linkPath, [replaceExisting]) benötigt mindestens 2 Pfade")
 		}
-		return createSymlinkInternal(args[0].Str, args[1].Str, false)
+
+		replaceExisting := false
+		if len(args) >= 3 {
+			replaceExisting = args[2].Bool
+		}
+
+		return createSymlinkInternal(args[0].Str, args[1].Str, replaceExisting)
 	})
 
 	// ---------------- Base64Encode ----------------
@@ -167,6 +174,11 @@ func InitFileFunctions() {
 		}
 		if e2 != nil {
 			return *e2
+		}
+
+		// Zielverzeichnis muss existieren
+		if _, err := os.Stat(filepath.Dir(outFile)); err != nil {
+			return ErrorVal("Zielverzeichnis existiert nicht: " + filepath.Dir(outFile))
 		}
 
 		in, err := os.Open(inFile)
@@ -527,7 +539,7 @@ func InitFileFunctions() {
 	})
 
 	// ---------------- Replace / ReplaceAll ----------------
-	Register(ns+"Replace", "file", "text, alt, neu", "Ersetzt das erste Vorkommen von alt durch neu.", func(args []Value) Value {
+	Register(ns+"Replace", "file", "path, alt, neu", "Ersetzt das erste Vorkommen von alt durch neu.", func(args []Value) Value {
 		if len(args) < 3 {
 			return ErrorVal("file.Replace(path, pattern, newContent) benötigt 3 Argumente")
 		}
@@ -692,7 +704,7 @@ func InitFileFunctions() {
 		return Value{Kind: KindArr, Arr: stringSliceToValueSlice(results)}
 	})
 
-	Register(ns+"ReplaceAll", "file", "text, alt, neu", "Ersetzt alle Vorkommen von alt durch neu.", func(args []Value) Value {
+	Register(ns+"ReplaceAll", "file", "path, alt, neu", "Ersetzt alle Vorkommen von alt durch neu.", func(args []Value) Value {
 		if len(args) < 3 {
 			return ErrorVal("file.ReplaceAll(path, old, new) benötigt 3 Argumente")
 		}
@@ -882,6 +894,37 @@ func InitFileFunctions() {
 		return NullVal()
 	})
 
+	// ------------------------
+	// AppendLine
+	// ------------------------
+	Register(ns+"AppendLine", "file", "path, line", "Hängt eine Zeile an eine Datei an (fügt automatisch einen Zeilenumbruch ein, erstellt die Datei falls nötig).", func(args []Value) Value {
+		if len(args) < 2 {
+			return ErrorVal("file.AppendLine(path, line) benötigt Pfad und Zeile")
+		}
+
+		path, errVal := absPathVal(args[0].Str)
+		if errVal != nil {
+			return *errVal
+		}
+
+		// Verzeichnis muss existieren
+		if _, err := os.Stat(filepath.Dir(path)); err != nil {
+			return ErrorVal("Verzeichnis existiert nicht: " + filepath.Dir(path))
+		}
+
+		f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return ErrorVal("Datei konnte nicht geöffnet werden: " + err.Error())
+		}
+		defer f.Close()
+
+		if _, err := f.WriteString(args[1].Str + "\n"); err != nil {
+			return ErrorVal("Schreibfehler beim Anhängen: " + err.Error())
+		}
+
+		return BoolVal(true)
+	})
+
 	// ---------------- ReadAllLines ----------------
 	Register(ns+"ReadAllLines", "file", "pfad", "Liest eine Textdatei zeilenweise in ein Array.", func(args []Value) Value {
 		if len(args) < 1 {
@@ -915,6 +958,80 @@ func InitFileFunctions() {
 			Kind: KindArr,
 			Arr:  stringSliceToValueSlice(lines),
 		}
+	})
+
+	// ---------------- LineCount ----------------
+	Register(ns+"LineCount", "file", "path", "Gibt die Anzahl der Zeilen einer Textdatei zurück.", func(args []Value) Value {
+		if len(args) < 1 {
+			return ErrorVal("file.LineCount benötigt einen Pfad")
+		}
+
+		path, errVal := absPathVal(args[0].Str)
+		if errVal != nil {
+			return *errVal
+		}
+
+		file, err := openFileShared(path)
+		if err != nil {
+			return ErrorVal("Datei konnte nicht geöffnet werden: " + err.Error())
+		}
+		defer file.Close()
+
+		scanner := bufio.NewScanner(file)
+		buf := make([]byte, 64*1024)
+		scanner.Buffer(buf, 1024*1024) // 1MB Zeilen-Limit, konsistent mit file.Search
+
+		count := 0
+		for scanner.Scan() {
+			count++
+		}
+
+		if err := scanner.Err(); err != nil {
+			return ErrorVal("Fehler beim Zählen der Zeilen (Zeile zu lang?): " + err.Error())
+		}
+
+		return NumVal(float64(count))
+	})
+
+	// ---------------- Head ----------------
+	Register(ns+"Head", "file", "path, n", "Gibt die ersten n Zeilen einer Datei zurück.", func(args []Value) Value {
+		if len(args) < 2 {
+			return ErrorVal("file.Head(path, n) benötigt Pfad und Zeilenanzahl")
+		}
+
+		path, errVal := absPathVal(args[0].Str)
+		if errVal != nil {
+			return *errVal
+		}
+
+		n := int(toNumVal(args[1]))
+		if n <= 0 {
+			return Value{Kind: KindArr, Arr: []Value{}}
+		}
+		if n > 5000 {
+			n = 5000 // konsistent mit dem Limit von file.Tail
+		}
+
+		file, err := openFileShared(path)
+		if err != nil {
+			return ErrorVal("Datei konnte nicht geöffnet werden: " + err.Error())
+		}
+		defer file.Close()
+
+		scanner := bufio.NewScanner(file)
+		buf := make([]byte, 64*1024)
+		scanner.Buffer(buf, 1024*1024) // 1MB Zeilen-Limit, konsistent mit file.Search
+
+		var results []string
+		for scanner.Scan() && len(results) < n {
+			results = append(results, scanner.Text())
+		}
+
+		if err := scanner.Err(); err != nil {
+			return ErrorVal("Fehler beim Lesen (Zeile zu lang?): " + err.Error())
+		}
+
+		return Value{Kind: KindArr, Arr: stringSliceToValueSlice(results)}
 	})
 
 	// ---------------- ReadAllText ----------------
@@ -1008,7 +1125,7 @@ func InitFileFunctions() {
 	// ------------------------
 	// Pfad zusammensetzen
 	// ------------------------
-	Register(ns+"Join", "file", "pfad, teil", "Verbindet zwei Pfadsegmente sicher miteinander.", func(args []Value) Value {
+	Register(ns+"Join", "file", "pfad, teil, ...", "Verbindet beliebig viele Pfadsegmente sicher miteinander.", func(args []Value) Value {
 		if len(args) < 2 {
 			return Value{Kind: KindStr, Str: ""}
 		}
@@ -1283,7 +1400,10 @@ func InitFileFunctions() {
 				return ErrorVal("Parameter: Pfad, Suche/Eindeutiger String, Neuer Wert")
 			}
 
-			path := ToString(args[0])
+			path, errVal := absPathVal(ToString(args[0]))
+			if errVal != nil {
+				return *errVal
+			}
 			search := ToString(args[1])
 			newValue := ToString(args[2])
 
@@ -1339,12 +1459,15 @@ func InitFileFunctions() {
 				return ErrorVal("Parameter: Pfad, Präfix")
 			}
 
-			path := ToString(args[0])
+			path, errVal := absPathVal(ToString(args[0]))
+			if errVal != nil {
+				return *errVal
+			}
 			prefix := ToString(args[1])
 
 			input, err := os.ReadFile(path)
 			if err != nil {
-				return StrVal("")
+				return ErrorVal("Lesefehler: " + err.Error())
 			}
 
 			// Normalisierung auf LF und Splitten
@@ -1418,7 +1541,7 @@ func InitFileFunctions() {
 		return BoolVal(true)
 	})
 
-	Register(ns+"GetDuplicates", "file", "path, caseSensitive", "Findet doppelte Zeilen und gibt sie als Array zurück.", func(args []Value) Value {
+	Register(ns+"GetDuplicates", "file", "path, caseSensitive", "Findet doppelte Zeilen und gibt sie als Array zurück (alphabetisch sortiert).", func(args []Value) Value {
 		if len(args) < 2 {
 			return ErrorVal("file.GetDuplicates(path, caseSensitive) benötigt 2 Argumente")
 		}
@@ -1439,7 +1562,6 @@ func InitFileFunctions() {
 		// 2. Zeilenweise zählen
 		lines := strings.Split(string(content), "\n")
 		counts := make(map[string]int)
-		var duplicates []Value // Wir geben ein Array von VBMini-Values zurück
 
 		// Erst alle vorkommen zählen
 		for _, line := range lines {
@@ -1456,10 +1578,19 @@ func InitFileFunctions() {
 		}
 
 		// 3. Nur die Einträge sammeln, die öfter als 1x vorkommen
+		dupeLines := make([]string, 0, len(counts))
 		for line, count := range counts {
 			if count > 1 {
-				duplicates = append(duplicates, StrVal(line))
+				dupeLines = append(dupeLines, line)
 			}
+		}
+
+		// Deterministische Reihenfolge, da Map-Iteration in Go nicht stabil ist
+		sort.Strings(dupeLines)
+
+		duplicates := make([]Value, len(dupeLines))
+		for i, line := range dupeLines {
+			duplicates[i] = StrVal(line)
 		}
 
 		return ArrVal(duplicates)
