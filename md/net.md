@@ -46,7 +46,7 @@ Dient zur Kommunikation über HTTP, TCP und DNS sowie zur Abfrage lokaler und ex
   Speichert den HTTP-Statuscode intern (abrufbar via `net.LastStatus`).
 - **Parameter:**
   - `url`: Ziel-URL.
-  - `token`: Optional. Auth-Token. Unterstützte Präfixe: `"gl:"` (GitLab), `"gh:"` (GitHub), `"b:"` (Bearer erzwungen). Ohne Präfix: Bearer.
+  - `token`: Optional. Auth-Token, siehe [Auth-Token-Präfixe](#auth-token-präfixe).
 - **Rückgabe:**
   `StrVal` (Response-Body), leerer String bei Fehler.
 
@@ -70,6 +70,7 @@ Dient zur Kommunikation über HTTP, TCP und DNS sowie zur Abfrage lokaler und ex
 - **Konkret:**
   Sendet eine Multipart-POST-Anfrage mit `title` und `message` als Formularfelder.
   Geeignet für Push-Dienste wie Gotify.
+  Achtung: `token` wird hier direkt als URL-Parameter angehängt – **keine** Präfix-Logik wie bei `net.Get`/`net.Download`.
 - **Parameter:**
   - `url`: Basis-URL des Dienstes.
   - `token`: Auth-Token (wird als URL-Parameter angehängt).
@@ -82,15 +83,41 @@ Dient zur Kommunikation über HTTP, TCP und DNS sowie zur Abfrage lokaler und ex
 
 ## net.Download(url [, path, token])
 - **Konkret:**
-  Lädt eine Datei herunter.
-  Ohne Pfadangabe wird der Dateiname aus der URL abgeleitet.
-  Kein Timeout – geeignet für große Dateien.
+  Lädt eine Datei per HTTP-GET herunter und speichert sie lokal.
+  Ohne Pfadangabe wird der Dateiname aus dem letzten Segment der URL abgeleitet (Fallback: `"downloaded_file"`).
+  Kein Timeout (`Timeout: 0`) – geeignet für große Dateien, ein hängender Download blockiert aber unbegrenzt.
+  Es wird kein Verzeichnis automatisch angelegt; das Zielverzeichnis muss existieren. Eine bereits vorhandene Datei am Zielpfad wird ohne Rückfrage überschrieben.
+  Der `User-Agent`-Header ist fest auf `"VBX/1.0"` gesetzt.
 - **Parameter:**
   - `url`: Download-URL.
-  - `path`: Optional. Zielpfad inkl. Dateiname.
-  - `token`: Optional. Auth-Token (gleiche Präfixe wie `net.Get`).
+  - `path`: Optional. Zielpfad inkl. Dateiname. Relative Pfade werden über `absPathVal` aufgelöst.
+  - `token`: Optional. Auth-Token, siehe [Auth-Token-Präfixe](#auth-token-präfixe).
 - **Rückgabe:**
-  `BoolVal`
+  `ArrVal` `[Bool, String]`
+  Erfolg: `[True, ""]`
+  Fehler: `[False, Fehlermeldung]` – u. a. bei fehlender/leerer URL, ungültigem Zielpfad, HTTP-Statuscode ≠ 200, oder Lese-/Schreibfehlern.
+
+---
+
+## Auth-Token-Präfixe
+
+Gilt für den `token`-Parameter von `net.Get` und `net.Download` (intern: `setAuthHeader`). Die Präfixe sind case-sensitive und werden per `strings.HasPrefix` erkannt, danach wird der Präfix entfernt und der Rest als Header-Wert verwendet.
+
+| Präfix | Header | Beispiel | Verwendung |
+|--------|--------|----------|------------|
+| `gl:`  | `PRIVATE-TOKEN: <wert>` | `"gl:glpat-xxx"` | GitLab Personal Access Token |
+| `gh:`  | `Authorization: Bearer <wert>` | `"gh:ghp_xxx"` | GitHub Token |
+| `b:`   | `Authorization: Bearer <wert>` | `"b:mein-token"` | Bearer-Token erzwingen |
+| `a:`   | `Authorization: <wert>` (unverändert) | `"a:Basic dXNlcjpwYXNz"` | Kompletter, selbst zusammengesetzter Authorization-Header |
+| *(kein Präfix)* | `Authorization: Bearer <wert>` | `"mein-token"` | Standardfall: Bearer |
+
+Ist `token` leer (nach Trim), wird **kein** Auth-Header gesetzt.
+
+```vb
+result = net.Get(url, "gh:" & githubToken)
+result = net.Download(url, path, "gl:" & gitlabToken)
+result = net.Download(url, path, "a:" & "Basic " & base64Cred)
+```
 
 ---
 
