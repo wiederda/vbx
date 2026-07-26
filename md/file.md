@@ -164,6 +164,18 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
 
 ---
 
+## file.GitBlobHash(path)
+- **Konkret:**
+  Berechnet den Git-Blob-SHA1 einer Datei – kompatibel zu `git hash-object`.
+  Es wird der git-übliche `"blob <Länge>\0"`-Header vor den Dateiinhalt gehasht.
+- **Parameter:**
+  - `path`: Zieldatei.
+- **Rückgabe:**
+  `StrVal`
+  Hex-kodierter SHA1-String, `ErrorVal` bei Lesefehler.
+
+---
+
 ## file.ModTime(path)
 - **Konkret:**
   Gibt den Zeitpunkt der letzten Änderung einer Datei zurück.
