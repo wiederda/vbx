@@ -7,10 +7,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"html"
 	"io"
-	"mime/multipart"
 	"net"
 	"net/http"
 	"os"
@@ -308,9 +308,9 @@ func InitNetFunctions() {
 		return NumVal(float64(resp.StatusCode))
 	})
 
-	Register(ns+"PostForm", "net", "url, token, title, message", "Sendet eine Multipart-POST-Anfrage (z.B. für Push-Dienste).", func(args []Value) Value {
+	Register(ns+"PostForm", "net", "url, token, title, message [, link]", "Sendet eine JSON-POST-Anfrage (z.B. für Push-Dienste wie Gotify). Optional kann ein Link angehängt werden, der als Markdown-Link und als klickbare Notification-Aktion gesetzt wird.", func(args []Value) Value {
 		if len(args) < 4 {
-			return ErrorVal("net.PostForm(url, token, title, message) benötigt 4 Argumente")
+			return ErrorVal("net.PostForm(url, token, title, message [, link]) benötigt mindestens 4 Argumente")
 		}
 
 		baseURL := strings.TrimRight(strings.TrimSpace(ToString(args[0])), "/")
@@ -318,38 +318,58 @@ func InitNetFunctions() {
 		title := ToString(args[2])
 		message := ToString(args[3])
 
+		var link string
+		if len(args) >= 5 {
+			link = strings.TrimSpace(ToString(args[4]))
+			if link != "" {
+				message += fmt.Sprintf("\n\n[%s](%s)", link, link)
+			}
+		}
+
 		postURL := fmt.Sprintf("%s/message?token=%s", baseURL, token)
 
-		var buf bytes.Buffer
-		writer := multipart.NewWriter(&buf)
-		_ = writer.WriteField("title", title)
-		_ = writer.WriteField("message", message)
-		writer.Close()
+		payload := map[string]interface{}{
+			"title":   title,
+			"message": message,
+		}
 
-		req, err := http.NewRequest("POST", postURL, &buf)
+		if link != "" {
+			payload["extras"] = map[string]interface{}{
+				"client::display": map[string]string{
+					"contentType": "text/markdown",
+				},
+				"client::notification": map[string]interface{}{
+					"click": map[string]string{
+						"url": link,
+					},
+				},
+			}
+		}
+
+		jsonBody, err := json.Marshal(payload)
+		if err != nil {
+			return ErrorVal("JSON-Kodierung fehlgeschlagen: " + err.Error())
+		}
+
+		req, err := http.NewRequest("POST", postURL, bytes.NewReader(jsonBody))
 		if err != nil {
 			return ErrorVal("Request-Erstellung fehlgeschlagen: " + err.Error())
 		}
 
-		// Header mit Boundary setzen
-		req.Header.Set("Content-Type", writer.FormDataContentType())
+		req.Header.Set("Content-Type", "application/json")
 
 		client := &http.Client{Timeout: 10 * time.Second}
 		resp, err := client.Do(req)
-
-		// Sicherheit-Check: Wenn Netzwerkfehler (err != nil), ist resp meist nil
 		if err != nil {
 			lastHttpStatus = 0
 			return ErrorVal("Netzwerkfehler: " + err.Error())
 		}
-
-		// Ab hier ist resp garantiert nicht nil
 		defer resp.Body.Close()
+
 		lastHttpStatus = resp.StatusCode
 
 		body, _ := io.ReadAll(resp.Body)
 
-		// Fehlerbehandlung für HTTP-Statuscodes (4xx, 5xx)
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			return ErrorVal(fmt.Sprintf("Status %d: %s", resp.StatusCode, string(body)))
 		}
@@ -403,91 +423,91 @@ func InitNetFunctions() {
 	// Download(url, [path], [token])
 	// =============================
 	Register(ns+"Download", "net", "url, [path], [token]",
-	"Lädt eine Datei herunter. Gibt [True/False, Fehlermeldung] zurück.",
-	func(args []Value) Value {
+		"Lädt eine Datei herunter. Gibt [True/False, Fehlermeldung] zurück.",
+		func(args []Value) Value {
 
-		errorResult := func(msg string) Value {
-			return ArrVal([]Value{
-				BoolVal(false),
-				StrVal(msg),
-			})
-		}
-
-		successResult := func() Value {
-			return ArrVal([]Value{
-				BoolVal(true),
-				StrVal(""),
-			})
-		}
-
-		if len(args) < 1 {
-			return errorResult("URL fehlt")
-		}
-
-		u := strings.TrimSpace(ToString(args[0]))
-		if u == "" {
-			return errorResult("URL ist leer")
-		}
-
-		var p string
-
-		if len(args) >= 2 && strings.TrimSpace(ToString(args[1])) != "" {
-			absP, eVal := absPathVal(ToString(args[1]))
-			if eVal != nil {
-				return errorResult(ToString(*eVal))
+			errorResult := func(msg string) Value {
+				return ArrVal([]Value{
+					BoolVal(false),
+					StrVal(msg),
+				})
 			}
-			p = absP
-		} else {
-			parts := strings.Split(u, "/")
-			p = parts[len(parts)-1]
 
-			if p == "" {
-				p = "downloaded_file"
+			successResult := func() Value {
+				return ArrVal([]Value{
+					BoolVal(true),
+					StrVal(""),
+				})
 			}
-		}
 
-		req, err := http.NewRequest("GET", u, nil)
-		if err != nil {
-			return errorResult(err.Error())
-		}
+			if len(args) < 1 {
+				return errorResult("URL fehlt")
+			}
 
-		req.Header.Set("User-Agent", "VBX/1.0")
+			u := strings.TrimSpace(ToString(args[0]))
+			if u == "" {
+				return errorResult("URL ist leer")
+			}
 
-		if len(args) >= 3 {
-			setAuthHeader(req, ToString(args[2]))
-		}
+			var p string
 
-		dlClient := &http.Client{
-			Timeout: 0,
-		}
+			if len(args) >= 2 && strings.TrimSpace(ToString(args[1])) != "" {
+				absP, eVal := absPathVal(ToString(args[1]))
+				if eVal != nil {
+					return errorResult(ToString(*eVal))
+				}
+				p = absP
+			} else {
+				parts := strings.Split(u, "/")
+				p = parts[len(parts)-1]
 
-		resp, err := dlClient.Do(req)
-		if err != nil {
-			return errorResult(err.Error())
-		}
+				if p == "" {
+					p = "downloaded_file"
+				}
+			}
 
-		defer resp.Body.Close()
+			req, err := http.NewRequest("GET", u, nil)
+			if err != nil {
+				return errorResult(err.Error())
+			}
 
-		if resp.StatusCode != http.StatusOK {
-			return errorResult(
-				fmt.Sprintf("HTTP %d: %s", resp.StatusCode, resp.Status),
-			)
-		}
+			req.Header.Set("User-Agent", "VBX/1.0")
 
-		file, err := os.Create(p)
-		if err != nil {
-			return errorResult(err.Error())
-		}
+			if len(args) >= 3 {
+				setAuthHeader(req, ToString(args[2]))
+			}
 
-		defer file.Close()
+			dlClient := &http.Client{
+				Timeout: 0,
+			}
 
-		_, err = io.Copy(file, resp.Body)
-		if err != nil {
-			return errorResult(err.Error())
-		}
+			resp, err := dlClient.Do(req)
+			if err != nil {
+				return errorResult(err.Error())
+			}
 
-		return successResult()
-	})
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				return errorResult(
+					fmt.Sprintf("HTTP %d: %s", resp.StatusCode, resp.Status),
+				)
+			}
+
+			file, err := os.Create(p)
+			if err != nil {
+				return errorResult(err.Error())
+			}
+
+			defer file.Close()
+
+			_, err = io.Copy(file, resp.Body)
+			if err != nil {
+				return errorResult(err.Error())
+			}
+
+			return successResult()
+		})
 
 	Register(ns+"Html", "Encode", "text",
 		"Ersetzt Sonderzeichen wie Umlaute und HTML-Tags durch Entities (z.B. &auml;).",

@@ -66,18 +66,28 @@ Dient zur Kommunikation über HTTP, TCP und DNS sowie zur Abfrage lokaler und ex
 
 ---
 
-## net.PostForm(url, token, title, message)
+## net.PostForm(url, token, title, message [, link])
 - **Konkret:**
-  Sendet eine Multipart-POST-Anfrage mit `title` und `message` als Formularfelder.
+  Sendet eine JSON-POST-Anfrage mit `title` und `message` als Felder.
   Geeignet für Push-Dienste wie Gotify.
+  Optional kann ein `link` übergeben werden: Er wird als Markdown-Link (`[link](link)`) an `message` angehängt und zusätzlich über `extras` gesetzt – `client::display` (Content-Type `text/markdown`, damit der Link in der Nachrichtenliste als echter Hyperlink gerendert wird) sowie `client::notification` (macht die Notification selbst anklickbar, öffnet `link` beim Antippen).
   Achtung: `token` wird hier direkt als URL-Parameter angehängt – **keine** Präfix-Logik wie bei `net.Get`/`net.Download`.
 - **Parameter:**
   - `url`: Basis-URL des Dienstes.
   - `token`: Auth-Token (wird als URL-Parameter angehängt).
   - `title`: Nachrichtentitel.
   - `message`: Nachrichtentext.
+  - `link`: Optional. Link, der an die Nachricht angehängt und über `extras` klickbar gemacht wird (siehe oben).
 - **Rückgabe:**
   `StrVal` (Response-Body), `ErrorVal` bei Fehler oder HTTP 4xx/5xx.
+
+```vb
+' Ohne Link
+net.PostForm(url, token, "Titel", "Nachricht")
+
+' Mit klickbarem Link
+net.PostForm(url, token, "Titel", "Nachricht", "https://example.com")
+```
 
 ---
 
