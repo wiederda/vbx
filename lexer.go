@@ -35,9 +35,7 @@ var keywords = map[string]TokenType{
 	"function": FUNCTION,
 	"return":   RETURN,
 	"in":       IN,
-	//"newline":  NEWLINE,
-	//"wend":     WEND,
-	"include": INCLUDE,
+	"include":  INCLUDE,
 
 	"true":  BOOL,
 	"false": BOOL,

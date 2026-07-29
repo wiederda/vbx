@@ -8,19 +8,41 @@ import (
 )
 
 // ---------------- Main ----------------
+
 // RunFile lädt, validiert, entschlüsselt und führt ein Skript aus.
-func RunFile(filename string) (err error) {
+func RunFile(filename string) error {
+	_, err := runFileInternal(filename, false)
+	return err
+}
+
+// CanExecuteFile lädt, validiert, entschlüsselt und parst ein Skript - GENAU wie
+// RunFile, aber ohne es auszuführen (evalStatements wird übersprungen). Nutzt
+// dieselbe Pipeline wie RunFile, damit ein Skript pro Aufruf nur einmal geparst
+// wird, egal ob man es nur prüfen oder direkt ausführen will.
+func CanExecuteFile(filename string) error {
+	_, err := runFileInternal(filename, true)
+	return err
+}
+
+// runFileInternal ist die gemeinsame Pipeline für RunFile und CanExecuteFile.
+// Bei validateOnly=true wird nach dem Parsen (inkl. registerFuncsAndSubs)
+// abgebrochen, bevor evalStatements läuft - es gibt also keine Ausführung und
+// keine Seiteneffekte. Ein Fehler (Rückgabewert err) bedeutet in beiden Modi:
+// "Skript kann/darf so nicht ausgeführt werden".
+func runFileInternal(filename string, validateOnly bool) (finalVal Value, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			// Wir wandeln die Panic in einen Rückgabewert 'err' um
-			// Das verhindert den hässlichen Stacktrace
+			// Das verhindert den hässlichen Stacktrace UND verhindert,
+			// dass ein kaputtes Skript den Prozess hängen/abstürzen lässt.
 			err = fmt.Errorf("[SYNTAX ERROR] %v", r)
 		}
 	}()
+
 	// 1. Pfad absichern
 	absName, errVal := absPathVal(filename)
 	if errVal != nil {
-		return fmt.Errorf("[SECURITY ERROR]: %s", errVal.Str)
+		return Value{}, fmt.Errorf("[SECURITY ERROR]: %s", errVal.Str)
 	}
 	filename = absName
 	currentScriptName = filepath.Base(filename)
@@ -28,25 +50,33 @@ func RunFile(filename string) (err error) {
 	// STUFE 1: Endungsprüfung
 	ext := strings.ToLower(filepath.Ext(filename))
 	if ext != ".vb" && ext != ".vbc" {
-		return fmt.Errorf("zugriff verweigert: '%s' ist kein gültiges Format", filename)
+		return Value{}, fmt.Errorf("zugriff verweigert: '%s' ist kein gültiges Format", filename)
 	}
 
 	// Datei einlesen
 	data, err := os.ReadFile(filename)
 	if err != nil {
-		return fmt.Errorf("lesefehler: %v", err)
+		return Value{}, fmt.Errorf("lesefehler: %v", err)
 	}
 
 	// STUFE 2: Entschlüsselung bei .vbc
 	if ext == ".vbc" {
 		magic := "VBC!"
 		if len(data) < len(magic) || string(data[:len(magic)]) != magic {
-			return fmt.Errorf("validierungsfehler: Header fehlt in %s", filename)
+			return Value{}, fmt.Errorf("validierungsfehler: Header fehlt in %s", filename)
 		}
 		// Entschlüsseln (Header überspringen)
 		data = crypt(data[len(magic):])
 	} else if isBinary(data) {
-		return fmt.Errorf("formatfehler: '%s' enthält ungültige Binärdaten", filename)
+		return Value{}, fmt.Errorf("formatfehler: '%s' enthält ungültige Binärdaten", filename)
+	}
+
+	// STUFE 3: Zusätzliche Sanity-Checks für offensichtlich falsche Inhalte
+	// (z.B. HTML-Fehlerseite statt Git-Rohdatei nach einem net.Download).
+	// Läuft in BEIDEN Modi, damit RunFile ein kaputtes Skript auch ohne
+	// vorherigen CanExecuteFile-Aufruf gar nicht erst versucht auszuführen.
+	if reason, ok := looksLikeScript(data); !ok {
+		return Value{}, fmt.Errorf("formatfehler: '%s' - %s", filename, reason)
 	}
 
 	lines := strings.Split(string(data), "\n")
@@ -69,7 +99,7 @@ func RunFile(filename string) (err error) {
 				// Regel 2 & 3: Prüfe, ob das Skript NEUER ist als das System
 				if isVersionGreater(reqVer, Version) {
 					// Regel 2: Skript 1.1.63 auf 1.1.62 -> STOPP
-					return fmt.Errorf("inkompatibel: Skript (v%s) erfordert einen neueren vbmini (v%s)", reqVer, Version)
+					return Value{}, fmt.Errorf("inkompatibel: Skript (v%s) erfordert einen neueren vbmini (v%s)", reqVer, Version)
 				}
 				// Regel 3: Skript 1.1.63 auf 1.1.64 -> isVersionGreater ist false -> LÄUFT
 			}
@@ -78,12 +108,7 @@ func RunFile(filename string) (err error) {
 		// Regel 1: Kein #requires -> reqVer ist "" oder Präfix fehlt -> LÄUFT
 	}
 
-	// Module laden
-	if len(scriptModules) > 0 {
-		LoadModules(env, scriptModules)
-	}
-
-	// 4. Parser & Ausführung
+	// 4. Parser (ein einziges Mal, für beide Modi gemeinsam)
 	code := strings.Join(lines, "\n")
 	tokens := tokenize(code)
 	parser := &Parser{
@@ -92,8 +117,22 @@ func RunFile(filename string) (err error) {
 	}
 	stmts := parser.parse()
 
+	// Sanity-Check NACH dem Parsen: reiner Text ohne echte VBX-Befehle wirft bei
+	// einem tolerant geschriebenen Parser oft keine Panic, sondern liefert einfach
+	// 0 Statements. Das ist so gut wie nie ein echtes Skript (z.B. eine Klartext-
+	// Fehlermeldung statt der erwarteten Rohdatei nach einem net.Download).
+	if len(stmts) == 0 {
+		return Value{}, fmt.Errorf("formatfehler: '%s' enthält keine erkennbaren VBX-Anweisungen", filename)
+	}
+
 	// Funktionen/Subs registrieren
 	registerFuncsAndSubs(stmts)
+
+	// Bei reiner Validierung hier abbrechen - Parsen war erfolgreich,
+	// keine Ausführung, keine Seiteneffekte.
+	if validateOnly {
+		return Value{}, nil
+	}
 
 	// Ausführen
 	finalVal, sig := evalStatements(stmts, env)
@@ -101,11 +140,11 @@ func RunFile(filename string) (err error) {
 	// 5. Signale auswerten
 	switch sig {
 	case SignalError:
-		return fmt.Errorf("[RUNTIME ERROR] %s", finalVal.Str)
+		return Value{}, fmt.Errorf("[RUNTIME ERROR] %s", finalVal.Str)
 	case SignalExitSub, SignalExitFunction, SignalExitLoop, SignalNone:
-		return nil
+		return finalVal, nil
 	default:
-		return fmt.Errorf("[UNKNOWN SIGNAL] %v", sig)
+		return Value{}, fmt.Errorf("[UNKNOWN SIGNAL] %v", sig)
 	}
 }
 

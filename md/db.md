@@ -93,6 +93,89 @@ Verbindungen werden über einen Alias verwaltet – `db.Open` muss zuerst aufger
 
 ---
 
+## db.Insert(alias, table, columns, values)
+- **Konkret:**
+  Fügt einen einzelnen Datensatz über Spalten- und Werte-Arrays ein.
+  Dialektspezifisches Quoting und Platzhalter werden automatisch gesetzt (MSSQL: `[..]`/`@p1,@p2`; Postgres: `"..."`/`$1,$2`; sonst `"..."`/`?`).
+  `columns` und `values` müssen gleich lang sein.
+- **Parameter:**
+  - `alias`: Verbindungsalias.
+  - `table`: Zieltabelle.
+  - `columns`: Array der Spaltennamen.
+  - `values`: Array der Werte, gleiche Reihenfolge wie `columns`.
+- **Rückgabe:**
+  `BoolVal` (`true`) bei Erfolg, `ErrorVal` bei fehlenden/unpassenden Argumenten oder SQL-Fehler.
+- **Beispiel:**
+  ```vb
+  db.Insert("main", "Kunden", {"Name", "Alter"}, {"Max", "30"})
+  ```
+
+---
+
+## db.CopyTable(sourceAlias, targetAlias, sourceTable, targetTable)
+- **Konkret:**
+  Kopiert alle Zeilen einer Tabelle von einer Verbindung in eine andere.
+  Liest per `SELECT *` und schreibt zeilenweise per vorbereitetem INSERT innerhalb einer Transaktion auf der Zielverbindung.
+  Platzhalter sind fest `?` – bei Zielverbindung mit anderer Platzhaltersyntax (z. B. Postgres) aktuell nicht dialektspezifisch angepasst.
+- **Parameter:**
+  - `sourceAlias`: Alias der Quellverbindung.
+  - `targetAlias`: Alias der Zielverbindung.
+  - `sourceTable`: Quelltabelle.
+  - `targetTable`: Zieltabelle.
+- **Rückgabe:**
+  `NumVal` (Anzahl kopierter Zeilen), `ErrorVal` bei fehlenden Argumenten, unbekanntem Alias oder Fehler.
+
+---
+
+## db.SyncTable(sourceAlias, targetAlias, table, idColumn)
+- **Konkret:**
+  Gleicht eine Tabelle zwischen zwei Verbindungen ab, statt wie `db.CopyTable` den kompletten Inhalt zu übertragen.
+  Für jede Quellzeile wird per ID-Spalte ein UPDATE auf die Zielverbindung ausgeführt; betrifft das UPDATE keine Zeile, wird stattdessen ein INSERT ausgeführt.
+  Am Ende werden Zieldatensätze gelöscht, deren ID in der Quelle nicht mehr vorkommt. Ist die Quelltabelle leer, wird die Zieltabelle komplett geleert.
+  Tabellen- und Spaltenprüfung vorab (Tabelle muss in Quelle und Ziel existieren, alle Quellspalten müssen im Ziel vorhanden sein – Spaltenabgleich ist case-insensitiv).
+  Läuft komplett in einer Transaktion auf der Zielverbindung (Rollback bei jedem Fehler); UPDATE/INSERT nutzen vorbereitete Statements.
+- **Parameter:**
+  - `sourceAlias`: Alias der Quellverbindung.
+  - `targetAlias`: Alias der Zielverbindung.
+  - `table`: Tabellenname (muss in Quelle und Ziel unter gleichem Namen existieren).
+  - `idColumn`: Spalte, die als eindeutiger Schlüssel für den Abgleich dient.
+- **Rückgabe:**
+  `ArrVal` mit drei `NumVal`-Einträgen in fester Reihenfolge: `{inserts, updates, deletes}`.
+  `ErrorVal` bei fehlenden Argumenten, ungültigem Tabellen-/Spaltennamen, fehlender Tabelle/Spalte oder SQL-Fehler.
+- **Hinweise:**
+  Bei sehr großen Quelltabellen kann der abschließende `DELETE ... WHERE idColumn NOT IN (...)`-Schritt an Parameter-Limits des Zieltreibers stoßen (MSSQL: ca. 2100 Parameter pro Statement) – für solche Fälle ggf. IDs in Batches aufteilen lassen.
+
+---
+
+## db.SyncTables(sourceAlias, targetAlias, idColumn, table1, table2, ...)
+- **Konkret:**
+  Synchronisiert mehrere Tabellen in einem Aufruf, jede über `syncTable()` (gleiche Logik wie `db.SyncTable`).
+  Alle übergebenen Tabellen teilen sich dieselbe ID-Spalte (`idColumn`). Für Tabellen mit abweichendem ID-Spaltennamen `db.SyncTable` einzeln aufrufen.
+  Bricht beim ersten Fehler sofort ab (keine Teilabarbeitung der restlichen Tabellen) und meldet, welche Tabelle betroffen war.
+- **Parameter:**
+  - `sourceAlias`: Alias der Quellverbindung.
+  - `targetAlias`: Alias der Zielverbindung.
+  - `idColumn`: Gemeinsame ID-Spalte für alle folgenden Tabellen.
+  - `table1, table2, ...`: Beliebig viele Tabellennamen (mindestens einer).
+- **Rückgabe:**
+  `ArrVal`. Ein Eintrag pro Tabelle als `{Tabellenname, inserts, updates, deletes}`, plus ein abschließender Summeneintrag `{"Gesamt", totalInserts, totalUpdates, totalDeletes}`.
+  `ErrorVal` (mit vorangestelltem Tabellennamen) bei fehlenden Argumenten oder falls eine der Tabellen fehlschlägt.
+
+---
+
+## db.ClearTable(alias, table)
+- **Konkret:**
+  Löscht alle Datensätze einer Tabelle.
+  MSSQL und SQLite: `DELETE FROM table`.
+  Postgres: `TRUNCATE TABLE table RESTART IDENTITY CASCADE` (setzt Sequenzen zurück, löscht kaskadierend abhängige Zeilen).
+- **Parameter:**
+  - `alias`: Verbindungsalias.
+  - `table`: Zu leerende Tabelle.
+- **Rückgabe:**
+  `BoolVal` (`true`) bei Erfolg, `ErrorVal` bei unbekanntem Alias, nicht unterstütztem Treiber oder SQL-Fehler.
+
+---
+
 ## db.Count(alias, table [, filter, val])
 - **Konkret:**
   Zählt Zeilen in einer Tabelle.

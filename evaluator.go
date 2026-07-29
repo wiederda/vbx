@@ -58,9 +58,8 @@ type Value struct {
 	Bool  bool
 	Arr   []Value
 	Arr2D [][]Value
-	//Obj   interface{}
-	Obj *Object
-	Map map[string]Value // <-- neu
+	Obj   *Object
+	Map   map[string]Value // <-- neu
 }
 
 type CaseBranch struct {

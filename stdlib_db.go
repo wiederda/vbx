@@ -15,17 +15,6 @@ import (
 	_ "modernc.org/sqlite"               // SQLCipher (ersetzt das normale sqlite3)
 )
 
-var connections = make(map[string]*sql.DB)
-var drivers = make(map[string]string)
-var validNameMSSQL = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
-
-// SQLRunner erlaubt es uns, Funktionen zu schreiben, die sowohl
-// mit einer DB-Verbindung als auch mit einer Transaktion arbeiten.
-type SQLRunner interface {
-	Exec(query string, args ...interface{}) (sql.Result, error)
-	Query(query string, args ...interface{}) (*sql.Rows, error)
-}
-
 func InitDBFunctions() {
 	if builtins == nil {
 		builtins = make(map[string]BuiltinInfo)
@@ -83,6 +72,330 @@ func InitDBFunctions() {
 		drivers[alias] = driver
 
 		return BoolVal(true) // WICHTIG für deine VB-Abfrage!
+	})
+
+	Register(ns+"Insert", "db", "alias, table, columns, values", "Fügt einen Datensatz in eine Tabelle ein.", func(args []Value) Value {
+		if len(args) < 4 {
+			return ErrorVal("alias, table, columns und values benötigt")
+		}
+
+		alias := strings.ToLower(args[0].Str)
+		table := args[1].Str
+
+		if !isSafeDBName(table) {
+			return ErrorVal("Ungültiger Tabellenname: " + table)
+		}
+
+		db, driver, err := getConn(alias)
+		if err != nil {
+			return ErrorVal(err.Error())
+		}
+
+		columns := args[2].Arr
+		values := args[3].Arr
+
+		if len(columns) == 0 || len(columns) != len(values) {
+			return ErrorVal("columns und values müssen gleiche Länge haben")
+		}
+
+		var colNames []string
+		var placeholders []string
+		var params []any
+
+		for i, col := range columns {
+			name := col.Str
+
+			if !isSafeDBName(name) {
+				return ErrorVal("Ungültiger Spaltenname: " + name)
+			}
+
+			colNames = append(colNames, quoteIdent(driver, name))
+
+			switch driver {
+			case "mssql", "sqlserver":
+				placeholders = append(placeholders, fmt.Sprintf("@p%d", i+1))
+			case "postgres", "pg":
+				placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
+			default:
+				placeholders = append(placeholders, "?")
+			}
+
+			params = append(params, valueToSQL(values[i]))
+		}
+
+		sqlText := fmt.Sprintf(
+			"INSERT INTO %s (%s) VALUES (%s)",
+			quoteIdent(driver, table),
+			strings.Join(colNames, ","),
+			strings.Join(placeholders, ","),
+		)
+
+		_, err = db.Exec(sqlText, params...)
+		if err != nil {
+			return ErrorVal("Insert failed: " + err.Error())
+		}
+
+		return BoolVal(true)
+	})
+
+	Register(ns+"CopyTable", "db", "sourceAlias, targetAlias, sourceTable, targetTable", "Kopiert Daten zwischen zwei geöffneten Datenbankverbindungen.", func(args []Value) Value {
+
+		if len(args) < 4 {
+			return ErrorVal("db.CopyTable(sourceAlias, targetAlias, sourceTable, targetTable) benötigt 4 Argumente")
+		}
+
+		sourceAlias := strings.ToLower(args[0].Str)
+		targetAlias := strings.ToLower(args[1].Str)
+
+		sourceTable := args[2].Str
+		targetTable := args[3].Str
+
+		if !isSafeDBName(sourceTable) {
+			return ErrorVal("Ungültiger Quelltabellenname: " + sourceTable)
+		}
+		if !isSafeDBName(targetTable) {
+			return ErrorVal("Ungültiger Zieltabellenname: " + targetTable)
+		}
+
+		src, srcDriver, err := getConn(sourceAlias)
+		if err != nil {
+			return ErrorVal("Quellverbindung nicht gefunden: " + sourceAlias)
+		}
+
+		dst, dstDriver, err := getConn(targetAlias)
+		if err != nil {
+			return ErrorVal("Zielverbindung nicht gefunden: " + targetAlias)
+		}
+
+		rows, err := src.Query("SELECT * FROM " + quoteIdent(srcDriver, sourceTable))
+		if err != nil {
+			return ErrorVal("Lesefehler " + sourceTable + ": " + err.Error())
+		}
+		defer rows.Close()
+
+		columns, err := rows.Columns()
+		if err != nil {
+			return ErrorVal("Spalten konnten nicht gelesen werden: " + err.Error())
+		}
+
+		columnTypes, err := rows.ColumnTypes()
+		if err != nil {
+			return ErrorVal("Spaltentypen konnten nicht gelesen werden: " + err.Error())
+		}
+
+		colNames := make([]string, len(columns))
+		placeholders := make([]string, len(columns))
+
+		for i, col := range columns {
+
+			colNames[i] = quoteIdent(dstDriver, col)
+
+			switch dstDriver {
+			case "mssql", "sqlserver":
+				placeholders[i] = fmt.Sprintf("@p%d", i+1)
+
+			case "postgres", "pg":
+				placeholders[i] = fmt.Sprintf("$%d", i+1)
+
+			default:
+				placeholders[i] = "?"
+			}
+		}
+
+		sqlText := fmt.Sprintf(
+			"INSERT INTO %s (%s) VALUES (%s)",
+			quoteIdent(dstDriver, targetTable),
+			strings.Join(colNames, ","),
+			strings.Join(placeholders, ","),
+		)
+
+		tx, err := dst.Begin()
+		if err != nil {
+			return ErrorVal("Transaktion konnte nicht gestartet werden: " + err.Error())
+		}
+
+		stmt, err := tx.Prepare(sqlText)
+		if err != nil {
+			tx.Rollback()
+			return ErrorVal("INSERT Vorbereitung fehlgeschlagen: " + err.Error())
+		}
+		defer stmt.Close()
+
+		count := 0
+
+		for rows.Next() {
+
+			values := make([]any, len(columns))
+			scan := make([]any, len(columns))
+
+			for i := range values {
+				scan[i] = &values[i]
+			}
+
+			if err := rows.Scan(scan...); err != nil {
+				tx.Rollback()
+				return ErrorVal("Lesefehler: " + err.Error())
+			}
+
+			params := make([]any, len(values))
+
+			for i := range values {
+				params[i] = convertDBValue(
+					srcDriver,
+					dstDriver,
+					columnTypes[i],
+					values[i],
+				)
+			}
+
+			if _, err := stmt.Exec(params...); err != nil {
+				tx.Rollback()
+				return ErrorVal("Insert Fehler: " + err.Error())
+			}
+
+			count++
+		}
+
+		if err := rows.Err(); err != nil {
+			tx.Rollback()
+			return ErrorVal(err.Error())
+		}
+
+		if err := tx.Commit(); err != nil {
+			return ErrorVal("Commit fehlgeschlagen: " + err.Error())
+		}
+
+		return NumVal(float64(count))
+	})
+
+	Register(ns+"SyncTable", "db",
+		"sourceAlias, targetAlias, table, idColumn",
+		"Synchronisiert eine Tabelle.",
+		func(args []Value) Value {
+
+			if len(args) < 4 {
+				return ErrorVal("db.SyncTable(sourceAlias,targetAlias,table,idColumn)")
+			}
+
+			result, err := syncTable(
+				args[0].Str,
+				args[1].Str,
+				args[2].Str,
+				args[3].Str,
+			)
+
+			if err != nil {
+				return ErrorVal(err.Error())
+			}
+
+			return Value{
+				Kind: KindArr,
+				Arr: []Value{
+					NumVal(float64(result.Insert)),
+					NumVal(float64(result.Update)),
+					NumVal(float64(result.Delete)),
+				},
+			}
+		})
+
+	Register(ns+"SyncTables", "db",
+		"sourceAlias, targetAlias, table1, table2, ...",
+		"Synchronisiert mehrere Tabellen.",
+		func(args []Value) Value {
+
+			if len(args) < 3 {
+				return ErrorVal("db.SyncTables benötigt Tabellen")
+			}
+
+			var result []Value
+
+			totalInsert := 0
+			totalUpdate := 0
+			totalDelete := 0
+
+			for i := 2; i < len(args); i++ {
+
+				table := args[i].Str
+
+				r, err := syncTable(
+					args[0].Str,
+					args[1].Str,
+					table,
+					table, // ID-Spalte = Tabellenname
+				)
+
+				if err != nil {
+					return ErrorVal(err.Error())
+				}
+
+				result = append(result, Value{
+					Kind: KindArr,
+					Arr: []Value{
+						StrVal(r.Table),
+						NumVal(float64(r.Insert)),
+						NumVal(float64(r.Update)),
+						NumVal(float64(r.Delete)),
+					},
+				})
+
+				totalInsert += r.Insert
+				totalUpdate += r.Update
+				totalDelete += r.Delete
+			}
+
+			result = append(result, Value{
+				Kind: KindArr,
+				Arr: []Value{
+					StrVal("Gesamt"),
+					NumVal(float64(totalInsert)),
+					NumVal(float64(totalUpdate)),
+					NumVal(float64(totalDelete)),
+				},
+			})
+
+			return Value{
+				Kind: KindArr,
+				Arr:  result,
+			}
+		})
+
+	Register(ns+"ClearTable", "db", "alias, table", "Löscht alle Daten aus einer Tabelle.", func(args []Value) Value {
+
+		if len(args) < 2 {
+			return ErrorVal("db.ClearTable(alias, table) benötigt 2 Argumente")
+		}
+
+		alias := strings.ToLower(args[0].Str)
+		table := args[1].Str
+
+		if !isSafeDBName(table) {
+			return ErrorVal("Ungültiger Tabellenname: " + table)
+		}
+
+		conn, driver, err := getConn(alias)
+		if err != nil {
+			return ErrorVal(err.Error())
+		}
+
+		var sqlText string
+
+		switch driver {
+		case "mssql", "sqlserver":
+			sqlText = "DELETE FROM " + quoteIdent(driver, table)
+		case "postgres", "pg":
+			sqlText = "TRUNCATE TABLE " + quoteIdent(driver, table) + " RESTART IDENTITY CASCADE"
+		case "sqlite", "sqlite3":
+			sqlText = "DELETE FROM " + quoteIdent(driver, table)
+		default:
+			return ErrorVal("ClearTable nicht unterstützt für: " + driver)
+		}
+
+		_, err = conn.Exec(sqlText)
+		if err != nil {
+			return ErrorVal("ClearTable Fehler: " + err.Error())
+		}
+
+		return BoolVal(true)
 	})
 
 	Register(ns+"Backup", "db", "alias, dbName, targetPath", "Internes Server-Backup via SQL.", func(args []Value) Value {

@@ -11,8 +11,540 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
+
+type SyncResult struct {
+	Table  string
+	Insert int
+	Update int
+	Delete int
+}
+
+var connections = make(map[string]*sql.DB)
+var drivers = make(map[string]string)
+var validNameMSSQL = regexp.MustCompile(`^[a-zA-Z0-9_]+$`)
+
+// SQLRunner erlaubt es uns, Funktionen zu schreiben, die sowohl
+// mit einer DB-Verbindung als auch mit einer Transaktion arbeiten.
+type SQLRunner interface {
+	Exec(query string, args ...interface{}) (sql.Result, error)
+	Query(query string, args ...interface{}) (*sql.Rows, error)
+}
+
+func quoteIdent(driver, name string) string {
+	switch driver {
+	case "postgres", "pg":
+		return `"` + name + `"`
+	default: // mssql, sqlserver, sqlite, sqlite3
+		return "[" + name + "]"
+	}
+}
+
+// placeholder liefert den positionellen SQL-Platzhalter für den jeweiligen Dialekt.
+// pos ist 1-indiziert (erster Parameter = 1).
+func placeholder(driver string, pos int) string {
+	switch driver {
+	case "mssql", "sqlserver":
+		return fmt.Sprintf("@p%d", pos)
+	case "postgres", "pg":
+		return fmt.Sprintf("$%d", pos)
+	default: // sqlite, sqlite3
+		return "?"
+	}
+}
+
+func contains(list []string, value string) bool {
+	for _, v := range list {
+		if strings.EqualFold(v, value) {
+			return true
+		}
+	}
+	return false
+}
+
+func tableExistsDB(db *sql.DB, driver string, table string) (bool, error) {
+
+	driver = strings.ToLower(driver)
+
+	switch driver {
+
+	case "sqlite", "sqlite3":
+
+		var name string
+
+		err := db.QueryRow(
+			"SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+			table,
+		).Scan(&name)
+
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+
+		return err == nil, err
+
+	case "postgres", "pg":
+
+		var exists bool
+
+		err := db.QueryRow(
+			"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name=$1)",
+			table,
+		).Scan(&exists)
+
+		return exists, err
+
+	case "mssql", "sqlserver":
+
+		var exists int
+
+		err := db.QueryRow(
+			"SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME=@p1",
+			table,
+		).Scan(&exists)
+
+		return exists > 0, err
+
+	default:
+		return false, fmt.Errorf("unsupported database driver: %s", driver)
+	}
+}
+
+func syncTable(sourceAlias string, targetAlias string, table string, idColumn string) (SyncResult, error) {
+
+	result := SyncResult{
+		Table: table,
+	}
+
+	// -------------------------------------------------
+	// Validierung
+	// -------------------------------------------------
+
+	if !isSafeDBName(table) {
+		return result, fmt.Errorf("ungültiger Tabellenname: %s", table)
+	}
+
+	if !isSafeDBName(idColumn) {
+		return result, fmt.Errorf("ungültige ID-Spalte: %s", idColumn)
+	}
+
+	// -------------------------------------------------
+	// Verbindungen holen
+	// -------------------------------------------------
+
+	src, srcDriver, err := getConn(strings.ToLower(sourceAlias))
+	if err != nil {
+		return result, fmt.Errorf("Quellverbindung nicht gefunden: %s", sourceAlias)
+	}
+
+	dst, dstDriver, err := getConn(strings.ToLower(targetAlias))
+	if err != nil {
+		return result, fmt.Errorf("Zielverbindung nicht gefunden: %s", targetAlias)
+	}
+
+	// -------------------------------------------------
+	// Tabellen prüfen
+	// -------------------------------------------------
+
+	ok, err := tableExistsDB(src, srcDriver, table)
+	if err != nil {
+		return result, err
+	}
+
+	if !ok {
+		return result, fmt.Errorf("Quelltabelle existiert nicht: %s", table)
+	}
+
+	ok, err = tableExistsDB(dst, dstDriver, table)
+	if err != nil {
+		return result, err
+	}
+
+	if !ok {
+		return result, fmt.Errorf("Zieltabelle existiert nicht: %s", table)
+	}
+
+	// -------------------------------------------------
+	// Spalten prüfen
+	// -------------------------------------------------
+
+	srcCols, err := getTableColumns(src, srcDriver, table)
+	if err != nil {
+		return result, fmt.Errorf("Quellspalten: %w", err)
+	}
+
+	dstCols, err := getTableColumns(dst, dstDriver, table)
+	if err != nil {
+		return result, fmt.Errorf("Zielspalten: %w", err)
+	}
+
+	for _, col := range srcCols {
+
+		found := false
+
+		for _, dcol := range dstCols {
+			if strings.EqualFold(col, dcol) {
+				found = true
+				break
+			}
+		}
+
+		if !found {
+			return result, fmt.Errorf(
+				"Spalte fehlt im Ziel: %s",
+				col,
+			)
+		}
+	}
+
+	// -------------------------------------------------
+	// Quelle lesen
+	// -------------------------------------------------
+
+	rows, err := src.Query(
+		"SELECT * FROM " + quoteIdent(srcDriver, table),
+	)
+
+	if err != nil {
+		return result, err
+	}
+
+	defer rows.Close()
+
+	columns, err := rows.Columns()
+	if err != nil {
+		return result, err
+	}
+
+	idIndex := -1
+
+	for i, col := range columns {
+		if strings.EqualFold(col, idColumn) {
+			idIndex = i
+			break
+		}
+	}
+
+	if idIndex < 0 {
+		return result,
+			fmt.Errorf("ID-Spalte nicht gefunden: %s", idColumn)
+	}
+
+	// -------------------------------------------------
+	// SQL vorbereiten
+	// -------------------------------------------------
+
+	var setClauses []string
+
+	pos := 0
+
+	for i, col := range columns {
+
+		if i == idIndex {
+			continue
+		}
+
+		pos++
+
+		setClauses = append(
+			setClauses,
+			quoteIdent(dstDriver, col)+"="+placeholder(dstDriver, pos),
+		)
+	}
+
+	updateSQL := fmt.Sprintf(
+		"UPDATE %s SET %s WHERE %s=%s",
+		quoteIdent(dstDriver, table),
+		strings.Join(setClauses, ","),
+		quoteIdent(dstDriver, idColumn),
+		placeholder(dstDriver, pos+1),
+	)
+
+	var insertCols []string
+	var insertValues []string
+
+	for i, col := range columns {
+
+		insertCols = append(
+			insertCols,
+			quoteIdent(dstDriver, col),
+		)
+
+		insertValues = append(
+			insertValues,
+			placeholder(dstDriver, i+1),
+		)
+	}
+
+	insertSQL := fmt.Sprintf(
+		"INSERT INTO %s (%s) VALUES (%s)",
+		quoteIdent(dstDriver, table),
+		strings.Join(insertCols, ","),
+		strings.Join(insertValues, ","),
+	)
+
+	// -------------------------------------------------
+	// Transaktion
+	// -------------------------------------------------
+
+	tx, err := dst.Begin()
+	if err != nil {
+		return result, err
+	}
+
+	updateStmt, err := tx.Prepare(updateSQL)
+	if err != nil {
+		tx.Rollback()
+		return result, err
+	}
+
+	defer updateStmt.Close()
+
+	insertStmt, err := tx.Prepare(insertSQL)
+	if err != nil {
+		tx.Rollback()
+		return result, err
+	}
+
+	defer insertStmt.Close()
+
+	var sourceIDs []any
+
+	// -------------------------------------------------
+	// Daten abgleichen
+	// -------------------------------------------------
+
+	for rows.Next() {
+
+		values := make([]any, len(columns))
+		scan := make([]any, len(columns))
+
+		for i := range values {
+			scan[i] = &values[i]
+		}
+
+		if err := rows.Scan(scan...); err != nil {
+			tx.Rollback()
+			return result, err
+		}
+
+		idValue := values[idIndex]
+
+		sourceIDs = append(sourceIDs, idValue)
+
+		var updateValues []any
+
+		for i, v := range values {
+
+			if i == idIndex {
+				continue
+			}
+
+			updateValues = append(updateValues, v)
+		}
+
+		updateValues = append(updateValues, idValue)
+
+		res, err := updateStmt.Exec(updateValues...)
+
+		if err != nil {
+			tx.Rollback()
+			return result, err
+		}
+
+		affected, _ := res.RowsAffected()
+
+		if affected == 0 {
+
+			_, err := insertStmt.Exec(values...)
+
+			if err != nil {
+				tx.Rollback()
+				return result, err
+			}
+
+			result.Insert++
+
+		} else {
+
+			result.Update++
+
+		}
+	}
+
+	// -------------------------------------------------
+	// Löschen verwaister Datensätze
+	// -------------------------------------------------
+
+	if len(sourceIDs) == 0 {
+
+		_, err := tx.Exec(
+			"DELETE FROM " + quoteIdent(dstDriver, table),
+		)
+
+		if err != nil {
+			tx.Rollback()
+			return result, err
+		}
+
+	} else {
+
+		params := make([]string, len(sourceIDs))
+
+		for i := range sourceIDs {
+			params[i] = placeholder(dstDriver, i+1)
+		}
+
+		sqlText := fmt.Sprintf(
+			"DELETE FROM %s WHERE %s NOT IN (%s)",
+			quoteIdent(dstDriver, table),
+			quoteIdent(dstDriver, idColumn),
+			strings.Join(params, ","),
+		)
+
+		res, err := tx.Exec(sqlText, sourceIDs...)
+
+		if err != nil {
+			tx.Rollback()
+			return result, err
+		}
+
+		deleted, _ := res.RowsAffected()
+
+		result.Delete = int(deleted)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return result, err
+	}
+
+	return result, nil
+}
+
+func getTableColumns(db *sql.DB, driver string, table string) ([]string, error) {
+
+	var query string
+
+	switch driver {
+
+	case "sqlite", "sqlite3":
+		query = "PRAGMA table_info(" + quoteIdent(driver, table) + ")"
+
+	case "postgres", "pg":
+		query = `
+			SELECT column_name 
+			FROM information_schema.columns
+			WHERE table_name = $1
+			ORDER BY ordinal_position
+		`
+
+	case "mssql", "sqlserver":
+		query = `
+			SELECT COLUMN_NAME
+			FROM INFORMATION_SCHEMA.COLUMNS
+			WHERE TABLE_NAME = @p1
+			ORDER BY ORDINAL_POSITION
+		`
+
+	default:
+		return nil, fmt.Errorf("nicht unterstützter Treiber: %s", driver)
+	}
+
+	rows, err := db.Query(query, table)
+
+	if err != nil {
+		return nil, err
+	}
+
+	defer rows.Close()
+
+	var columns []string
+
+	switch driver {
+
+	case "sqlite", "sqlite3":
+
+		for rows.Next() {
+
+			var cid int
+			var name string
+			var typ string
+			var notnull int
+			var dflt any
+			var pk int
+
+			err := rows.Scan(
+				&cid,
+				&name,
+				&typ,
+				&notnull,
+				&dflt,
+				&pk,
+			)
+
+			if err != nil {
+				return nil, err
+			}
+
+			columns = append(columns, name)
+		}
+
+	default:
+
+		for rows.Next() {
+
+			var name string
+
+			if err := rows.Scan(&name); err != nil {
+				return nil, err
+			}
+
+			columns = append(columns, name)
+		}
+	}
+
+	return columns, rows.Err()
+}
+
+func convertDBValue(srcDriver, dstDriver string, col *sql.ColumnType, value any) any {
+
+	dbType := strings.ToUpper(col.DatabaseTypeName())
+
+	switch v := value.(type) {
+
+	case nil:
+		return nil
+
+	case []byte:
+		// Binärdaten unverändert übernehmen
+		switch dbType {
+		case "VARBINARY", "IMAGE", "BLOB", "BYTEA", "BINARY":
+			return v
+		}
+
+		// Alle anderen []byte (z.B. VARCHAR bei manchen Treibern)
+		// als String behandeln.
+		return string(v)
+
+	case time.Time:
+		return v
+
+	case bool:
+		// SQLite kennt keinen echten Bool
+		if dstDriver == "sqlite" || dstDriver == "sqlite3" {
+			if v {
+				return 1
+			}
+			return 0
+		}
+		return v
+
+	default:
+		return value
+	}
+}
 
 // readSQLFile prüft die Endung und liest den Inhalt der SQL-Datei ein
 func readSQLFile(path string) (string, error) {
@@ -352,4 +884,27 @@ func processTargetPath(p string) (string, *Value) {
 		return "", errVal // errVal ist hier bereits ein *Value, also ist nil-Check erlaubt
 	}
 	return abs, nil
+}
+
+func valueToSQL(v Value) any {
+	switch v.Kind {
+
+	case KindStr:
+		return v.Str
+
+	case KindNum:
+		return v.Num
+
+	case KindBool:
+		return v.Bool
+
+	case KindNull:
+		return nil
+
+	case KindArr:
+		return nil
+
+	default:
+		return v.Str
+	}
 }

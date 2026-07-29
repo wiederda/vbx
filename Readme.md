@@ -12,7 +12,7 @@ VBX besteht aus drei Hauptkomponenten:
 * **Modul-System** – Erweiterungen für Netzwerk, Kryptografie, Datenbanken und mehr
 * **Shell-Interface** – Direkte Ausführung von Funktionen über die Kommandozeile
 
-Über 500 Funktionen stehen zur Verfügung, ohne den Kern unnötig aufzublähen.
+Über 550 Funktionen stehen zur Verfügung, ohne den Kern unnötig aufzublähen.
 
 ---
 
@@ -73,6 +73,20 @@ Eigenschaften:
 * automatische Log-Datei
 * unterstützt `.vb` und `.vbc`
 * ideal für Dienste und Daemons
+
+---
+
+## Ausführungsschutz
+
+VBX prüft jede Datei vor der Ausführung – nicht nur anhand der Dateiendung.
+
+Eigenschaften:
+
+* erkennt Binärdaten, ungültiges Encoding und leere Dateien
+* erkennt typische Fehl-Downloads (z. B. eine HTML-Fehlerseite oder eine GitHub/GitLab-API-JSON-Antwort statt der eigentlichen Rohdatei)
+* parst das komplette Skript, bevor auch nur eine Zeile ausgeführt wird
+* Syntaxfehler werden sauber abgefangen, statt den Prozess abstürzen oder hängen zu lassen
+* besonders relevant für automatisierte Update-/Deploy-Skripte
 
 ---
 
@@ -392,7 +406,7 @@ Print vbBold() & vbYellow() & "Wichtig" & vbNormal()
 ## Stile
 
 | Konstante       | Beschreibung                       |
-|-----------------|------------------------------------|
+|-----------------|-------------------------------------|
 | `vbBold()`      | Fett                               |
 | `vbUnderline()` | Unterstrichen                      |
 | `vbNormal()`    | Alle Stile und Farben zurücksetzen |
