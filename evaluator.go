@@ -359,19 +359,34 @@ func evalFunctionCall(name string, args []Expr, env *Environment) Value {
 	}
 
 	// --- 4. User-defined FUNCTION ---
+	// --- 4. User-defined FUNCTION ---
 	if fn, ok := funcs[name]; ok {
-		if len(evaluated) != len(fn.Params) {
-			return ErrorVal(fmt.Sprintf("Funktion '%s' erwartet %d Argumente, erhalten: %d",
-				name, len(fn.Params), len(evaluated)))
+		required := 0
+		for _, p := range fn.Params {
+			if !p.IsOptional {
+				required++
+			}
+		}
+		if len(evaluated) < required || len(evaluated) > len(fn.Params) {
+			return ErrorVal(fmt.Sprintf("Funktion '%s' erwartet %d bis %d Argumente, erhalten: %d",
+				name, required, len(fn.Params), len(evaluated)))
 		}
 
 		local := NewEnvironment(env)
 		local.PutInternal("_fnReturn", NumVal(0))
 		local.PutInternal("_currentFuncName", Value{Kind: KindStr, Str: name})
 
-		// Da die Länge oben geprüft wurde, können wir direkt zuweisen
 		for i, p := range fn.Params {
-			local.PutInternal(p, evaluated[i])
+			if i < len(evaluated) {
+				local.PutInternal(p.Name, evaluated[i])
+			} else {
+				// Fehlendes optionales Argument -> Default im Aufruf-Scope auswerten
+				defVal := evalExpr(p.Default, local)
+				if defVal.Kind == KindError {
+					return defVal
+				}
+				local.PutInternal(p.Name, defVal)
+			}
 		}
 
 		_, sig := evalStatements(fn.Body, local)
@@ -384,15 +399,30 @@ func evalFunctionCall(name string, args []Expr, env *Environment) Value {
 	}
 
 	// --- 5. User-defined SUB ---
+	// --- 5. User-defined SUB ---
 	if s, ok := subs[name]; ok {
-		if len(evaluated) != len(s.Params) {
-			return ErrorVal(fmt.Sprintf("Sub '%s' erwartet %d Argumente, erhalten: %d",
-				name, len(s.Params), len(evaluated)))
+		required := 0
+		for _, p := range s.Params {
+			if !p.IsOptional {
+				required++
+			}
+		}
+		if len(evaluated) < required || len(evaluated) > len(s.Params) {
+			return ErrorVal(fmt.Sprintf("Sub '%s' erwartet %d bis %d Argumente, erhalten: %d",
+				name, required, len(s.Params), len(evaluated)))
 		}
 
 		local := NewEnvironment(env)
 		for i, p := range s.Params {
-			local.PutInternal(p, evaluated[i])
+			if i < len(evaluated) {
+				local.PutInternal(p.Name, evaluated[i])
+			} else {
+				defVal := evalExpr(p.Default, local)
+				if defVal.Kind == KindError {
+					return defVal
+				}
+				local.PutInternal(p.Name, defVal)
+			}
 		}
 
 		_, sig := evalStatements(s.Body, local)

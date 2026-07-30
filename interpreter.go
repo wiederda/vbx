@@ -162,12 +162,13 @@ type ForNode struct {
 }
 type SubNode struct {
 	Name   string
-	Params []string
+	Params []ParamDef
 	Body   []Stmt
 }
+
 type FuncNode struct {
 	Name   string
-	Params []string
+	Params []ParamDef
 	Body   []Stmt
 }
 type CallNode struct {

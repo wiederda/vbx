@@ -184,7 +184,7 @@ Immer verfügbar:
 VBX verwendet dynamische Typisierung. Der Typ wird automatisch aus dem Wert bestimmt.
 
 | Typ     | Beschreibung                    |
-| ------- | ------------------------------- |
+| ------- | -------------------------------- |
 | Number  | Ganzzahlen und Fließkommazahlen |
 | String  | Zeichenketten                   |
 | Boolean | Wahr/Falsch                     |
@@ -234,7 +234,7 @@ VBX verwendet dynamische Typisierung. Der Typ wird automatisch aus dem Wert best
 ### Erweiterte Zuweisung
 
 | Operator | Bedeutung                    |
-|----------|------------------------------|
+|----------|-------------------------------|
 | `+=`     | Addieren und zuweisen        |
 | `-=`     | Subtrahieren und zuweisen    |
 | `*=`     | Multiplizieren und zuweisen  |
@@ -245,7 +245,7 @@ VBX verwendet dynamische Typisierung. Der Typ wird automatisch aus dem Wert best
 # Klammern
 
 | Typ   | Verwendung                              |
-|-------|-----------------------------------------|
+|-------|-------------------------------------------|
 | `( )` | Funktionsaufruf, Array-Zugriff via Index |
 | `[ ]` | Array- und Map-Zugriff via Index        |
 | `{ }` | Array-Literal (statische Listenwerte)   |
@@ -317,6 +317,48 @@ VBX gibt beim Shadowing einen Hinweis aus.
 
 ---
 
+# Optionale Parameter
+
+Sub und Function unterstützen optionale Parameter mit Default-Wert über `Optional`.
+
+```vbx
+Sub Greet(name, Optional greeting = "Hallo")
+    Print greeting & ", " & name & "!"
+End Sub
+
+Greet("Max")              ' Hallo, Max!
+Greet("Max", "Servus")    ' Servus, Max!
+```
+
+* Optionale Parameter müssen **nach** allen Pflichtparametern stehen
+* `= wert` allein (ohne das Schlüsselwort `Optional`) macht einen Parameter ebenfalls optional
+* Der Default-Ausdruck wird bei jedem Aufruf neu ausgewertet und kann auf vorherige Parameter derselben Signatur zugreifen:
+
+```vbx
+Sub ShowDouble(x, Optional y = x * 2)
+    Print x & " / " & y
+End Sub
+
+ShowDouble(5)        ' 5 / 10
+ShowDouble(5, 100)   ' 5 / 100
+```
+
+* Mehrere optionale Parameter sind erlaubt:
+
+```vbx
+Function Add(a, b, Optional c = 0, Optional d = 0)
+    Add = a + b + c + d
+End Function
+
+Print Add(1, 2)          ' 3
+Print Add(1, 2, 3)        ' 6
+Print Add(1, 2, 3, 4)     ' 10
+```
+
+* Wird ein Aufruf mit zu wenigen Pflichtargumenten oder zu vielen Argumenten gemacht, liefert VBX einen Fehler mit der erwarteten Argumentanzahl (`min` bis `max`)
+
+---
+
 # Maps
 
 Maps speichern Schlüssel/Wert-Paare. Sie entstehen über Funktionen wie `json.FromJSON` oder `map.Create`.
@@ -362,7 +404,7 @@ Print vbBold() & vbYellow() & "Wichtig" & vbNormal()
 ## Logik
 
 | Konstante        | Wert    | Beschreibung  |
-|------------------|---------|---------------|
+|------------------|---------|----------------|
 | `vbTrue()`       | `true`  | Wahr          |
 | `vbFalse()`      | `false` | Falsch        |
 | `vbNullString()` | `""`    | Leerer String |
@@ -370,7 +412,7 @@ Print vbBold() & vbYellow() & "Wichtig" & vbNormal()
 ## Formatierung
 
 | Konstante     | Wert   | Beschreibung              |
-|---------------|--------|---------------------------|
+|---------------|--------|-----------------------------|
 | `vbCrLf()`    | `\r\n` | Windows-Zeilenumbruch     |
 | `vbNewLine()` | `\n`   | System-Zeilenumbruch      |
 | `vbTab()`     | `\t`   | Tabulator                 |
@@ -393,7 +435,7 @@ Print vbBold() & vbYellow() & "Wichtig" & vbNormal()
 ## Hintergrundfarben
 
 | Konstante        | Beschreibung        |
-|------------------|---------------------|
+|------------------|-----------------------|
 | `vbBgBlack()`    | Hintergrund Schwarz |
 | `vbBgRed()`      | Hintergrund Rot     |
 | `vbBgGreen()`    | Hintergrund Grün    |
@@ -406,7 +448,7 @@ Print vbBold() & vbYellow() & "Wichtig" & vbNormal()
 ## Stile
 
 | Konstante       | Beschreibung                       |
-|-----------------|-------------------------------------|
+|-----------------|---------------------------------------|
 | `vbBold()`      | Fett                               |
 | `vbUnderline()` | Unterstrichen                      |
 | `vbNormal()`    | Alle Stile und Farben zurücksetzen |
@@ -416,7 +458,7 @@ Print vbBold() & vbYellow() & "Wichtig" & vbNormal()
 # Kontrollstrukturen – Übersicht
 
 | Struktur    | Syntax-Skelett | Abschluss |
-|-------------|---------------|-----------|
+|-------------|-----------------|-----------|
 | If          | `If bed Then` … `[ElseIf bed Then …]` `[Else …]` | `End If` |
 | Select Case | `Select Case ausdruck` `Case wert / wert1, wert2 / x To y / Is > x` `[Case Else]` | `End Select` |
 | For         | `For i = start To end [Step n]` | `Next [i]` |
@@ -424,8 +466,8 @@ Print vbBold() & vbYellow() & "Wichtig" & vbNormal()
 | While       | `While bed` | `End While` |
 | Do Loop     | `Do [While/Until bed]` … `Loop [While/Until bed]` | `Loop` |
 | Exit        | `Exit For` / `Exit While` / `Exit Do` / `Exit Sub` / `Exit Function` | – |
-| Sub         | `Sub Name(param1, param2)` | `End Sub` |
-| Function    | `Function Name(param1, param2)` … `Return wert` oder `Name = wert` | `End Function` |
+| Sub         | `Sub Name(param1, param2 [, Optional param3 = wert])` | `End Sub` |
+| Function    | `Function Name(param1, param2 [, Optional param3 = wert])` … `Return wert` oder `Name = wert` | `End Function` |
 | Cls         | `Cls()` | – |
 | Print       | `Print wert` | – |
 

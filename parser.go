@@ -23,6 +23,12 @@ type ForEachNode struct {
 	Body     []Stmt // Anweisungen in der Schleife
 }
 
+type ParamDef struct {
+	Name       string
+	IsOptional bool
+	Default    Expr // nil, wenn kein Default angegeben
+}
+
 type PublicNode struct {
 	Name  string
 	Value Expr
@@ -465,23 +471,54 @@ func (p *Parser) parseExpr() Expr {
 }
 
 // Parameterliste
-func (p *Parser) parseParams() []string {
-	var params []string
+func (p *Parser) parseParams() []ParamDef {
+	var params []ParamDef
 	if p.peek().Type != LPAREN {
 		return params
 	}
-	p.next()
+	p.next() // '(' konsumieren
+
+	seenOptional := false
+
 	for p.peek().Type != RPAREN {
+		isOptional := false
+
+		// "Optional" ist bei dir kein eigenes Token, sondern ein IDENT mit diesem Wert
+		if p.peek().Type == IDENT && strings.EqualFold(p.peek().Value, "Optional") {
+			p.next()
+			isOptional = true
+		}
+
 		t := p.next()
 		if t.Type != IDENT {
 			p.error("Erwartet Parametername")
 		}
-		params = append(params, t.Value)
+		name := t.Value
+
+		var def Expr
+		if p.peek().Type == EQ {
+			p.next() // '=' konsumieren
+			def = p.parseExpr()
+			isOptional = true // '= Wert' macht den Parameter implizit optional
+		}
+
+		if isOptional {
+			seenOptional = true
+			if def == nil {
+				// "Optional x" ohne "= Wert" -> Fallback-Default
+				def = &NumberNode{Value: 0}
+			}
+		} else if seenOptional {
+			p.error("Pflichtparameter '%s' darf nicht nach einem optionalen Parameter stehen", name)
+		}
+
+		params = append(params, ParamDef{Name: name, IsOptional: isOptional, Default: def})
+
 		if p.peek().Type == COMMA {
 			p.next()
 		}
 	}
-	p.next()
+	p.next() // ')' konsumieren
 	p.skipStuff()
 	return params
 }
