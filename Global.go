@@ -920,11 +920,39 @@ func InitGlobal() {
 			// Custom-Zahlenformate (0, #, . ,)
 			if strings.ContainsAny(style, "0#.,") {
 				dec := 0
+				intDigits := 0
 				if idx := strings.IndexAny(style, ".,"); idx != -1 {
 					dec = len(style) - idx - 1
+					intDigits = strings.Count(style[:idx], "0")
+				} else {
+					intDigits = strings.Count(style, "0")
 				}
+
 				p := message.NewPrinter(language.German)
-				return StrVal(p.Sprintf("%.*f", dec, val.Num))
+				formatted := p.Sprintf("%.*f", dec, val.Num)
+
+				// Führende Nullen für den Integer-Teil auffüllen
+				if intDigits > 0 {
+					negative := strings.HasPrefix(formatted, "-")
+					if negative {
+						formatted = formatted[1:]
+					}
+					intPart := formatted
+					rest := ""
+					if idx := strings.IndexAny(formatted, ".,"); idx != -1 {
+						intPart = formatted[:idx]
+						rest = formatted[idx:]
+					}
+					for len(intPart) < intDigits {
+						intPart = "0" + intPart
+					}
+					formatted = intPart + rest
+					if negative {
+						formatted = "-" + formatted
+					}
+				}
+
+				return StrVal(formatted)
 			}
 		}
 
