@@ -269,12 +269,17 @@ func InitDBFunctions() {
 	})
 
 	Register(ns+"SyncTable", "db",
-		"sourceAlias, targetAlias, table, idColumn",
-		"Synchronisiert eine Tabelle.",
+		"sourceAlias, targetAlias, table, idColumn [, batchSize]",
+		"Synchronisiert eine Tabelle. Schreibt nur bei echter inhaltlicher Änderung. batchSize (Default 500) bestimmt, alle wie viele Zeilen committet wird.",
 		func(args []Value) Value {
 
 			if len(args) < 4 {
-				return ErrorVal("db.SyncTable(sourceAlias,targetAlias,table,idColumn)")
+				return ErrorVal("db.SyncTable(sourceAlias,targetAlias,table,idColumn [, batchSize])")
+			}
+
+			batchSize := 0 // 0 -> syncTable() nutzt intern den Default (500)
+			if len(args) >= 5 {
+				batchSize = int(toNumVal(args[4]))
 			}
 
 			result, err := syncTable(
@@ -282,6 +287,7 @@ func InitDBFunctions() {
 				args[1].Str,
 				args[2].Str,
 				args[3].Str,
+				batchSize,
 			)
 
 			if err != nil {
@@ -294,13 +300,14 @@ func InitDBFunctions() {
 					NumVal(float64(result.Insert)),
 					NumVal(float64(result.Update)),
 					NumVal(float64(result.Delete)),
+					NumVal(float64(result.Unchanged)),
 				},
 			}
 		})
 
 	Register(ns+"SyncTables", "db",
 		"sourceAlias, targetAlias, table1, table2, ...",
-		"Synchronisiert mehrere Tabellen.",
+		"Synchronisiert mehrere Tabellen (nutzt intern den Default-batchSize von 500). Schreibt nur bei echter inhaltlicher Änderung.",
 		func(args []Value) Value {
 
 			if len(args) < 3 {
@@ -312,6 +319,7 @@ func InitDBFunctions() {
 			totalInsert := 0
 			totalUpdate := 0
 			totalDelete := 0
+			totalUnchanged := 0
 
 			for i := 2; i < len(args); i++ {
 
@@ -322,6 +330,7 @@ func InitDBFunctions() {
 					args[1].Str,
 					table,
 					table, // ID-Spalte = Tabellenname
+					0,     // Default-batchSize (500)
 				)
 
 				if err != nil {
@@ -335,12 +344,14 @@ func InitDBFunctions() {
 						NumVal(float64(r.Insert)),
 						NumVal(float64(r.Update)),
 						NumVal(float64(r.Delete)),
+						NumVal(float64(r.Unchanged)),
 					},
 				})
 
 				totalInsert += r.Insert
 				totalUpdate += r.Update
 				totalDelete += r.Delete
+				totalUnchanged += r.Unchanged
 			}
 
 			result = append(result, Value{
@@ -350,6 +361,7 @@ func InitDBFunctions() {
 					NumVal(float64(totalInsert)),
 					NumVal(float64(totalUpdate)),
 					NumVal(float64(totalDelete)),
+					NumVal(float64(totalUnchanged)),
 				},
 			})
 

@@ -127,39 +127,52 @@ Verbindungen werden über einen Alias verwaltet – `db.Open` muss zuerst aufger
 
 ---
 
-## db.SyncTable(sourceAlias, targetAlias, table, idColumn)
+## db.SyncTable(sourceAlias, targetAlias, table, idColumn [, batchSize])
 - **Konkret:**
-  Gleicht eine Tabelle zwischen zwei Verbindungen ab, statt wie `db.CopyTable` den kompletten Inhalt zu übertragen.
-  Für jede Quellzeile wird per ID-Spalte ein UPDATE auf die Zielverbindung ausgeführt; betrifft das UPDATE keine Zeile, wird stattdessen ein INSERT ausgeführt.
-  Am Ende werden Zieldatensätze gelöscht, deren ID in der Quelle nicht mehr vorkommt. Ist die Quelltabelle leer, wird die Zieltabelle komplett geleert.
-  Tabellen- und Spaltenprüfung vorab (Tabelle muss in Quelle und Ziel existieren, alle Quellspalten müssen im Ziel vorhanden sein – Spaltenabgleich ist case-insensitiv).
-  Läuft komplett in einer Transaktion auf der Zielverbindung (Rollback bei jedem Fehler); UPDATE/INSERT nutzen vorbereitete Statements.
+  Synchronisiert eine einzelne Tabelle von der Quell- zur Zieldatenbank.
+  Tabellen- und Spaltennamen werden case-insensitive aufgelöst (z. B. funktioniert die Synchronisation zwischen einer MSSQL-Tabelle `Hoerspiel` und einer Postgres-Tabelle `hoerspiel` ohne manuelle Anpassung).
+  Jede Quellzeile wird mit der entsprechenden Zielzeile (per ID) verglichen. Nur bei tatsächlicher inhaltlicher Abweichung wird ein `UPDATE` ausgeführt; identische Zeilen werden übersprungen und zählen als `unchanged`. Zeilen, deren ID im Ziel nicht existiert, werden per `INSERT` angelegt. Zeilen, deren ID im Ziel existiert, aber nicht mehr in der aktuellen Quellmenge vorkommt, werden per `DELETE` entfernt.
+  Die Verarbeitung läuft in Batches: alle `batchSize` Zeilen wird ein Commit ausgeführt, statt die komplette Synchronisation in einer einzigen langen Transaktion zu halten (vermeidet unnötiges WAL-Wachstum und lang gehaltene Locks bei großen Tabellen).
 - **Parameter:**
-  - `sourceAlias`: Alias der Quellverbindung.
-  - `targetAlias`: Alias der Zielverbindung.
-  - `table`: Tabellenname (muss in Quelle und Ziel unter gleichem Namen existieren).
-  - `idColumn`: Spalte, die als eindeutiger Schlüssel für den Abgleich dient.
+  - `sourceAlias`: Alias der Quellverbindung (siehe `db.Open`).
+  - `targetAlias`: Alias der Zielverbindung (siehe `db.Open`).
+  - `table`: Tabellenname. Muss in Quelle und Ziel existieren (Groß-/Kleinschreibung egal).
+  - `idColumn`: Name der ID-/Primärschlüssel-Spalte. Muss ebenfalls in beiden Tabellen existieren (Groß-/Kleinschreibung egal).
+  - `batchSize`: Optional. Anzahl Zeilen pro Commit-Batch. Standard: `500`.
 - **Rückgabe:**
-  `ArrVal` mit drei `NumVal`-Einträgen in fester Reihenfolge: `{inserts, updates, deletes}`.
-  `ErrorVal` bei fehlenden Argumenten, ungültigem Tabellen-/Spaltennamen, fehlender Tabelle/Spalte oder SQL-Fehler.
-- **Hinweise:**
-  Bei sehr großen Quelltabellen kann der abschließende `DELETE ... WHERE idColumn NOT IN (...)`-Schritt an Parameter-Limits des Zieltreibers stoßen (MSSQL: ca. 2100 Parameter pro Statement) – für solche Fälle ggf. IDs in Batches aufteilen lassen.
+  `ArrVal` `[Insert, Update, Delete, Unchanged]` (vier Zahlen)
+  `ErrorVal` bei fehlenden Argumenten, ungültigem Tabellen-/Spaltennamen, nicht gefundener Verbindung/Tabelle/Spalte, oder DB-Fehlern während Lesen/Schreiben.
+
+```vb
+result = db.SyncTable("src", "dst", "Hoerspiel", "ID")
+Print "Neu: " & result(0) & " Geändert: " & result(1) & " Gelöscht: " & result(2) & " Unverändert: " & result(3)
+
+' mit expliziter Batch-Größe
+db.SyncTable("src", "dst", "Hoerspiel", "ID", 200)
+```
 
 ---
 
-## db.SyncTables(sourceAlias, targetAlias, idColumn, table1, table2, ...)
+## db.SyncTables(sourceAlias, targetAlias, table1, table2, ...)
 - **Konkret:**
-  Synchronisiert mehrere Tabellen in einem Aufruf, jede über `syncTable()` (gleiche Logik wie `db.SyncTable`).
-  Alle übergebenen Tabellen teilen sich dieselbe ID-Spalte (`idColumn`). Für Tabellen mit abweichendem ID-Spaltennamen `db.SyncTable` einzeln aufrufen.
-  Bricht beim ersten Fehler sofort ab (keine Teilabarbeitung der restlichen Tabellen) und meldet, welche Tabelle betroffen war.
+  Synchronisiert mehrere Tabellen nacheinander in einem Aufruf. Nutzt intern dieselbe Logik wie `db.SyncTable` (Change-Detection, Batch-Commits mit Default-`batchSize` 500).
+  Achtung: Es wird angenommen, dass die ID-Spalte **denselben Namen wie die Tabelle** trägt (`idColumn = table`). Tabellen mit abweichender ID-Spalte (z. B. eine Tabelle `Sprecher` mit ID-Spalte `id` statt `Sprecher`) müssen stattdessen einzeln über `db.SyncTable(...)` mit explizitem `idColumn` synchronisiert werden.
+  Ein individueller `batchSize` pro Tabelle ist über `SyncTables` nicht möglich (siehe `db.SyncTable`, falls das benötigt wird).
 - **Parameter:**
   - `sourceAlias`: Alias der Quellverbindung.
   - `targetAlias`: Alias der Zielverbindung.
-  - `idColumn`: Gemeinsame ID-Spalte für alle folgenden Tabellen.
   - `table1, table2, ...`: Beliebig viele Tabellennamen (mindestens einer).
 - **Rückgabe:**
-  `ArrVal`. Ein Eintrag pro Tabelle als `{Tabellenname, inserts, updates, deletes}`, plus ein abschließender Summeneintrag `{"Gesamt", totalInserts, totalUpdates, totalDeletes}`.
-  `ErrorVal` (mit vorangestelltem Tabellennamen) bei fehlenden Argumenten oder falls eine der Tabellen fehlschlägt.
+  `ArrVal` verschachtelt: pro Tabelle ein Eintrag `[Tabellenname, Insert, Update, Delete, Unchanged]`, abschließend ein Summen-Eintrag `["Gesamt", Insert, Update, Delete, Unchanged]`.
+  `ErrorVal` bei fehlenden Argumenten oder falls eine der Tabellen fehlschlägt (bricht den gesamten Aufruf ab, bereits synchronisierte Tabellen bleiben aber committet).
+
+```vb
+result = db.SyncTables("src", "dst", "ID_Hoerspiel", "Rolle")
+
+For Each row In result
+    Print row(0) & ": Insert=" & row(1) & " Update=" & row(2) & " Delete=" & row(3) & " Unverändert=" & row(4)
+Next
+```
 
 ---
 

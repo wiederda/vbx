@@ -16,10 +16,11 @@ import (
 )
 
 type SyncResult struct {
-	Table  string
-	Insert int
-	Update int
-	Delete int
+	Table     string
+	Insert    int
+	Update    int
+	Unchanged int
+	Delete    int
 }
 
 var connections = make(map[string]*sql.DB)
@@ -112,7 +113,44 @@ func tableExistsDB(db *sql.DB, driver string, table string) (bool, error) {
 	}
 }
 
-func syncTable(sourceAlias string, targetAlias string, table string, idColumn string) (SyncResult, error) {
+// resolveTableName ermittelt den tatsächlichen Tabellennamen in der DB,
+// unabhängig von Groß-/Kleinschreibung des übergebenen Namens.
+// Wichtig bei Sync zwischen DBs mit unterschiedlicher Namens-Konvention
+// (z.B. MSSQL "Hoerspiel" <-> Postgres "hoerspiel").
+func resolveTableName(db *sql.DB, driver string, table string) (string, error) {
+	driver = strings.ToLower(driver)
+
+	var query string
+
+	switch driver {
+	case "sqlite", "sqlite3":
+		query = "SELECT name FROM sqlite_master WHERE type='table' AND LOWER(name)=LOWER(?)"
+	case "postgres", "pg":
+		query = "SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND LOWER(table_name)=LOWER($1)"
+	case "mssql", "sqlserver":
+		query = "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE LOWER(TABLE_NAME)=LOWER(@p1)"
+	default:
+		return "", fmt.Errorf("nicht unterstützter Treiber: %s", driver)
+	}
+
+	var actual string
+	err := db.QueryRow(query, table).Scan(&actual)
+
+	if err == sql.ErrNoRows {
+		return "", fmt.Errorf("Tabelle nicht gefunden: %s", table)
+	}
+	if err != nil {
+		return "", err
+	}
+
+	return actual, nil
+}
+
+func syncTable(sourceAlias string, targetAlias string, table string, idColumn string, batchSize int) (SyncResult, error) {
+
+	if batchSize <= 0 {
+		batchSize = 500
+	}
 
 	result := SyncResult{
 		Table: table,
@@ -145,24 +183,16 @@ func syncTable(sourceAlias string, targetAlias string, table string, idColumn st
 	}
 
 	// -------------------------------------------------
-	// Tabellen prüfen
+	// Tabellen auflösen (echte Schreibweise ermitteln)
 	// -------------------------------------------------
 
-	ok, err := tableExistsDB(src, srcDriver, table)
+	srcTable, err := resolveTableName(src, srcDriver, table)
 	if err != nil {
-		return result, err
-	}
-
-	if !ok {
 		return result, fmt.Errorf("Quelltabelle existiert nicht: %s", table)
 	}
 
-	ok, err = tableExistsDB(dst, dstDriver, table)
+	dstTable, err := resolveTableName(dst, dstDriver, table)
 	if err != nil {
-		return result, err
-	}
-
-	if !ok {
 		return result, fmt.Errorf("Zieltabelle existiert nicht: %s", table)
 	}
 
@@ -170,28 +200,24 @@ func syncTable(sourceAlias string, targetAlias string, table string, idColumn st
 	// Spalten prüfen
 	// -------------------------------------------------
 
-	srcCols, err := getTableColumns(src, srcDriver, table)
+	srcCols, err := getTableColumns(src, srcDriver, srcTable)
 	if err != nil {
 		return result, fmt.Errorf("Quellspalten: %w", err)
 	}
 
-	dstCols, err := getTableColumns(dst, dstDriver, table)
+	dstCols, err := getTableColumns(dst, dstDriver, dstTable)
 	if err != nil {
 		return result, fmt.Errorf("Zielspalten: %w", err)
 	}
 
+	// Mapping: Quell-Spaltenname (lowercase) -> tatsächlicher Zielname (echte Schreibweise)
+	colMap := make(map[string]string, len(dstCols))
+	for _, dcol := range dstCols {
+		colMap[strings.ToLower(dcol)] = dcol
+	}
+
 	for _, col := range srcCols {
-
-		found := false
-
-		for _, dcol := range dstCols {
-			if strings.EqualFold(col, dcol) {
-				found = true
-				break
-			}
-		}
-
-		if !found {
+		if _, found := colMap[strings.ToLower(col)]; !found {
 			return result, fmt.Errorf(
 				"Spalte fehlt im Ziel: %s",
 				col,
@@ -199,22 +225,26 @@ func syncTable(sourceAlias string, targetAlias string, table string, idColumn st
 		}
 	}
 
+	// idColumn im Ziel-Casing auflösen
+	dstIDColumn, ok := colMap[strings.ToLower(idColumn)]
+	if !ok {
+		return result, fmt.Errorf("ID-Spalte nicht im Ziel gefunden: %s", idColumn)
+	}
+
 	// -------------------------------------------------
-	// Quelle lesen
+	// Quelle komplett einlesen
 	// -------------------------------------------------
 
-	rows, err := src.Query(
-		"SELECT * FROM " + quoteIdent(srcDriver, table),
+	srcRows, err := src.Query(
+		"SELECT * FROM " + quoteIdent(srcDriver, srcTable),
 	)
-
 	if err != nil {
 		return result, err
 	}
 
-	defer rows.Close()
-
-	columns, err := rows.Columns()
+	columns, err := srcRows.Columns()
 	if err != nil {
+		srcRows.Close()
 		return result, err
 	}
 
@@ -228,12 +258,98 @@ func syncTable(sourceAlias string, targetAlias string, table string, idColumn st
 	}
 
 	if idIndex < 0 {
+		srcRows.Close()
 		return result,
 			fmt.Errorf("ID-Spalte nicht gefunden: %s", idColumn)
 	}
 
+	var allValues [][]any
+
+	for srcRows.Next() {
+
+		values := make([]any, len(columns))
+		scan := make([]any, len(columns))
+
+		for i := range values {
+			scan[i] = &values[i]
+		}
+
+		if err := srcRows.Scan(scan...); err != nil {
+			srcRows.Close()
+			return result, err
+		}
+
+		allValues = append(allValues, values)
+	}
+
+	if err := srcRows.Err(); err != nil {
+		srcRows.Close()
+		return result, err
+	}
+
+	srcRows.Close()
+
 	// -------------------------------------------------
-	// SQL vorbereiten
+	// Ziel komplett einlesen, um echte Änderungen zu erkennen
+	// (Signatur pro Zeile, keyed nach ID als String)
+	// -------------------------------------------------
+
+	dstRows, err := dst.Query(
+		"SELECT * FROM " + quoteIdent(dstDriver, dstTable),
+	)
+	if err != nil {
+		return result, err
+	}
+
+	dstColumns, err := dstRows.Columns()
+	if err != nil {
+		dstRows.Close()
+		return result, err
+	}
+
+	dstIDIndex := -1
+	for i, col := range dstColumns {
+		if strings.EqualFold(col, dstIDColumn) {
+			dstIDIndex = i
+			break
+		}
+	}
+
+	if dstIDIndex < 0 {
+		dstRows.Close()
+		return result, fmt.Errorf("ID-Spalte im Ziel-Resultset nicht gefunden: %s", dstIDColumn)
+	}
+
+	// key = string(ID) -> Signatur der restlichen Spalten
+	existingSignatures := make(map[string]string)
+
+	for dstRows.Next() {
+
+		values := make([]any, len(dstColumns))
+		scan := make([]any, len(dstColumns))
+
+		for i := range values {
+			scan[i] = &values[i]
+		}
+
+		if err := dstRows.Scan(scan...); err != nil {
+			dstRows.Close()
+			return result, err
+		}
+
+		key := dbValueSignature(values[dstIDIndex])
+		existingSignatures[key] = rowSignature(values, dstIDIndex)
+	}
+
+	if err := dstRows.Err(); err != nil {
+		dstRows.Close()
+		return result, err
+	}
+
+	dstRows.Close()
+
+	// -------------------------------------------------
+	// SQL vorbereiten (immer mit Ziel-Schreibweise!)
 	// -------------------------------------------------
 
 	var setClauses []string
@@ -248,17 +364,19 @@ func syncTable(sourceAlias string, targetAlias string, table string, idColumn st
 
 		pos++
 
+		dstCol := colMap[strings.ToLower(col)]
+
 		setClauses = append(
 			setClauses,
-			quoteIdent(dstDriver, col)+"="+placeholder(dstDriver, pos),
+			quoteIdent(dstDriver, dstCol)+"="+placeholder(dstDriver, pos),
 		)
 	}
 
 	updateSQL := fmt.Sprintf(
 		"UPDATE %s SET %s WHERE %s=%s",
-		quoteIdent(dstDriver, table),
+		quoteIdent(dstDriver, dstTable),
 		strings.Join(setClauses, ","),
-		quoteIdent(dstDriver, idColumn),
+		quoteIdent(dstDriver, dstIDColumn),
 		placeholder(dstDriver, pos+1),
 	)
 
@@ -267,9 +385,11 @@ func syncTable(sourceAlias string, targetAlias string, table string, idColumn st
 
 	for i, col := range columns {
 
+		dstCol := colMap[strings.ToLower(col)]
+
 		insertCols = append(
 			insertCols,
-			quoteIdent(dstDriver, col),
+			quoteIdent(dstDriver, dstCol),
 		)
 
 		insertValues = append(
@@ -280,13 +400,13 @@ func syncTable(sourceAlias string, targetAlias string, table string, idColumn st
 
 	insertSQL := fmt.Sprintf(
 		"INSERT INTO %s (%s) VALUES (%s)",
-		quoteIdent(dstDriver, table),
+		quoteIdent(dstDriver, dstTable),
 		strings.Join(insertCols, ","),
 		strings.Join(insertValues, ","),
 	)
 
 	// -------------------------------------------------
-	// Transaktion
+	// Transaktion (mit periodischem Commit alle batchSize Zeilen)
 	// -------------------------------------------------
 
 	tx, err := dst.Begin()
@@ -300,79 +420,103 @@ func syncTable(sourceAlias string, targetAlias string, table string, idColumn st
 		return result, err
 	}
 
-	defer updateStmt.Close()
-
 	insertStmt, err := tx.Prepare(insertSQL)
 	if err != nil {
+		updateStmt.Close()
 		tx.Rollback()
 		return result, err
 	}
 
-	defer insertStmt.Close()
-
 	var sourceIDs []any
+	rowsSinceCommit := 0
 
 	// -------------------------------------------------
-	// Daten abgleichen
+	// Daten abgleichen (nur bei echter Änderung schreiben)
 	// -------------------------------------------------
 
-	for rows.Next() {
-
-		values := make([]any, len(columns))
-		scan := make([]any, len(columns))
-
-		for i := range values {
-			scan[i] = &values[i]
-		}
-
-		if err := rows.Scan(scan...); err != nil {
-			tx.Rollback()
-			return result, err
-		}
+	for _, values := range allValues {
 
 		idValue := values[idIndex]
-
 		sourceIDs = append(sourceIDs, idValue)
 
-		var updateValues []any
+		key := dbValueSignature(idValue)
+		srcSig := rowSignature(values, idIndex)
 
-		for i, v := range values {
+		existingSig, existsInTarget := existingSignatures[key]
 
-			if i == idIndex {
-				continue
+		if existsInTarget && existingSig == srcSig {
+			// Zeile ist identisch -> nichts zu tun
+			result.Unchanged++
+			continue
+		}
+
+		if !existsInTarget {
+			// Neue Zeile -> INSERT
+			_, err := insertStmt.Exec(values...)
+			if err != nil {
+				updateStmt.Close()
+				insertStmt.Close()
+				tx.Rollback()
+				return result, err
+			}
+			result.Insert++
+
+		} else {
+			// Zeile existiert, aber Inhalt weicht ab -> UPDATE
+			var updateValues []any
+			for i, v := range values {
+				if i == idIndex {
+					continue
+				}
+				updateValues = append(updateValues, v)
+			}
+			updateValues = append(updateValues, idValue)
+
+			_, err := updateStmt.Exec(updateValues...)
+			if err != nil {
+				updateStmt.Close()
+				insertStmt.Close()
+				tx.Rollback()
+				return result, err
+			}
+			result.Update++
+		}
+
+		rowsSinceCommit++
+
+		if rowsSinceCommit >= batchSize {
+
+			updateStmt.Close()
+			insertStmt.Close()
+
+			if err := tx.Commit(); err != nil {
+				return result, err
 			}
 
-			updateValues = append(updateValues, v)
-		}
+			tx, err = dst.Begin()
+			if err != nil {
+				return result, err
+			}
 
-		updateValues = append(updateValues, idValue)
-
-		res, err := updateStmt.Exec(updateValues...)
-
-		if err != nil {
-			tx.Rollback()
-			return result, err
-		}
-
-		affected, _ := res.RowsAffected()
-
-		if affected == 0 {
-
-			_, err := insertStmt.Exec(values...)
-
+			updateStmt, err = tx.Prepare(updateSQL)
 			if err != nil {
 				tx.Rollback()
 				return result, err
 			}
 
-			result.Insert++
+			insertStmt, err = tx.Prepare(insertSQL)
+			if err != nil {
+				updateStmt.Close()
+				tx.Rollback()
+				return result, err
+			}
 
-		} else {
-
-			result.Update++
-
+			rowsSinceCommit = 0
 		}
 	}
+
+	updateStmt.Close()
+	insertStmt.Close()
 
 	// -------------------------------------------------
 	// Löschen verwaister Datensätze
@@ -381,7 +525,7 @@ func syncTable(sourceAlias string, targetAlias string, table string, idColumn st
 	if len(sourceIDs) == 0 {
 
 		_, err := tx.Exec(
-			"DELETE FROM " + quoteIdent(dstDriver, table),
+			"DELETE FROM " + quoteIdent(dstDriver, dstTable),
 		)
 
 		if err != nil {
@@ -399,8 +543,8 @@ func syncTable(sourceAlias string, targetAlias string, table string, idColumn st
 
 		sqlText := fmt.Sprintf(
 			"DELETE FROM %s WHERE %s NOT IN (%s)",
-			quoteIdent(dstDriver, table),
-			quoteIdent(dstDriver, idColumn),
+			quoteIdent(dstDriver, dstTable),
+			quoteIdent(dstDriver, dstIDColumn),
 			strings.Join(params, ","),
 		)
 
@@ -421,6 +565,35 @@ func syncTable(sourceAlias string, targetAlias string, table string, idColumn st
 	}
 
 	return result, nil
+}
+
+// dbValueSignature wandelt einen beliebigen DB-Scan-Wert in eine vergleichbare
+// String-Repräsentation um. Wird genutzt, um Quell- und Ziel-Zeilen auf
+// inhaltliche Gleichheit zu prüfen, unabhängig von Treiber-spezifischen
+// Go-Typen (z.B. int64 vs float64 vs []byte für denselben SQL-Typ).
+func dbValueSignature(v any) string {
+	switch t := v.(type) {
+	case nil:
+		return "\x00NULL\x00"
+	case []byte:
+		return string(t)
+	case time.Time:
+		return t.UTC().Format(time.RFC3339Nano)
+	default:
+		return fmt.Sprintf("%v", t)
+	}
+}
+
+func rowSignature(values []any, skipIndex int) string {
+	var b strings.Builder
+	for i, v := range values {
+		if i == skipIndex {
+			continue
+		}
+		b.WriteString(dbValueSignature(v))
+		b.WriteByte('\x1F') // Unit Separator als Trennzeichen
+	}
+	return b.String()
 }
 
 func getTableColumns(db *sql.DB, driver string, table string) ([]string, error) {
