@@ -229,8 +229,8 @@ func (e *Environment) SetGlobal(name string, val Value) {
 
 // Update sucht von innen nach außen und überschreibt (für x = 10)
 func (e *Environment) Update(name string, val Value) error {
-	if _, ok := e.vars[name]; ok {
-		e.vars[name] = &val
+	if ptr, ok := e.vars[name]; ok {
+		*ptr = val
 		return nil
 	}
 	if e.parent != nil {
