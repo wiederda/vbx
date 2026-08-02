@@ -292,10 +292,12 @@ func GetNextFreeDriveLetter() (string, string) {
 	return "", "Laufwerksbuchstaben werden unter Linux/macOS nicht unterstützt"
 }
 
-// Reboot / Shutdown
 func Reboot() error {
-	// "reboot" ist der direkteste Weg unter Linux/Unix
-	return exec.Command("reboot").Run()
+	cmd := exec.Command("/sbin/reboot")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("reboot fehlgeschlagen (läuft der Prozess als root?): %w", err)
+	}
+	return nil
 }
 
 func Shutdown() error {

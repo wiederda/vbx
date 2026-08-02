@@ -40,6 +40,7 @@ var optionalModulesMap = map[string]func(*Environment){
 	"ini":      func(e *Environment) { InitIniFunctions() },
 	"hash":     func(e *Environment) { InitHashFunctions() },
 	"json":     func(e *Environment) { InitJsonFunctions() },
+	"kuma":     func(e *Environment) { InitKumaFunctions() },
 	"tar":      func(e *Environment) { InitTarFunctions() },
 	"zip":      func(e *Environment) { InitZipFunctions() },
 	"reg":      func(e *Environment) { InitRegistryFunctions() },
