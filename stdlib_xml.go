@@ -184,6 +184,34 @@ func InitXmlFunctions() {
 			return xmlEngine.Delete(args[0].Str)
 		})
 
+	Register(ns+"ToMap", "xml", "[xpath]",
+		"Konvertiert den geladenen XML-Baum (oder einen Teilbaum ab xpath) in eine Map-Struktur.", func(args []Value) Value {
+			path := ""
+			if len(args) > 0 {
+				path = args[0].Str
+			}
+
+			xmlEngine.mu.RLock()
+			defer xmlEngine.mu.RUnlock()
+
+			var target *Node
+			if path == "" {
+				target = xmlEngine.Root
+			} else {
+				node, _, err := xmlEngine.find(path)
+				if err != nil {
+					return ErrorVal("xml.ToMap: " + err.Error())
+				}
+				target = node
+			}
+
+			if target == nil {
+				return ErrorVal("xml.ToMap: kein XML geladen oder Pfad nicht gefunden")
+			}
+
+			return nodeToValue(target)
+		})
+
 	Register(ns+"Count", "xml", "xpath",
 		"Zählt, wie viele Geschwister-Knoten mit demselben Namen unter dem Parent-Pfad existieren.", func(args []Value) Value {
 			if len(args) < 1 {
@@ -463,6 +491,45 @@ func (n *Node) GetAttr(name string) string {
 		}
 	}
 	return ""
+}
+
+func nodeToValue(n *Node) Value {
+	// Blattknoten ohne Kinder und ohne Attribute: einfacher String
+	if len(n.Nodes) == 0 && len(n.Attrs) == 0 {
+		return StrVal(n.Content)
+	}
+
+	m := make(map[string]Value)
+
+	for _, a := range n.Attrs {
+		m["@"+a.Name.Local] = StrVal(a.Value)
+	}
+
+	if strings.TrimSpace(n.Content) != "" {
+		m["_text"] = StrVal(n.Content)
+	}
+
+	// Kinder gruppieren: gleicher Name -> Array, sonst einzelner Wert
+	childGroups := make(map[string][]Value)
+	var order []string
+	for _, child := range n.Nodes {
+		name := child.XMLName.Local
+		if _, exists := childGroups[name]; !exists {
+			order = append(order, name)
+		}
+		childGroups[name] = append(childGroups[name], nodeToValue(child))
+	}
+
+	for _, name := range order {
+		vals := childGroups[name]
+		if len(vals) == 1 {
+			m[name] = vals[0]
+		} else {
+			m[name] = Value{Kind: KindArr, Arr: vals}
+		}
+	}
+
+	return Value{Kind: KindMap, Map: m}
 }
 
 func (n *Node) SetAttr(name, value string) {

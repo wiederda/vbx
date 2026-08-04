@@ -16,6 +16,31 @@ type Parser struct {
 	env       *Environment
 }
 
+type MapIndexNode struct {
+	Base Expr
+	Key  Expr
+}
+
+// Konsumiert eine Kette von [Key][Key]... rein zur Fehlerprüfung.
+// Rückgabe: true, wenn mindestens eine Klammer gefunden wurde.
+func (p *Parser) rejectBracketAssignTarget() bool {
+	found := false
+	for p.peek().Type == LBRACKET {
+		found = true
+		p.next() // '[' konsumieren
+		p.parseExpr()
+		if p.next().Type != RBRACKET {
+			p.error("Erwartet ']' nach Map-Zugriff")
+		}
+	}
+	if found && p.peek().Type == EQ {
+		p.error("Map-Zugriff mit '[...]' ist nur lesend erlaubt. Zuweisungen bitte über map.Set(...) vornehmen.")
+	}
+	return found
+}
+
+func (m *MapIndexNode) expressionNode() {}
+
 type ForEachNode struct {
 	KeyVar   string // erste Variable (Key)
 	ValVar   string // zweite Variable (Value), optional bei Arrays
@@ -326,21 +351,19 @@ func (p *Parser) parseFactor() Expr {
 		p.next()
 		fullName := tok.Value
 		for p.peek().Type == DOT {
-			p.next() // Den DOT überspringen
+			p.next()
 			nextTok := p.next()
-
-			// Wir prüfen nur noch, ob das Token überhaupt einen Textwert hat.
-			// (Alle Keywords wie SUB, IF, etc. haben ihren Namen in .Value)
 			if nextTok.Type == EOF {
 				p.error("Syntaxfehler: Nach dem Punkt (.) wurde ein Name erwartet, aber das Dateiende erreicht.")
 			}
-
-			fullName += "." + nextTok.Value // Wir nutzen einfach den Textwert
+			fullName += "." + nextTok.Value
 		}
 
-		// Funktionsaufruf
+		var expr Expr
+
+		// Funktionsaufruf / Array-Zugriff via ()
 		if p.peek().Type == LPAREN {
-			p.next() // '('
+			p.next()
 			var args []Expr
 			if p.peek().Type != RPAREN {
 				for {
@@ -355,11 +378,22 @@ func (p *Parser) parseFactor() Expr {
 			if p.next().Type != RPAREN {
 				p.error("Erwartet ')' in Function-Call")
 			}
-			return &CallExprNode{Name: fullName, Args: args}
+			expr = &CallExprNode{Name: fullName, Args: args}
+		} else {
+			expr = &VarNode{Name: fullName}
 		}
 
-		// Normale Variable
-		return &VarNode{Name: fullName}
+		// NEU: Map-Zugriff via [] – rein lesend, chainable
+		for p.peek().Type == LBRACKET {
+			p.next() // '[' konsumieren
+			key := p.parseExpr()
+			if p.next().Type != RBRACKET {
+				p.error("Erwartet ']' nach Map-Zugriff")
+			}
+			expr = &MapIndexNode{Base: expr, Key: key}
+		}
+
+		return expr
 
 	case LPAREN:
 		p.next()
@@ -988,6 +1022,12 @@ func (p *Parser) parseStmt() Stmt {
 			}
 			fullName += "." + nextTok.Value
 		}
+		// NEU: entry["path"] = ... explizit als ungültiges Zuweisungsziel abfangen
+		if p.peek().Type == LBRACKET {
+			p.rejectBracketAssignTarget()
+			// Kein gültiges Statement, wenn wir hier ankommen (z.B. entry["path"] allein als Zeile)
+			p.error("Ein Ausdruck mit '[...]' kann nicht als eigenständige Anweisung stehen.")
+		}
 		// 2. Funktionsaufruf oder Array-Zugriff?
 		if p.peek().Type == LPAREN {
 			p.next() // '('
@@ -1004,6 +1044,12 @@ func (p *Parser) parseStmt() Stmt {
 			}
 			if p.next().Type != RPAREN {
 				p.error("Erwartet ')' in Call/Index")
+			}
+
+			// NEU: grp(i)["path"] = ... ebenfalls abfangen, bevor die normale Array-Zuweisung geprüft wird
+			if p.peek().Type == LBRACKET {
+				p.rejectBracketAssignTarget()
+				p.error("Ein Ausdruck mit '[...]' kann nicht als eigenständige Anweisung stehen.")
 			}
 
 			// Fall A: Zuweisung an Array-Index -> myArr(5) = "Wert"

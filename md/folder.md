@@ -243,7 +243,7 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   Leere Dateien werden ignoriert.
   Für eine exakte Prüfung anschließend `folder.CheckHash` verwenden.
 - **Parameter:**
-  - `path`: Wurzelverzeichnis.
+  - `path`: Wurzelverzeichnis. Kann auch ein `ArrVal` mehrerer Wurzelverzeichnisse sein – nützlich um z. B. mehrere NAS-Freigaben in einem Durchlauf zu vergleichen.
   - `pattern`: Optional. Glob-Muster (Standard: `"*"`).
 - **Rückgabe:**
   `ArrVal`
@@ -253,6 +253,8 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   |-----------|----------|-----------------|
   | `path`    | `StrVal` | Absoluter Pfad  |
   | `size`    | `NumVal` | Größe in Bytes  |
+
+  Bei mehreren Wurzelverzeichnissen werden gleich große Dateien gruppenübergreifend zusammengeführt, unabhängig davon unter welcher Wurzel sie liegen.
 
 ---
 

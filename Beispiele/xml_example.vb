@@ -1,11 +1,11 @@
 #use xml
 Dim res
 
-if file.Exists("/home/vbmini/Beispiele/test.xml")=1 Then
+if file.Exists("/home/vbmini/Beispiele/test.xml")=true Then
     xml.Load("/home/vbmini/Beispiele/test.xml")
 else
     file.Create("/home/vbmini/Beispiele/test.xml")
-endif    
+end if  
 
 ' Werte auslesen
 Dim name
@@ -30,3 +30,13 @@ xml.Set("root.user[1].city", "Hamburg")
 
 xml.Set("root.settings.theme", "dark")    
 xml.Save("/home/vbmini/Beispiele/test.xml")
+
+xml.Load("config.xml")
+Dim m = xml.ToMap()
+
+Print m["db"]["host"]
+Print m["db"]["@port"]
+
+For Each user In m["users"]["user"]
+    Print user["name"] & " - " & user["mail"] & " (ID " & user["@id"] & ")"
+Next

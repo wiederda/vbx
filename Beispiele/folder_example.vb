@@ -82,3 +82,12 @@ folder.Delete(renamedDir)
 folder.Delete(base)
 
 Print "=== TEST END ==="
+
+Dim shares = Array("\\nas\Freigabe1", "\\nas\Freigabe2")
+Dim groups = folder.FindDuplicates(shares, "*")
+
+For Each grp In groups
+    For i = 0 To array.Count(grp) - 1
+        Print grp(i)["path"]
+    Next
+Next

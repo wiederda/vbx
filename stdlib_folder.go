@@ -488,9 +488,22 @@ func InitFolderFunctions() {
 			return ErrorVal("usage: folder.FindDuplicates(path [, pattern])")
 		}
 
-		root, errVal := absPathVal(args[0].Str)
-		if errVal != nil {
-			return *errVal
+		var roots []string
+		switch args[0].Kind {
+		case KindArr:
+			for _, v := range args[0].Arr {
+				r, errVal := absPathVal(v.Str)
+				if errVal != nil {
+					return *errVal
+				}
+				roots = append(roots, r)
+			}
+		default:
+			r, errVal := absPathVal(args[0].Str)
+			if errVal != nil {
+				return *errVal
+			}
+			roots = append(roots, r)
 		}
 
 		pattern := "*"
@@ -500,31 +513,33 @@ func InitFolderFunctions() {
 
 		sizeGroups := make(map[int64][]Value)
 
-		_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
+		for _, root := range roots {
+			_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+				if err != nil || d.IsDir() {
+					return nil
+				}
+				ok, _ := filepath.Match(pattern, d.Name())
+				if !ok {
+					return nil
+				}
+				info, err := d.Info()
+				if err != nil {
+					return nil
+				}
+				size := info.Size()
+				if size == 0 {
+					return nil
+				}
+				sizeGroups[size] = append(sizeGroups[size], Value{
+					Kind: KindMap,
+					Map: map[string]Value{
+						"path": StrVal(p),
+						"size": NumVal(float64(size)),
+					},
+				})
 				return nil
-			}
-			ok, _ := filepath.Match(pattern, d.Name())
-			if !ok {
-				return nil
-			}
-			info, err := d.Info()
-			if err != nil {
-				return nil
-			}
-			size := info.Size()
-			if size == 0 {
-				return nil
-			}
-			sizeGroups[size] = append(sizeGroups[size], Value{
-				Kind: KindMap,
-				Map: map[string]Value{
-					"path": StrVal(p),
-					"size": NumVal(float64(size)),
-				},
 			})
-			return nil
-		})
+		}
 
 		var result []Value
 		for _, group := range sizeGroups {

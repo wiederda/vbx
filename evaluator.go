@@ -1109,6 +1109,27 @@ func evalExpr(e Expr, env *Environment) Value {
 		// WICHTIG: Hier nur EINEN Wert zurückgeben!
 		return lastVal
 
+	case *MapIndexNode:
+		baseVal := evalExpr(n.Base, env)
+		if baseVal.Kind == KindError {
+			return baseVal
+		}
+
+		if baseVal.Kind != KindMap {
+			return ErrorVal("Map-Zugriff mit '[...]' ist nur auf Maps möglich")
+		}
+
+		keyVal := evalExpr(n.Key, env)
+		if keyVal.Kind == KindError {
+			return keyVal
+		}
+		key := ToString(keyVal)
+
+		if val, ok := baseVal.Map[key]; ok {
+			return val
+		}
+		return NilValue
+
 	case *VarNode:
 		// 1. Punkt-Notation (Objekte)
 		if strings.Contains(n.Name, ".") {

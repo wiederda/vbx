@@ -244,18 +244,23 @@ VBX verwendet dynamische Typisierung. Der Typ wird automatisch aus dem Wert best
 
 # Klammern
 
-| Typ   | Verwendung                              |
-|-------|-------------------------------------------|
-| `( )` | Funktionsaufruf, Array-Zugriff via Index |
-| `[ ]` | Array- und Map-Zugriff via Index        |
-| `{ }` | Array-Literal (statische Listenwerte)   |
+| Typ   | Verwendung                                      |
+|-------|--------------------------------------------------|
+| `( )` | Funktionsaufruf, Array-Zugriff via Index         |
+| `[ ]` | Map-Zugriff via Key, nur lesend, verkettbar      |
+| `{ }` | Array-Literal (statische Listenwerte)            |
 
 ```vbx
 Left("Hallo", 3)       ' Funktionsaufruf
-arr[0]                 ' Array-Zugriff
-user["mail"]           ' Map-Zugriff
+arr(0)                 ' Array-Zugriff
+arr(0,1)               ' 2D Array-Zugriff
+user["mail"]           ' Map-Zugriff (lesend)
+grp(i)["path"]         ' Kombiniert: Array-Index, dann Map-Key
+config["db"]["host"]   ' Verkettung mehrerer Map-Zugriffe
 Dim farben = {"rot", "grün"}  ' Array-Literal
 ```
+
+`[ ]` ist ausschließlich für Maps gedacht und nur lesend. Zuweisungen wie `user["mail"] = "x"` sind ein Syntaxfehler – dafür `map.Set(user, "mail", "x")` verwenden. Array-Zugriff (1D und 2D) läuft weiterhin über `( )`.
 
 ---
 
@@ -377,7 +382,7 @@ For Each key, val In user
 Next
 ```
 
-Schreibender Zugriff via `[ ]` (`user["key"] = wert`) ist aktuell nicht unterstützt – dafür `map.Set` verwenden.
+`[ ]` ist ausschließlich lesend und beliebig verkettbar (`x["a"]["b"]`, auch in Kombination mit Array-Index: `arr(i)["key"]`). Schreibender Zugriff via `[ ]` (`user["key"] = wert`) ist nicht unterstützt – dafür `map.Set` verwenden.
 
 ---
 

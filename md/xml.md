@@ -88,6 +88,20 @@ Thread-sicher via `sync.RWMutex`.
 
 ---
 
+## xml.ToMap([xpath])
+- **Konkret:**
+  Wandelt den geladenen XML-Baum (oder einen Teilbaum ab `xpath`) in eine verschachtelte Map-Struktur um.
+  Attribute werden unter dem Schlüssel `@attributname` abgelegt, Textinhalt unter `_text` (nur wenn der Knoten zusätzlich Kinder oder Attribute hat – reine Blattknoten liefern den Content direkt als String).
+  Mehrere Geschwisterknoten mit demselben Namen werden zu einem Array gruppiert.
+  Ist rein lesend und liefert einen Snapshot zum Zeitpunkt des Aufrufs – spätere `xml.Set`-Änderungen spiegeln sich nicht automatisch in der zurückgegebenen Map wider.
+- **Parameter:**
+  - `xpath`: Optional. Pfad zum Startknoten. Ohne Angabe wird der gesamte Baum ab Root konvertiert.
+- **Rückgabe:**
+  `MapVal` (verschachtelt) oder `ArrVal`/`StrVal` je nach Knotenstruktur.
+  `ErrorVal` wenn kein XML geladen ist oder der Pfad nicht gefunden wurde.
+
+---
+
 ## xml.Keys([xpath])
 - **Konkret:**
   Gibt die Namen aller direkten Unterknoten eines Knotens zurück.
