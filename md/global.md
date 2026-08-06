@@ -429,7 +429,18 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
   - `"YYYY-MM-DD"` – ISO
   - `"DD.MM.YYYY"` – Deutsch
   - `"ddd"` – Wochentag (Mo, Di …)
+  - `"dddd"` – Wochentag ausgeschrieben (Montag, Dienstag …)
   - `"MMM"` – Monatsname (Jan, Feb …)
+  - `"MMMM"` – Monatsname ausgeschrieben (Januar, Februar …)
+  - `"HH"` – Stunde (24h, zweistellig)
+  - `"mm"` – Minute (zweistellig, **kleingeschrieben**)
+  - `"ss"` / `"SS"` – Sekunde (zweistellig, beide Schreibweisen möglich)
+  - **Wichtig:** `MM` (großgeschrieben) steht immer für den Monat, auch mehrfach im selben Formatstring. Für Zeitangaben `HH:mm:ss` verwenden, nicht `HH:MM:SS` – letzteres würde zweimal den Monat einsetzen statt Minute und Sekunde.
+- **Beispiel:**
+```vbx
+  Print Format(file.AccessTime(path), "YYYY-MM-DD HH:mm:ss")
+  ' 2026-08-04 12:42:25
+```
 - **Rückgabe:**
   `StrVal`
 

@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -765,17 +766,26 @@ func InitFileFunctions() {
 		})
 
 	// ---------------- Hash ----------------
-	Register(ns+"Hash", "file", "path [, algo]",
-		"Berechnet den Hash einer Datei. Unterstützt 'md5' (Standard), 'sha1', 'sha224', 'sha256', 'sha384' und 'sha512'.",
+	Register(ns+"Hash", "file", "path [, algo]", "...", func(args []Value) Value {
+		if len(args) < 1 {
+			return ErrorVal("file.Hash(path [, algo]) benötigt mindestens einen Pfad")
+		}
+		algo := "md5"
+		if len(args) >= 2 {
+			algo = strings.ToLower(strings.TrimSpace(args[1].Str))
+		}
+		h, err := hashSingleFile(args[0].Str, algo)
+		if err != nil {
+			return ErrorVal("Hash-Fehler: " + err.Error())
+		}
+		return StrVal(h)
+	})
+
+	Register(ns+"HashBatch", "file", "paths [, algo, workers]",
+		"Berechnet Hashes mehrerer Dateien parallel. Gibt eine Map path->hash zurück.",
 		func(args []Value) Value {
-
-			if len(args) < 1 {
-				return ErrorVal("file.Hash(path [, algo]) benötigt mindestens einen Pfad")
-			}
-
-			path, errVal := absPathVal(args[0].Str)
-			if errVal != nil {
-				return *errVal
+			if len(args) < 1 || args[0].Kind != KindArr {
+				return ErrorVal("file.HashBatch(paths [, algo, workers]) benötigt ein Array von Pfaden")
 			}
 
 			algo := "md5"
@@ -783,42 +793,116 @@ func InitFileFunctions() {
 				algo = strings.ToLower(strings.TrimSpace(args[1].Str))
 			}
 
-			f, err := os.Open(path)
-			if err != nil {
-				return ErrorVal("Hash-Fehler: " + err.Error())
+			workers := 8
+			if len(args) >= 3 {
+				w := int(toNumVal(args[2]))
+				if w > 0 {
+					workers = w
+				}
 			}
-			defer f.Close()
 
-			var h hash.Hash
+			paths := make([]string, 0, len(args[0].Arr))
+			for _, v := range args[0].Arr {
+				paths = append(paths, v.Str)
+			}
 
-			switch algo {
-			case "md5":
-				h = md5.New()
+			type result struct {
+				path string
+				hash string
+				err  string
+			}
 
-			case "sha1":
-				h = sha1.New()
+			jobs := make(chan string, len(paths))
+			results := make(chan result, len(paths))
 
-			case "sha224":
-				h = sha256.New224()
+			var wg sync.WaitGroup
+			for w := 0; w < workers; w++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					for p := range jobs {
+						h, err := hashSingleFile(p, algo)
+						if err != nil {
+							results <- result{path: p, err: err.Error()}
+							continue
+						}
+						results <- result{path: p, hash: h}
+					}
+				}()
+			}
 
-			case "sha256":
-				h = sha256.New()
+			for _, p := range paths {
+				jobs <- p
+			}
+			close(jobs)
 
-			case "sha384":
-				h = sha512.New384()
+			go func() {
+				wg.Wait()
+				close(results)
+			}()
 
-			case "sha512":
-				h = sha512.New()
+			out := make(map[string]Value)
+			for r := range results {
+				if r.err != "" {
+					out[r.path] = ErrorVal(r.err)
+					continue
+				}
+				out[r.path] = StrVal(r.hash)
+			}
 
-			default:
+			return Value{Kind: KindMap, Map: out}
+		})
+
+	Register(ns+"HashVerify", "file", "hash, algo",
+		"Prüft, ob ein String ein gültiger Hash-Wert des angegebenen Algorithmus ist (Format/Länge, keine Dateiprüfung).",
+		func(args []Value) Value {
+			if len(args) < 2 {
+				return ErrorVal("file.HashVerify(hash, algo) benötigt Hash und Algorithmus")
+			}
+			h := strings.TrimSpace(args[0].Str)
+			algo := strings.ToLower(strings.TrimSpace(args[1].Str))
+
+			expectedLen := map[string]int{
+				"md5":    32,
+				"sha1":   40,
+				"sha224": 56,
+				"sha256": 64,
+				"sha384": 96,
+				"sha512": 128,
+			}
+
+			l, ok := expectedLen[algo]
+			if !ok {
 				return ErrorVal("unbekannter Hash-Algorithmus: " + algo)
 			}
 
-			if _, err := io.Copy(h, f); err != nil {
-				return ErrorVal("Lesefehler beim Hashing: " + err.Error())
+			if len(h) != l {
+				return BoolVal(false)
 			}
 
-			return StrVal(hex.EncodeToString(h.Sum(nil)))
+			for _, c := range h {
+				if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+					return BoolVal(false)
+				}
+			}
+			return BoolVal(true)
+		})
+
+	Register(ns+"VerifyHash", "file", "path, expectedHash, [algo]",
+		"Prüft, ob eine Datei tatsächlich den erwarteten Hash-Wert hat.",
+		func(args []Value) Value {
+			if len(args) < 2 {
+				return ErrorVal("file.VerifyHash(path, expectedHash [, algo]) benötigt Pfad und erwarteten Hash")
+			}
+			algo := "sha256"
+			if len(args) >= 3 {
+				algo = strings.ToLower(strings.TrimSpace(args[2].Str))
+			}
+			h, err := hashSingleFile(args[0].Str, algo)
+			if err != nil {
+				return ErrorVal("Hash-Fehler: " + err.Error())
+			}
+			return BoolVal(strings.EqualFold(h, strings.TrimSpace(args[1].Str)))
 		})
 
 	// ---------------- Rename ----------------
@@ -847,21 +931,6 @@ func InitFileFunctions() {
 
 		return NullVal()
 	})
-
-	/*Register(ns+"ReplaceAfterRun", "file", "path", "Ersetzt das laufende Skript nach Beendigung mit einer neuen Version.", func(args []Value) Value {
-		if len(args) < 1 {
-			return ErrorVal("file.ReplaceAfterRun: Pfad fehlt")
-		}
-		path, errVal := absPathVal(args[0].Str)
-		if errVal != nil {
-			return *errVal
-		}
-		if _, err := os.Stat(path); err != nil {
-			return ErrorVal("file.ReplaceAfterRun: Datei nicht gefunden: " + path)
-		}
-		replaceAfterRunPath = path
-		return BoolVal(true)
-	})*/
 
 	// ------------------------
 	// AppendAllText
@@ -1746,4 +1815,40 @@ func copyAndDelete(src, dst string) error {
 	}
 
 	return nil
+}
+
+func hashSingleFile(path string, algo string) (string, error) {
+	absPath, errVal := absPathVal(path)
+	if errVal != nil {
+		return "", fmt.Errorf(errVal.Str)
+	}
+
+	f, err := os.Open(absPath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	var h hash.Hash
+	switch algo {
+	case "md5":
+		h = md5.New()
+	case "sha1":
+		h = sha1.New()
+	case "sha224":
+		h = sha256.New224()
+	case "sha256":
+		h = sha256.New()
+	case "sha384":
+		h = sha512.New384()
+	case "sha512":
+		h = sha512.New()
+	default:
+		return "", fmt.Errorf("unbekannter Hash-Algorithmus: %s", algo)
+	}
+
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }

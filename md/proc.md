@@ -14,6 +14,17 @@ Systemprozesse (PID ≤ 10, eigener Prozess, Elternprozess, kritische Systemdien
 
 ---
 
+## proc.IsScriptRunning()
+- **Konkret:**
+  Prüft automatisch, ob das aktuell ausgeführte Skript bereits in einer anderen Instanz läuft.
+  Der Skriptpfad wird selbstständig aus den Aufruf-Argumenten ermittelt (erstes Argument, das auf `.vb` oder `.vbc` endet – funktioniert unabhängig von vorangestellten Subcommands wie `worker` oder Flags wie `-modules=...`) und in einen absoluten Pfad umgewandelt, bevor er gegen die Kommandozeile aller anderen laufenden Prozesse verglichen wird. Der eigene Prozess wird dabei ausgenommen.
+  Kein Parameter nötig – funktioniert unabhängig davon, aus welchem Verzeichnis oder mit welchen zusätzlichen Argumenten das Skript gestartet wird.
+- **Rückgabe:**
+  `BoolVal`
+  `true`, wenn eine andere Instanz desselben Skripts (gleicher absoluter Pfad) bereits läuft, sonst `false`. Auch `false`, wenn kein `.vb`/`.vbc`-Argument im Aufruf gefunden wird.
+
+---
+
 ## proc.GetPids()
 - **Konkret:**
   Gibt ein Array mit allen aktuell laufenden PIDs zurück.

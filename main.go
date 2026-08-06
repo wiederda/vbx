@@ -35,7 +35,7 @@ var optionalModuleFunctions = map[string]int{
 	"hash":     8,
 	"ini":      8,
 	"json":     24,
-	"kuma":     4,
+	"kuma":     5,
 	"map":      11,
 	"net":      17,
 	"pgp":      11,
@@ -50,7 +50,7 @@ var optionalModuleFunctions = map[string]int{
 	"tar":      13,
 	"template": 3,
 	"yaml":     5,
-	"xml":      8,
+	"xml":      9,
 	"zip":      5,
 	"win":      4,
 }

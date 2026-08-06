@@ -164,6 +164,71 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
 
 ---
 
+## file.HashBatch(paths, [algo, workers])
+- **Konkret:**
+  Berechnet Hashes mehrerer Dateien parallel über einen Worker-Pool (Standard: 8 Worker).
+  Nutzt intern dieselbe Hash-Logik wie `file.Hash`.
+- **Parameter:**
+  - `paths`: `ArrVal` mit Dateipfaden (`StrVal`).
+  - `algo`: Optional. Algorithmus, identisch zu `file.Hash` (Standard: `"md5"`).
+  - `workers`: Optional. Anzahl paralleler Worker (Standard: 8).
+- **Rückgabe:**
+  `MapVal` – Pfad (Schlüssel) auf Hash (`StrVal`) oder `ErrorVal` bei Lesefehler der jeweiligen Datei.
+- **Beispiel:**
+```vbx
+  Dim files = folder.GetFiles("C:\Daten", "*.mp4", True, True)
+  Dim hashes = file.HashBatch(files, "sha256")
+
+  For Each path In files
+      Print path & " -> " & hashes[path]
+  Next
+```
+
+---
+
+## file.HashVerify(hash, algo)
+- **Konkret:**
+  Prüft, ob ein String rein formal ein gültiger Hash-Wert des angegebenen Algorithmus ist (korrekte Länge, nur Hex-Zeichen).
+  Greift nicht auf eine Datei zu – reine String-Prüfung. Nützlich um Ergebnisse aus `file.Hash`/`file.HashBatch` auf Plausibilität zu prüfen (z. B. um `ErrorVal`-Werte oder abgeschnittene/korrupte Hashes zu erkennen), bevor sie weiterverarbeitet oder in eine Datenbank geschrieben werden.
+- **Parameter:**
+  - `hash`: Zu prüfender String.
+  - `algo`: Algorithmus. Unterstützt `"md5"`, `"sha1"`, `"sha224"`, `"sha256"`, `"sha384"`, `"sha512"`.
+- **Rückgabe:**
+  `BoolVal`. `ErrorVal` bei unbekanntem Algorithmus.
+- **Beispiel:**
+```vbx
+  Dim h = file.Hash("test.mp4", "sha256")
+
+  If file.HashVerify(h, "sha256") = False Then
+      Print "Fehler beim Hashen: " & h
+  Else
+      Print "Hash gültig: " & h
+  End If
+```
+
+---
+
+## file.VerifyHash(path, expectedHash, [algo])
+- **Konkret:**
+  Berechnet den Hash einer Datei und vergleicht ihn mit einem erwarteten Wert (case-insensitiv).
+  Nützlich zur Integritätsprüfung, z. B. nach einem Download oder Backup.
+- **Parameter:**
+  - `path`: Zieldatei.
+  - `expectedHash`: Erwarteter Hash-Wert als String.
+  - `algo`: Optional. Algorithmus (Standard: `"sha256"`).
+- **Rückgabe:**
+  `BoolVal` (`true` bei Übereinstimmung), `ErrorVal` bei Lesefehler.
+- **Beispiel:**
+```vbx
+  If file.VerifyHash("download.zip", erwarteterHash, "sha256") Then
+      Print "Datei OK"
+  Else
+      Print "Datei beschädigt oder manipuliert"
+  End If
+```
+
+---
+
 ## file.GitBlobHash(path)
 - **Konkret:**
   Berechnet den Git-Blob-SHA1 einer Datei – kompatibel zu `git hash-object`.

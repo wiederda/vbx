@@ -150,6 +150,50 @@ func InitProcFunctions() {
 		return NumVal(float64(count))
 	})
 
+	Register(ns+"IsScriptRunning", "proc", "-",
+		"Prüft automatisch, ob das aktuell ausgeführte Skript bereits in einer anderen Instanz läuft (Vergleich über den absoluten Skriptpfad in der Kommandozeile).",
+		func(args []Value) Value {
+			var scriptArg string
+			for _, a := range os.Args[1:] {
+				lower := strings.ToLower(a)
+				if strings.HasSuffix(lower, ".vb") || strings.HasSuffix(lower, ".vbc") {
+					scriptArg = a
+					break
+				}
+			}
+
+			if scriptArg == "" {
+				return BoolVal(false)
+			}
+
+			absScript, err := filepath.Abs(scriptArg)
+			if err != nil {
+				return BoolVal(false)
+			}
+
+			selfPid := int32(os.Getpid())
+
+			procs, err := process.Processes()
+			if err != nil {
+				return BoolVal(false)
+			}
+
+			for _, p := range procs {
+				if p.Pid == selfPid {
+					continue
+				}
+				cmdline, err := p.Cmdline()
+				if err != nil {
+					continue
+				}
+				if strings.Contains(cmdline, absScript) {
+					return BoolVal(true)
+				}
+			}
+
+			return BoolVal(false)
+		})
+
 	Register(ns+"KillByName", "proc", "name, [mode]", "Beendet Prozesse per Name. mode=1: Teilsuche.", func(args []Value) Value {
 		if len(args) < 1 {
 			return ErrorVal("Name fehlt")

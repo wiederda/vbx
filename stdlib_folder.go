@@ -648,44 +648,123 @@ func InitFolderFunctions() {
 	})
 
 	// folder.CheckHash
-	Register(ns+"CheckHash", "folder", "groupsArray", "Validiert Dubletten mittels Quick-Hash + SHA256.", func(args []Value) Value {
+	Register(ns+"CheckHash", "folder", "groupsArray [, progress]", "Validiert Dubletten mittels Quick-Hash + SHA256 (parallelisiert).", func(args []Value) Value {
 		if len(args) < 1 || args[0].Kind != KindArr {
-			return ErrorVal("usage: folder.CheckHash(groupsArray)")
+			return ErrorVal("usage: folder.CheckHash(groupsArray [, progress])")
 		}
 
-		var allDuplicates [][]Value
+		showProgress := len(args) >= 2 && args[1].Kind == KindBool && args[1].Bool
 
-		for _, groupVal := range args[0].Arr {
+		const workers = 8
+
+		var allDuplicates [][]Value
+		totalGroups := len(args[0].Arr)
+
+		for gi, groupVal := range args[0].Arr {
 			if groupVal.Kind != KindArr {
 				continue
 			}
 
-			qhMap := make(map[string][]Value)
-			for _, fileVal := range groupVal.Arr {
-				path := fileVal.Map["path"].Str
-				qh, err := quickHash(path)
-				if err != nil {
-					continue
-				}
-				qhMap[qh] = append(qhMap[qh], fileVal)
+			if showProgress {
+				fmt.Printf("[CheckHash] Gruppe %d/%d (%d Dateien) – Quick-Hash ...\n", gi+1, totalGroups, len(groupVal.Arr))
 			}
 
+			// --- Stufe 1: Quick-Hash parallel ---
+			type qhResult struct {
+				file Value
+				qh   string
+				err  error
+			}
+
+			files := groupVal.Arr
+			qhJobs := make(chan Value, len(files))
+			qhResults := make(chan qhResult, len(files))
+
+			var wg1 sync.WaitGroup
+			for w := 0; w < workers; w++ {
+				wg1.Add(1)
+				go func() {
+					defer wg1.Done()
+					for fileVal := range qhJobs {
+						path := fileVal.Map["path"].Str
+						qh, err := quickHash(path)
+						qhResults <- qhResult{file: fileVal, qh: qh, err: err}
+					}
+				}()
+			}
+			for _, fileVal := range files {
+				qhJobs <- fileVal
+			}
+			close(qhJobs)
+
+			go func() {
+				wg1.Wait()
+				close(qhResults)
+			}()
+
+			qhMap := make(map[string][]Value)
+			for r := range qhResults {
+				if r.err != nil {
+					continue
+				}
+				qhMap[r.qh] = append(qhMap[r.qh], r.file)
+			}
+
+			// --- Stufe 2: SHA256 parallel, nur für Quick-Hash-Kandidaten ---
 			for _, candidates := range qhMap {
 				if len(candidates) < 2 {
 					continue
 				}
-				hashes := make(map[string][]Value)
+
+				if showProgress {
+					fmt.Printf("[CheckHash]   SHA256 für %d Kandidaten ...\n", len(candidates))
+				}
+
+				type fhResult struct {
+					file Value
+					h    string
+					err  error
+				}
+
+				fhJobs := make(chan Value, len(candidates))
+				fhResults := make(chan fhResult, len(candidates))
+
+				var wg2 sync.WaitGroup
+				for w := 0; w < workers; w++ {
+					wg2.Add(1)
+					go func() {
+						defer wg2.Done()
+						for fileVal := range fhJobs {
+							path := fileVal.Map["path"].Str
+							if showProgress {
+								fmt.Printf("[CheckHash]     %s\n", path)
+							}
+							h, err := fileHash(path)
+							fhResults <- fhResult{file: fileVal, h: h, err: err}
+						}
+					}()
+				}
 				for _, fileVal := range candidates {
-					path := fileVal.Map["path"].Str
-					h, err := fileHash(path)
-					if err != nil {
+					fhJobs <- fileVal
+				}
+				close(fhJobs)
+
+				go func() {
+					wg2.Wait()
+					close(fhResults)
+				}()
+
+				hashes := make(map[string][]Value)
+				for r := range fhResults {
+					if r.err != nil {
 						continue
 					}
-					hashes[h] = append(hashes[h], fileVal)
+					hashes[r.h] = append(hashes[r.h], r.file)
 				}
-				for _, files := range hashes {
-					if len(files) > 1 {
-						allDuplicates = append(allDuplicates, files)
+
+				for _, group := range hashes {
+					if len(group) > 1 {
+						allDuplicates = append(allDuplicates, group)
 					}
 				}
 			}
@@ -693,7 +772,6 @@ func InitFolderFunctions() {
 
 		return Value{Kind: KindArr2D, Arr2D: allDuplicates}
 	})
-
 	// folder.Count
 	Register(ns+"Count", "folder", "path [, ignore]", "Gibt Anzahl Ordner, Dateien und Gesamtgröße zurück.", func(args []Value) Value {
 		path, _ := absPathVal(getArg(args, 0).Str)

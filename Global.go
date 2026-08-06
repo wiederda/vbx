@@ -1334,42 +1334,71 @@ func InitGlobal() {
 }
 
 func formatVBNew(t time.Time, layout string) string {
-	res := layout
+	var sb strings.Builder
+	runes := []rune(layout)
+	i := 0
 
-	// Lange Namen zuerst (Lokalisierung)
-	if strings.Contains(res, "dddd") {
-		daysLong := []string{"Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"}
-		res = strings.ReplaceAll(res, "dddd", daysLong[t.Weekday()])
+	daysLong := []string{"Sonntag", "Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag"}
+	daysShort := []string{"So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"}
+	monthsLong := []string{"", "Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"}
+	monthsShort := []string{"", "Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"}
+
+	for i < len(runes) {
+		switch {
+		case has(runes, i, "YYYY"):
+			sb.WriteString(fmt.Sprintf("%04d", t.Year()))
+			i += 4
+		case has(runes, i, "YY"):
+			sb.WriteString(fmt.Sprintf("%02d", t.Year()%100))
+			i += 2
+		case has(runes, i, "MMMM"):
+			sb.WriteString(monthsLong[t.Month()])
+			i += 4
+		case has(runes, i, "MMM"):
+			sb.WriteString(monthsShort[t.Month()])
+			i += 3
+		case has(runes, i, "MM"):
+			sb.WriteString(fmt.Sprintf("%02d", int(t.Month())))
+			i += 2
+		case has(runes, i, "M"):
+			sb.WriteString(fmt.Sprintf("%d", int(t.Month())))
+			i++
+		case has(runes, i, "dddd"):
+			sb.WriteString(daysLong[t.Weekday()])
+			i += 4
+		case has(runes, i, "ddd"):
+			sb.WriteString(daysShort[t.Weekday()])
+			i += 3
+		case has(runes, i, "DD"):
+			sb.WriteString(fmt.Sprintf("%02d", t.Day()))
+			i += 2
+		case has(runes, i, "D"):
+			sb.WriteString(fmt.Sprintf("%d", t.Day()))
+			i++
+		case has(runes, i, "HH"):
+			sb.WriteString(fmt.Sprintf("%02d", t.Hour()))
+			i += 2
+		case has(runes, i, "mm"):
+			sb.WriteString(fmt.Sprintf("%02d", t.Minute()))
+			i += 2
+		case has(runes, i, "ss"), has(runes, i, "SS"):
+			sb.WriteString(fmt.Sprintf("%02d", t.Second()))
+			i += 2
+		default:
+			sb.WriteRune(runes[i])
+			i++
+		}
 	}
-	if strings.Contains(res, "MMMM") {
-		monthsLong := []string{"", "Januar", "Februar", "März", "April", "Mai", "Juni", "Juli", "August", "September", "Oktober", "November", "Dezember"}
-		res = strings.ReplaceAll(res, "MMMM", monthsLong[t.Month()])
+
+	return sb.String()
+}
+
+func has(runes []rune, i int, tok string) bool {
+	tokRunes := []rune(tok)
+	if i+len(tokRunes) > len(runes) {
+		return false
 	}
-
-	// Standard-Mapping (Lange Kürzel zuerst)
-	res = strings.ReplaceAll(res, "YYYY", "2006")
-	res = strings.ReplaceAll(res, "YY", "06")
-	res = strings.ReplaceAll(res, "MM", "01") // Monat mit 0
-	res = strings.ReplaceAll(res, "DD", "02") // Tag mit 0
-	res = strings.ReplaceAll(res, "HH", "15")
-	res = strings.ReplaceAll(res, "mm", "04")
-	res = strings.ReplaceAll(res, "ss", "05")
-
-	// Kurze Kürzel (Einstellige Tage/Monate ohne 0)
-	res = strings.ReplaceAll(res, "D", "2")
-	res = strings.ReplaceAll(res, "M", "1")
-
-	// Kürzel für Wochentag/Monat (3-stellig)
-	if strings.Contains(res, "ddd") {
-		daysShort := []string{"So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"}
-		res = strings.ReplaceAll(res, "ddd", daysShort[t.Weekday()])
-	}
-	if strings.Contains(res, "MMM") {
-		monthsShort := []string{"", "Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"}
-		res = strings.ReplaceAll(res, "MMM", monthsShort[t.Month()])
-	}
-
-	return t.Format(res)
+	return string(runes[i:i+len(tokRunes)]) == tok
 }
 
 func resolveIncludes(source string, visited map[string]bool) ([]byte, error) {
