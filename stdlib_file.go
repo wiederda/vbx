@@ -13,6 +13,7 @@ import (
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"hash"
 	"io"
@@ -1820,7 +1821,7 @@ func copyAndDelete(src, dst string) error {
 func hashSingleFile(path string, algo string) (string, error) {
 	absPath, errVal := absPathVal(path)
 	if errVal != nil {
-		return "", fmt.Errorf(errVal.Str)
+		return "", errors.New(errVal.Str)
 	}
 
 	f, err := os.Open(absPath)

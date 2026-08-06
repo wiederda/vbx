@@ -405,25 +405,29 @@ func InitDockerFunctions() {
 		if len(portLines) > 0 {
 			sb.WriteString("    ports:\n")
 			for _, p := range portLines {
-				sb.WriteString(p + "\n")
+				sb.WriteString(p)
+				sb.WriteString("\n")
 			}
 		}
 		if len(volumeLines) > 0 {
 			sb.WriteString("    volumes:\n")
 			for _, v := range volumeLines {
-				sb.WriteString(v + "\n")
+				sb.WriteString(v)
+				sb.WriteString("\n")
 			}
 		}
 		if len(envLines) > 0 {
 			sb.WriteString("    environment:\n")
 			for _, e := range envLines {
-				sb.WriteString(e + "\n")
+				sb.WriteString(e)
+				sb.WriteString("\n")
 			}
 		}
 		if len(labelLines) > 0 {
 			sb.WriteString("    labels:\n")
 			for _, l := range labelLines {
-				sb.WriteString(l + "\n")
+				sb.WriteString(l)
+				sb.WriteString("\n")
 			}
 		}
 

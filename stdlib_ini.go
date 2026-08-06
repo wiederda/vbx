@@ -43,7 +43,9 @@ func (s *iniStore) save() error {
 	sort.Strings(sections)
 
 	for _, sec := range sections {
-		sb.WriteString("[" + sec + "]\n")
+		sb.WriteByte('[')
+		sb.WriteString(sec)
+		sb.WriteString("]\n")
 
 		// Keys innerhalb einer Sektion ebenfalls sortieren
 		keys := make([]string, 0, len(s.data[sec]))

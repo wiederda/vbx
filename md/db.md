@@ -54,6 +54,26 @@ Verbindungen werden über einen Alias verwaltet – `db.Open` muss zuerst aufger
 
 ---
 
+## db.QueryParams(alias, sql, params)
+- **Konkret:**
+  Führt ein SELECT mit echter Parameter-Bindung aus und gibt das Ergebnis identisch zu `db.Query` zurück (gleiche Steuerzeichen-Bereinigung, gleiche Blob-Erkennung/Base64-Kodierung).
+  `?` im SQL-Text wird analog zu `db.ExecParams` durch dialektspezifische Platzhalter ersetzt.
+- **Parameter:**
+  - `alias`: Verbindungsalias.
+  - `sql`: SELECT-Statement mit `?` als Platzhalter.
+  - `params`: `ArrVal` mit den Werten, in der Reihenfolge der `?`-Platzhalter im SQL.
+- **Rückgabe:**
+  `ArrVal` (identisches Format zu `db.Query`: Array von Zeilen-Arrays). `ErrorVal` bei falscher Platzhalteranzahl, SQL-Fehler oder unbekanntem Alias.
+- **Beispiel:**
+```vbx
+  Dim rows = db.QueryParams("main", "SELECT pfad, hash FROM dateien WHERE typ = ?", {typ})
+  For Each row In rows
+      Print row(0) & " -> " & row(1)
+  Next
+```
+
+---
+
 ## db.QueryArray(alias, sql)
 - **Konkret:**
   Führt ein SELECT aus und gibt das Ergebnis als 2D-Array zurück.
@@ -78,6 +98,26 @@ Verbindungen werden über einen Alias verwaltet – `db.Open` muss zuerst aufger
   Array mit den Ergebnissen je Batch.
 
 ---
+
+## db.ExecParams(alias, sql, params)
+- **Konkret:**
+  Führt ein einzelnes SQL-Statement mit echter Parameter-Bindung aus. Kein Batch-Splitting (anders als `db.Exec`), kein manuelles String-Escaping nötig.
+  `?` im SQL-Text wird der Reihe nach durch die dialektspezifischen Platzhalter ersetzt (SQLite: `?`, Postgres: `$1,$2,...`, MSSQL: `@p1,@p2,...`) und die zugehörigen Werte werden gebunden, nicht in den SQL-Text eingesetzt.
+  Empfohlen für alle Fälle, in denen Werte aus unsicheren Quellen (z. B. Dateinamen, Benutzereingaben) in ein SQL-Statement eingebettet werden müssen – verhindert SQL-Injection zuverlässiger als manuelles Escaping von Anführungszeichen, da auch Zeichen wie `;` oder `--` innerhalb eines gebundenen Werts niemals als SQL-Syntax interpretiert werden.
+- **Parameter:**
+  - `alias`: Verbindungsalias.
+  - `sql`: SQL-Statement mit `?` als Platzhalter für jeden zu bindenden Wert.
+  - `params`: `ArrVal` mit den Werten, in der Reihenfolge der `?`-Platzhalter im SQL.
+- **Rückgabe:**
+  `BoolVal` (`true`) bei Erfolg, `ErrorVal` bei falscher Platzhalteranzahl, SQL-Fehler oder unbekanntem Alias.
+- **Beispiel:**
+```vbx
+  db.ExecParams("main", "DELETE FROM dateien WHERE pfad = ?", {pfad})
+  db.ExecParams("main", "UPDATE dateien SET hash = ? WHERE id = ?", {neuerHash, id})
+```
+
+---
+
 
 ## db.ExecFile(alias, path [, dryRun])
 - **Konkret:**

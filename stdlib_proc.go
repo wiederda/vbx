@@ -1,10 +1,10 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -459,6 +459,7 @@ func InitProcFunctions() {
 		)
 	})
 
+	// Nach mal prüfen - ExecInteractive
 	Register(ns+"ExecInteractive", "proc", "cmd, timeout, responses, args...",
 		"Führt Befehl aus und reagiert automatisch auf Prompts. responses = Array von [muster, antwort] Paaren. Rückgabe: [Full, Stdout, Stderr, ExitCode]",
 		func(args []Value) Value {
@@ -514,60 +515,91 @@ func InitProcFunctions() {
 
 			var stdoutBuf, stderrBuf strings.Builder
 			var mu sync.Mutex
+			var stdinMu sync.Mutex
 			var wg sync.WaitGroup
 
-			// stdout lesen + auf Prompts reagieren
-			wg.Add(1)
-			go func() {
+			handleOutput := func(reader io.Reader, isStdErr bool) {
 				defer wg.Done()
-				scanner := bufio.NewScanner(stdoutPipe)
-				scanner.Buffer(make([]byte, 1024), 1024*1024)
-				for scanner.Scan() {
-					line := scanner.Text()
-					mu.Lock()
-					stdoutBuf.WriteString(line + "\n")
-					mu.Unlock()
 
-					// Zeile gegen alle Muster prüfen
-					lineLower := strings.ToLower(line)
-					for pattern, answer := range responses {
-						if strings.Contains(lineLower, pattern) {
-							// Automatisch antworten
-							stdin.Write([]byte(answer + "\n"))
-							break
+				buf := make([]byte, 4096)
+				var current strings.Builder
+
+				for {
+					n, err := reader.Read(buf)
+
+					if n > 0 {
+						for _, ch := range buf[:n] {
+							current.WriteByte(ch)
+
+							// Prompt prüfen
+							if ch == '\n' || current.Len() >= 256 {
+								text := strings.ToLower(current.String())
+
+								for pattern, answer := range responses {
+									if strings.Contains(text, pattern) {
+										stdinMu.Lock()
+										_, _ = stdin.Write([]byte(answer + "\n"))
+										stdinMu.Unlock()
+										break
+									}
+								}
+							}
+
+							// Ausgabe speichern bei Zeilenende
+							if ch == '\n' {
+								mu.Lock()
+								if isStdErr {
+									stderrBuf.WriteString(current.String())
+								} else {
+									stdoutBuf.WriteString(current.String())
+								}
+								mu.Unlock()
+
+								current.Reset()
+							}
+
+							// sehr lange Zeilen begrenzen
+							if current.Len() >= 256 {
+								current.Reset()
+							}
 						}
 					}
-				}
-			}()
 
-			// stderr lesen + ebenfalls auf Prompts reagieren
-			// (manche Programme schreiben Prompts auf stderr)
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				scanner := bufio.NewScanner(stderrPipe)
-				scanner.Buffer(make([]byte, 1024), 1024*1024)
-				for scanner.Scan() {
-					line := scanner.Text()
-					mu.Lock()
-					stderrBuf.WriteString(line + "\n")
-					mu.Unlock()
-
-					lineLower := strings.ToLower(line)
-					for pattern, answer := range responses {
-						if strings.Contains(lineLower, pattern) {
-							stdin.Write([]byte(answer + "\n"))
-							break
+					if err != nil {
+						if err != io.EOF {
+							mu.Lock()
+							if isStdErr {
+								stderrBuf.WriteString("stderr read error: ")
+								stderrBuf.WriteString(err.Error())
+							} else {
+								stdoutBuf.WriteString("stdout read error: ")
+								stdoutBuf.WriteString(err.Error())
+							}
+							mu.Unlock()
 						}
+						return
 					}
 				}
-			}()
+			}
 
-			// Warten bis alle Pipes gelesen sind
-			wg.Wait()
-			stdin.Close()
+			// stdout lesen
+			// stdout lesen
+			// stdout lesen
+			wg.Add(1)
+			go handleOutput(stdoutPipe, false)
 
+			// stderr lesen
+			wg.Add(1)
+			go handleOutput(stderrPipe, true)
+
+			// Prozess abwarten
 			err = cmd.Wait()
+
+			// stdin schließen
+			_ = stdin.Close()
+
+			// Reader beenden
+			wg.Wait()
 
 			exitCode := getExitCode(err, ctx)
 

@@ -682,6 +682,7 @@ func getTableColumns(db *sql.DB, driver string, table string) ([]string, error) 
 }
 
 func convertDBValue(srcDriver, dstDriver string, col *sql.ColumnType, value any) any {
+	_ = srcDriver
 
 	dbType := strings.ToUpper(col.DatabaseTypeName())
 
@@ -691,21 +692,17 @@ func convertDBValue(srcDriver, dstDriver string, col *sql.ColumnType, value any)
 		return nil
 
 	case []byte:
-		// Binärdaten unverändert übernehmen
 		switch dbType {
 		case "VARBINARY", "IMAGE", "BLOB", "BYTEA", "BINARY":
 			return v
 		}
 
-		// Alle anderen []byte (z.B. VARCHAR bei manchen Treibern)
-		// als String behandeln.
 		return string(v)
 
 	case time.Time:
 		return v
 
 	case bool:
-		// SQLite kennt keinen echten Bool
 		if dstDriver == "sqlite" || dstDriver == "sqlite3" {
 			if v {
 				return 1

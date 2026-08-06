@@ -536,7 +536,10 @@ func InitStringFunctions() {
 		for i, row := range dataVal.Arr {
 			// Batch Header (INSERT INTO...)
 			if i == 0 || (batchSize > 0 && i%batchSize == 0) {
-				sb.WriteString("INSERT INTO " + table + colPart + " VALUES\n")
+				sb.WriteString("INSERT INTO ")
+				sb.WriteString(table)
+				sb.WriteString(colPart)
+				sb.WriteString(" VALUES\n")
 			}
 
 			// Zeile bauen: Erst den Hauptwert (row), dann die Extras
@@ -544,7 +547,9 @@ func InitStringFunctions() {
 			rowParts = append(rowParts, escape(row))
 			rowParts = append(rowParts, extrasEscaped...)
 
-			sb.WriteString("(" + strings.Join(rowParts, ", ") + ")")
+			sb.WriteByte('(')
+			sb.WriteString(strings.Join(rowParts, ", "))
+			sb.WriteByte(')')
 
 			// Trenner oder Abschluss
 			isLastRow := i == len(dataVal.Arr)-1

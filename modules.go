@@ -130,6 +130,13 @@ func parseOptionalModulesFromVBFile(filename string) []string {
 			break
 		}
 	}
+
+	if err := scanner.Err(); err != nil {
+		// Lesefehler ignorieren wir bewusst - bereits gesammelte Module bleiben gültig,
+		// und die Funktion hat ohnehin nur eine Best-Effort-Semantik (siehe Rückgabe nil bei Open-Fehler)
+		return modules
+	}
+
 	return modules
 }
 

@@ -59,12 +59,18 @@ func getOSID() string {
 	defer file.Close()
 
 	scanner := bufio.NewScanner(file)
+
 	for scanner.Scan() {
 		line := scanner.Text()
 		if strings.HasPrefix(line, "PRETTY_NAME=") {
 			return strings.Trim(strings.TrimPrefix(line, "PRETTY_NAME="), "\"")
 		}
 	}
+
+	if err := scanner.Err(); err != nil {
+		return "linux"
+	}
+
 	return "linux"
 }
 

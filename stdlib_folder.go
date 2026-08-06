@@ -551,6 +551,7 @@ func InitFolderFunctions() {
 		return Value{Kind: KindArr, Arr: result}
 	})
 
+	// Noch mal prüfen
 	// folder.FindInFiles
 	Register(ns+"FindInFiles", "folder", "path, ext, search [, pattern, flags]", "Durchsucht Dateien zeilenweise nach Text. Flags: i=case-insensitive.", func(args []Value) Value {
 		if len(args) < 3 {
@@ -607,17 +608,22 @@ func InitFolderFunctions() {
 				defer file.Close()
 
 				scanner := bufio.NewScanner(file)
+				scanner.Buffer(make([]byte, 1024), 1024*1024*10)
+
 				lineNumber := 0
 
 				for scanner.Scan() {
 					lineNumber++
+
 					line := scanner.Text()
 					match := false
+
 					if ignoreCase {
 						match = strings.Contains(strings.ToLower(line), strings.ToLower(search))
 					} else {
 						match = strings.Contains(line, search)
 					}
+
 					if match {
 						results <- Value{
 							Kind: KindArr,
@@ -628,6 +634,10 @@ func InitFolderFunctions() {
 							},
 						}
 					}
+				}
+
+				if err := scanner.Err(); err != nil {
+					return
 				}
 			}(p)
 

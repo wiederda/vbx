@@ -561,6 +561,108 @@ func InitDBFunctions() {
 		return Value{Kind: KindArr, Arr: allRows}
 	})
 
+	Register(ns+"QueryParams", "db", "alias, sql, params", "Führt ein parametrisiertes SELECT aus (echte Werte-Bindung, kein String-Escaping nötig).", func(args []Value) Value {
+		if len(args) < 3 {
+			return Value{Kind: KindArr, Arr: []Value{}}
+		}
+
+		alias := args[0].Str
+		sqlTemplate := args[1].Str
+
+		if args[2].Kind != KindArr {
+			return ErrorVal("db.QueryParams: dritter Parameter muss ein Array sein")
+		}
+		params := args[2].Arr
+
+		db, driver, err := getConn(alias)
+		if err != nil {
+			return ErrorVal(err.Error())
+		}
+
+		// '?' im Template durch dialektspezifische Platzhalter ersetzen
+		var finalSQL strings.Builder
+		pos := 0
+		paramIdx := 0
+		for pos < len(sqlTemplate) {
+			if sqlTemplate[pos] == '?' {
+				if paramIdx >= len(params) {
+					return ErrorVal("db.QueryParams: zu wenige Werte für die Platzhalter im SQL übergeben")
+				}
+				finalSQL.WriteString(placeholder(driver, paramIdx+1))
+				paramIdx++
+				pos++
+				continue
+			}
+			finalSQL.WriteByte(sqlTemplate[pos])
+			pos++
+		}
+
+		if paramIdx != len(params) {
+			return ErrorVal("db.QueryParams: Anzahl der Platzhalter passt nicht zur Anzahl der übergebenen Werte")
+		}
+
+		goParams := make([]interface{}, len(params))
+		for i, p := range params {
+			goParams[i] = valToInterface(p)
+		}
+
+		rows, err := db.Query(finalSQL.String(), goParams...)
+		if err != nil {
+			return ErrorVal(err.Error())
+		}
+		defer rows.Close()
+
+		cols, _ := rows.Columns()
+		allRows := make([]Value, 0)
+
+		vals := make([]interface{}, len(cols))
+		ptrs := make([]interface{}, len(cols))
+		for i := range vals {
+			ptrs[i] = &vals[i]
+		}
+
+		// Identische Säuberungs-Logik wie in db.Query
+		clean := func(s string) string {
+			s = strings.TrimSpace(s)
+			return strings.Map(func(r rune) rune {
+				if r >= 32 || r == 9 || r == 10 || r == 13 {
+					return r
+				}
+				return -1
+			}, s)
+		}
+
+		for rows.Next() {
+			row := make([]Value, len(cols))
+			if err := rows.Scan(ptrs...); err != nil {
+				continue
+			}
+
+			for i, v := range vals {
+				if v == nil {
+					row[i] = Value{Kind: KindNull}
+					continue
+				}
+
+				switch val := v.(type) {
+				case string:
+					row[i] = StrVal(clean(val))
+				case []byte:
+					if isBinaryData(val) {
+						row[i] = StrVal(base64.StdEncoding.EncodeToString(val))
+					} else {
+						row[i] = StrVal(clean(string(val)))
+					}
+				default:
+					row[i] = convertToValue(v)
+				}
+			}
+			allRows = append(allRows, Value{Kind: KindArr, Arr: row})
+		}
+
+		return Value{Kind: KindArr, Arr: allRows}
+	})
+
 	// ---------------- QueryArray (Unified) ----------------
 	Register(ns+"QueryArray", "db", "alias, sql", "Gibt 2D-Array zurück.", func(args []Value) Value {
 		if len(args) < 2 {
@@ -1051,6 +1153,60 @@ func InitDBFunctions() {
 		}
 
 		return Value{Kind: KindArr, Arr: finalResults}
+	})
+
+	Register(ns+"ExecParams", "db", "alias, sql, params", "Führt ein einzelnes parametrisiertes SQL-Statement aus (kein Batch-Splitting, echte Werte-Bindung).", func(args []Value) Value {
+		if len(args) < 3 {
+			return ErrorVal("usage: db.ExecParams(alias, sql, paramsArray)")
+		}
+
+		alias := args[0].Str
+		sqlTemplate := args[1].Str
+
+		if args[2].Kind != KindArr {
+			return ErrorVal("db.ExecParams: dritter Parameter muss ein Array sein")
+		}
+		params := args[2].Arr
+
+		db, driver, err := getConn(alias)
+		if err != nil {
+			return ErrorVal(err.Error())
+		}
+
+		// '?' im Template durch dialektspezifische Platzhalter ersetzen,
+		// in der Reihenfolge des Vorkommens.
+		var finalSQL strings.Builder
+		pos := 0
+		paramIdx := 0
+		for pos < len(sqlTemplate) {
+			if sqlTemplate[pos] == '?' {
+				if paramIdx >= len(params) {
+					return ErrorVal("db.ExecParams: zu wenige Werte für die Platzhalter im SQL übergeben")
+				}
+				finalSQL.WriteString(placeholder(driver, paramIdx+1))
+				paramIdx++
+				pos++
+				continue
+			}
+			finalSQL.WriteByte(sqlTemplate[pos])
+			pos++
+		}
+
+		if paramIdx != len(params) {
+			return ErrorVal("db.ExecParams: Anzahl der Platzhalter passt nicht zur Anzahl der übergebenen Werte")
+		}
+
+		goParams := make([]interface{}, len(params))
+		for i, p := range params {
+			goParams[i] = valToInterface(p)
+		}
+
+		_, err = db.Exec(finalSQL.String(), goParams...)
+		if err != nil {
+			return ErrorVal(err.Error())
+		}
+
+		return BoolVal(true)
 	})
 
 	// ---------------- db.ListColumns ----------------

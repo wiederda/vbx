@@ -26,7 +26,7 @@ var optionalModuleFunctions = map[string]int{
 	"computer": 14,
 	"crypt":    6,
 	"data":     15,
-	"db":       28,
+	"db":       30,
 	"debug":    11,
 	"docker":   31,
 	"env":      3,
