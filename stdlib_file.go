@@ -941,6 +941,10 @@ func InitFileFunctions() {
 			return ErrorVal("file.AppendAllText(path, text) benötigt Pfad und Text")
 		}
 
+		if args[0].Kind != KindStr {
+			return ErrorVal("file.AppendAllText: erwartet einen Text-Pfad, erhalten: " + GetKindName(args[0].Kind))
+		}
+
 		path, errVal := absPathVal(args[0].Str)
 		if errVal != nil {
 			return *errVal
@@ -949,6 +953,11 @@ func InitFileFunctions() {
 		// Verzeichnis muss existieren
 		if _, err := os.Stat(filepath.Dir(path)); err != nil {
 			return ErrorVal("Verzeichnis existiert nicht: " + filepath.Dir(path))
+		}
+
+		// Klarere Meldung, falls der Zielpfad selbst ein Verzeichnis ist
+		if info, err := os.Stat(path); err == nil && info.IsDir() {
+			return ErrorVal("Der angegebene Pfad ist ein Verzeichnis, keine Datei: " + path)
 		}
 
 		f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)

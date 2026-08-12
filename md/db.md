@@ -154,9 +154,10 @@ Verbindungen werden über einen Alias verwaltet – `db.Open` muss zuerst aufger
 
 ## db.CopyTable(sourceAlias, targetAlias, sourceTable, targetTable)
 - **Konkret:**
-  Kopiert alle Zeilen einer Tabelle von einer Verbindung in eine andere.
+  Kopiert alle Zeilen einer Tabelle von einer Verbindung in eine andere, auch zwischen unterschiedlichen Treibern (z. B. SQLite → Postgres).
   Liest per `SELECT *` und schreibt zeilenweise per vorbereitetem INSERT innerhalb einer Transaktion auf der Zielverbindung.
-  Platzhalter sind fest `?` – bei Zielverbindung mit anderer Platzhaltersyntax (z. B. Postgres) aktuell nicht dialektspezifisch angepasst.
+  Platzhalter werden dialektspezifisch anhand der Zielverbindung gewählt (SQLite: `?`, Postgres: `$1,$2,...`, MSSQL: `@p1,@p2,...`). Werte werden zusätzlich pro Spalte zwischen Quell- und Zieldialekt konvertiert.
+  Die Zieltabelle muss vor dem Aufruf bereits existieren (`CopyTable` legt sie nicht selbst an) und in Spaltenanzahl/-namen zur Quelltabelle passen.
 - **Parameter:**
   - `sourceAlias`: Alias der Quellverbindung.
   - `targetAlias`: Alias der Zielverbindung.
@@ -164,6 +165,12 @@ Verbindungen werden über einen Alias verwaltet – `db.Open` muss zuerst aufger
   - `targetTable`: Zieltabelle.
 - **Rückgabe:**
   `NumVal` (Anzahl kopierter Zeilen), `ErrorVal` bei fehlenden Argumenten, unbekanntem Alias oder Fehler.
+- **Hinweis zu Auto-Increment-Spalten:**
+  `SELECT *` liest auch Primärschlüssel-/ID-Spalten mit und schreibt deren Werte explizit in die Zieltabelle. Bei einer Ziel-ID vom Typ `SERIAL` (Postgres) oder `AUTOINCREMENT` (SQLite) wird dabei der interne Sequenz-Zähler der Zieldatenbank **nicht automatisch aktualisiert**. Nach dem Kopieren empfiehlt sich (Postgres-Beispiel):
+```vbx
+  db.Exec(targetAlias, "SELECT setval(pg_get_serial_sequence('tabelle', 'id'), (SELECT MAX(id) FROM tabelle))")
+```
+  um Konflikte bei nachfolgenden `db.Insert`-Aufrufen zu vermeiden.
 
 ---
 

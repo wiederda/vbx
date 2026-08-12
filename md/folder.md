@@ -178,19 +178,6 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
 
 ---
 
-## folder.Dir(path [, pattern, recursive])
-- **Konkret:**
-  Gibt ein Array mit allen Einträgen (Dateien und Ordner) als relative Pfade zurück.
-- **Parameter:**
-  - `path`: Verzeichnispfad.
-  - `pattern`: Optional. Glob-Muster.
-  - `recursive`: Optional. `BoolVal`.
-- **Rückgabe:**
-  `ArrVal`
-  Array von `StrVal`-Einträgen (relative Pfade).
-
----
-
 ## folder.GetDirectories(path [, pattern])
 - **Konkret:**
   Gibt ein Array mit den Namen direkt enthaltener Unterverzeichnisse zurück, die dem Muster entsprechen.

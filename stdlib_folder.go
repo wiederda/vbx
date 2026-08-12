@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -359,6 +360,7 @@ func InitFolderFunctions() {
 		if len(args) >= 1 && args[0].Str != "" {
 			rawDir = args[0].Str
 		}
+
 		if len(args) >= 2 && args[1].Str != "" {
 			pattern = args[1].Str
 		}
@@ -374,16 +376,29 @@ func InitFolderFunctions() {
 		}
 
 		var results []Value
+
 		for _, e := range entries {
-			if e.IsDir() {
-				match, _ := filepath.Match(pattern, e.Name())
-				if match {
-					results = append(results, StrVal(e.Name()))
-				}
+			if !e.IsDir() {
+				continue
 			}
+
+			match, _ := filepath.Match(pattern, e.Name())
+			if !match {
+				continue
+			}
+
+			results = append(results, StrVal(e.Name()))
 		}
 
-		return Value{Kind: KindArr, Arr: results}
+		// Natürliche Sortierung wie im Explorer:
+		sort.SliceStable(results, func(i, j int) bool {
+			return naturalLess(results[i].Str, results[j].Str)
+		})
+
+		return Value{
+			Kind: KindArr,
+			Arr:  results,
+		}
 	})
 
 	// folder.GetFiles
@@ -395,11 +410,14 @@ func InitFolderFunctions() {
 		err := WalkFolder(opts, func(it FolderItem) error {
 			if it.Info != nil && !it.Info.IsDir() {
 				name := it.Name
+
 				if opts.FullPath {
 					name = it.Path
 				}
+
 				out = append(out, StrVal(name))
 			}
+
 			return nil
 		})
 
@@ -407,7 +425,15 @@ func InitFolderFunctions() {
 			return ErrorVal(err.Error())
 		}
 
-		return Value{Kind: KindArr, Arr: out}
+		// Natürliche Sortierung
+		sort.SliceStable(out, func(i, j int) bool {
+			return naturalLess(out[i].Str, out[j].Str)
+		})
+
+		return Value{
+			Kind: KindArr,
+			Arr:  out,
+		}
 	})
 
 	// folder.GetSubFolders
@@ -419,11 +445,14 @@ func InitFolderFunctions() {
 		err := WalkFolder(opts, func(it FolderItem) error {
 			if it.Info != nil && it.Info.IsDir() && it.Path != opts.Path {
 				name := it.Name
+
 				if opts.FullPath {
 					name = it.Path
 				}
+
 				out = append(out, StrVal(name))
 			}
+
 			return nil
 		})
 
@@ -431,28 +460,15 @@ func InitFolderFunctions() {
 			return ErrorVal(err.Error())
 		}
 
-		return Value{Kind: KindArr, Arr: out}
-	})
-
-	// folder.Dir
-	Register(ns+"Dir", "folder", "path [, pattern, recursive]", "Gibt ein Array mit allen Einträgen (Dateien + Ordner) als relative Pfade zurück.", func(args []Value) Value {
-		opts := parseFolderArgs(args)
-
-		var out []Value
-
-		err := WalkFolder(opts, func(it FolderItem) error {
-			rel, _ := filepath.Rel(opts.Path, it.Path)
-			if rel != "." {
-				out = append(out, StrVal(rel))
-			}
-			return nil
+		// Natürliche Sortierung wie bei GetFiles
+		sort.SliceStable(out, func(i, j int) bool {
+			return naturalLess(out[i].Str, out[j].Str)
 		})
 
-		if err != nil {
-			return ErrorVal(err.Error())
+		return Value{
+			Kind: KindArr,
+			Arr:  out,
 		}
-
-		return Value{Kind: KindArr, Arr: out}
 	})
 
 	// folder.CreateSymlink

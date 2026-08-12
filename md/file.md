@@ -174,16 +174,7 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   - `workers`: Optional. Anzahl paralleler Worker (Standard: 8).
 - **Rückgabe:**
   `MapVal` – Pfad (Schlüssel) auf Hash (`StrVal`) oder `ErrorVal` bei Lesefehler der jeweiligen Datei.
-- **Beispiel:**
-```vbx
-  Dim files = folder.GetFiles("C:\Daten", "*.mp4", True, True)
-  Dim hashes = file.HashBatch(files, "sha256")
-
-  For Each path In files
-      Print path & " -> " & hashes[path]
-  Next
-```
-
+  
 ---
 
 ## file.HashVerify(hash, algo)

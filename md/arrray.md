@@ -2,6 +2,7 @@
 
 Dient zur Erstellung, Manipulation und Auswertung von ein- und zweidimensionalen Arrays.
 Funktioniert mit `KindArr` (1D) und `KindArr2D` (2D). Viele Operationen sind mutierend (In-Place).
+Export/Import als Datei wird für CSV und XLSX unterstützt.
 
 ---
 
@@ -323,15 +324,23 @@ Funktioniert mit `KindArr` (1D) und `KindArr2D` (2D). Viele Operationen sind mut
 
 ---
 
-## array.ToCSV(path, data [, sep])
+## array.ToCSV(path, data [, sep, exclude, append])
+
 - **Konkret:**
   Speichert ein 1D- oder 2D-Array als CSV-Datei.
+  Bei einem 1D-Array aus verschachtelten Arrays wird jedes innere Array als eigene Zeile geschrieben.
+  Bei einem flachen 1D-Array aus einfachen Werten (Strings, Zahlen) wird jedes Element als eigene Zeile mit genau einer Zelle geschrieben.
+
+  Mit `exclude` können Zeilen ausgeschlossen werden. Eine Zeile wird nicht geschrieben, wenn mindestens eine ihrer Zellen einen Wert aus dem Ausschluss-Array enthält.
+
+  Mit `append=True` werden die Daten an eine bereits vorhandene CSV-Datei angehängt. Ist die Datei noch nicht vorhanden, wird sie automatisch erstellt.
+
 - **Parameter:**
   - `path`: Zieldatei.
   - `data`: `ArrVal` oder `KindArr2D`.
   - `sep`: Optional. Trennzeichen (Standard: `;`).
-- **Rückgabe:**
-  `StrVal` (`"ok"`) bei Erfolg, Fehlermeldung bei Fehler.
+  - `exclude`: Optional. Array {} mit Werten, deren Vorkommen in einer beliebigen Zelle zum Überspringen der gesamten Zeile führt.
+  - `append`: Optional. Boolean. Bei `True` werden die Daten an die bestehende Datei angehängt (Standard: `False`).
 
 ---
 
@@ -347,3 +356,41 @@ Funktioniert mit `KindArr` (1D) und `KindArr2D` (2D). Viele Operationen sind mut
 - **Rückgabe:**
   `KindArr2D`
   Leere Matrix bei Fehler.
+
+  ---
+
+ ## array.ToXLSX(path, data [, sheetName, exclude, append])
+
+- **Konkret:**
+  Speichert ein 1D- oder 2D-Array als XLSX-Datei (Excel-Format), ohne dass Excel oder eine andere Office-Anwendung installiert sein muss.
+  Bei einem 1D-Array aus verschachtelten Arrays wird jedes innere Array als eigene Zeile geschrieben.
+  Bei einem flachen 1D-Array aus einfachen Werten (Strings, Zahlen) wird jedes Element als eigene Zeile mit genau einer Zelle geschrieben.
+  Die Funktion unterstützt mehrere Tabellenblätter innerhalb derselben XLSX-Datei.
+  Wird eine bereits vorhandene XLSX-Datei angegeben, kann ein weiteres Tabellenblatt hinzugefügt werden.
+  Standardmäßig wird ein bereits vorhandenes Tabellenblatt mit demselben Namen gelöscht und anschließend neu erstellt.
+
+  Mit `append=True` bleibt das vorhandene Tabellenblatt erhalten und die neuen Daten werden ab der ersten freien Zeile angehängt. Existiert das Tabellenblatt noch nicht, wird es neu erstellt.
+
+  Mit `exclude` können Zeilen ausgeschlossen werden. Eine Zeile wird nicht geschrieben, wenn mindestens eine ihrer Zellen einen Wert aus dem Ausschluss-Array enthält.
+
+  Nutzt intern die Go-Bibliothek `excelize` zur direkten Erzeugung und Bearbeitung des XLSX-Dateiformats (ZIP+XML).
+
+- **Parameter:**
+  - `path`: Zieldatei.
+  - `data`: `ArrVal` oder `KindArr2D`.
+  - `sheetName`: Optional. Name des Tabellenblatts (Standard: `"Sheet1"`).
+  - `exclude`: Optional. Array {} mit Werten, deren Vorkommen in einer beliebigen Zelle zum Überspringen der gesamten Zeile führt.
+  - `append`: Optional. Boolean. Bei `True` werden die Daten an das vorhandene Tabellenblatt angehängt (Standard: `False`).
+
+---
+
+## array.FromXLSX(path [, sheetName])
+- **Konkret:**
+  Lädt eine XLSX-Datei in ein 2D-Array.
+  Ohne Angabe von `sheetName` wird das erste Tabellenblatt der Datei gelesen.
+- **Parameter:**
+  - `path`: Quelldatei.
+  - `sheetName`: Optional. Name des zu lesenden Tabellenblatts (Standard: erstes Blatt).
+- **Rückgabe:**
+  `KindArr2D`
+  Leere Matrix bei Fehler (Datei nicht gefunden, ungültiges Format, o. ä.).

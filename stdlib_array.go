@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/xuri/excelize/v2"
 )
 
 // InitArrayFunctions registriert array-Funktionen
@@ -352,68 +354,184 @@ func InitArrayFunctions() {
 		return Value{Kind: KindNum, Num: -1}
 	})
 
-	Register(ns+"ToCSV", "array", "path, data, [sep]", "Speichert ein Array oder 2D-Array als CSV-Datei.", func(args []Value) Value {
+	Register(ns+"ToCSV", "array", "path, data, [sep, exclude, append]", "Speichert ein Array oder 2D-Array als CSV-Datei. Mit exclude können Zeilen ausgeschlossen und mit append Daten angehängt werden.", func(args []Value) Value {
 		if len(args) < 2 {
-			return Value{Kind: KindStr, Str: "error: filename and data required"}
+			return Value{
+				Kind: KindStr,
+				Str:  "error: filename and data required",
+			}
 		}
 
 		filename := args[0].Str
 		data := args[1]
 
-		// Optionaler Separator (Default: ;)
+		// ------------------------------------------------------------
+		// Separator
+		// ------------------------------------------------------------
+
 		separator := ';'
-		if len(args) >= 3 && len(args[2].Str) > 0 {
+
+		if len(args) >= 3 && args[2].Kind == KindStr && args[2].Str != "" {
 			separator = rune(args[2].Str[0])
 		}
 
-		// Weiche für die unterstützten Typen
-		if data.Kind != KindArr && data.Kind != KindArr2D {
-			return Value{Kind: KindStr, Str: "error: data must be Array or Array2D"}
+		// ------------------------------------------------------------
+		// Ausschlusswerte
+		// ------------------------------------------------------------
+
+		excludeSet := make(map[string]struct{})
+
+		if len(args) >= 4 && args[3].Kind == KindArr {
+			for _, ex := range args[3].Arr {
+				excludeSet[ToString(ex)] = struct{}{}
+			}
 		}
 
-		f, err := os.Create(filename)
-		if err != nil {
-			return Value{Kind: KindStr, Str: "error: " + err.Error()}
+		rowExcluded := func(row []Value) bool {
+			if len(excludeSet) == 0 {
+				return false
+			}
+
+			for _, cell := range row {
+				if _, exists := excludeSet[ToString(cell)]; exists {
+					return true
+				}
+			}
+
+			return false
 		}
+
+		// ------------------------------------------------------------
+		// Daten prüfen
+		// ------------------------------------------------------------
+
+		if data.Kind != KindArr && data.Kind != KindArr2D {
+			return Value{
+				Kind: KindStr,
+				Str:  "error: data must be Array or Array2D",
+			}
+		}
+
+		// ------------------------------------------------------------
+		// Datei öffnen
+		// ------------------------------------------------------------
+
+		var f *os.File
+		var err error
+
+		if len(args) >= 5 && args[4].Kind == KindBool && args[4].Bool {
+			// Append
+			f, err = os.OpenFile(
+				filename,
+				os.O_CREATE|os.O_WRONLY|os.O_APPEND,
+				0644,
+			)
+		} else {
+			// Datei neu erstellen / überschreiben
+			f, err = os.Create(filename)
+		}
+
+		if err != nil {
+			return Value{
+				Kind: KindStr,
+				Str:  "error: " + err.Error(),
+			}
+		}
+
 		defer f.Close()
+
+		// ------------------------------------------------------------
+		// CSV Writer
+		// ------------------------------------------------------------
 
 		writer := csv.NewWriter(f)
 		writer.Comma = separator
 
-		// Hilfsfunktion für die Konvertierung
+		// ------------------------------------------------------------
+		// Eine Zeile schreiben
+		// ------------------------------------------------------------
+
 		writeRow := func(row []Value) error {
+			if rowExcluded(row) {
+				return nil
+			}
+
 			record := make([]string, len(row))
+
 			for i, cell := range row {
-				// Verwendet deine valueToInterface oder toRawGoValue Funktion
 				val := valToInterface(cell)
+
 				if val == nil {
 					record[i] = ""
 				} else {
 					record[i] = fmt.Sprintf("%v", val)
 				}
 			}
+
 			return writer.Write(record)
 		}
 
+		// ------------------------------------------------------------
 		// Daten schreiben
+		// ------------------------------------------------------------
+
 		if data.Kind == KindArr2D {
+
 			for _, row := range data.Arr2D {
 				if err := writeRow(row); err != nil {
-					return Value{Kind: KindStr, Str: err.Error()}
+					return Value{
+						Kind: KindStr,
+						Str:  "error: " + err.Error(),
+					}
 				}
 			}
+
 		} else {
+
 			for _, rowVal := range data.Arr {
+
 				if rowVal.Kind == KindArr {
+
 					if err := writeRow(rowVal.Arr); err != nil {
-						return Value{Kind: KindStr, Str: err.Error()}
+						return Value{
+							Kind: KindStr,
+							Str:  "error: " + err.Error(),
+						}
+					}
+
+				} else {
+
+					// Flaches Array:
+					// jedes Element wird zu einer eigenen Zeile
+					// mit genau einer Spalte.
+
+					if err := writeRow([]Value{rowVal}); err != nil {
+						return Value{
+							Kind: KindStr,
+							Str:  "error: " + err.Error(),
+						}
 					}
 				}
 			}
 		}
 
+		// ------------------------------------------------------------
+		// Flush prüfen
+		// ------------------------------------------------------------
+
 		writer.Flush()
-		return Value{Kind: KindStr, Str: "ok"}
+
+		if err := writer.Error(); err != nil {
+			return Value{
+				Kind: KindStr,
+				Str:  "error: " + err.Error(),
+			}
+		}
+
+		return Value{
+			Kind: KindStr,
+			Str:  "ok",
+		}
 	})
 
 	Register(ns+"FromCSV", "array", "path, [sep]", "Lädt eine CSV-Datei in ein 2D-Array. (Default-Separator: ;)", func(args []Value) Value {
@@ -473,6 +591,347 @@ func InitArrayFunctions() {
 		}
 
 		return Value{Kind: KindArr2D, Arr2D: res2D}
+	})
+
+	Register(ns+"ToXLSX", "array", "path, data, [sheetName, exclude, append]", "Speichert ein Array oder 2D-Array als XLSX-Datei. Vorhandene Blätter werden standardmäßig ersetzt. Mit append=True werden Daten angehängt.", func(args []Value) Value {
+		if len(args) < 2 {
+			return Value{
+				Kind: KindStr,
+				Str:  "error: filename and data required",
+			}
+		}
+
+		filename := args[0].Str
+		data := args[1]
+
+		// ------------------------------------------------------------
+		// Parameter
+		// ------------------------------------------------------------
+
+		sheetName := "Sheet1"
+
+		if len(args) >= 3 && args[2].Kind == KindStr && args[2].Str != "" {
+			sheetName = args[2].Str
+		}
+
+		// Ausschlusswerte
+		excludeSet := make(map[string]struct{})
+
+		if len(args) >= 4 && args[3].Kind == KindArr {
+			for _, ex := range args[3].Arr {
+				excludeSet[ToString(ex)] = struct{}{}
+			}
+		}
+
+		// Append
+		appendMode := false
+
+		if len(args) >= 5 {
+			if args[4].Kind == KindBool {
+				appendMode = args[4].Bool
+			}
+		}
+
+		// ------------------------------------------------------------
+		// Daten prüfen
+		// ------------------------------------------------------------
+
+		if data.Kind != KindArr && data.Kind != KindArr2D {
+			return Value{
+				Kind: KindStr,
+				Str:  "error: data must be Array or Array2D",
+			}
+		}
+
+		// ------------------------------------------------------------
+		// XLSX öffnen oder neu erstellen
+		// ------------------------------------------------------------
+
+		var f *excelize.File
+		var err error
+
+		if _, statErr := os.Stat(filename); statErr == nil {
+			f, err = excelize.OpenFile(filename)
+			if err != nil {
+				return Value{
+					Kind: KindStr,
+					Str:  "error: " + err.Error(),
+				}
+			}
+		} else {
+			f = excelize.NewFile()
+		}
+
+		defer f.Close()
+
+		// ------------------------------------------------------------
+		// Blatt suchen
+		// ------------------------------------------------------------
+
+		sheetIndex, err := f.GetSheetIndex(sheetName)
+
+		if err != nil {
+			return Value{
+				Kind: KindStr,
+				Str:  "error: " + err.Error(),
+			}
+		}
+
+		// ------------------------------------------------------------
+		// Blatt existiert
+		// ------------------------------------------------------------
+
+		if sheetIndex >= 0 {
+
+			if !appendMode {
+
+				// Vorhandenes Blatt löschen
+				if err := f.DeleteSheet(sheetName); err != nil {
+					return Value{
+						Kind: KindStr,
+						Str:  "error: " + err.Error(),
+					}
+				}
+
+				// Blatt wieder neu anlegen
+				sheetIndex, err = f.NewSheet(sheetName)
+				if err != nil {
+					return Value{
+						Kind: KindStr,
+						Str:  "error: " + err.Error(),
+					}
+				}
+			}
+
+		} else {
+
+			// --------------------------------------------------------
+			// Blatt existiert noch nicht
+			// --------------------------------------------------------
+
+			sheetIndex, err = f.NewSheet(sheetName)
+			if err != nil {
+				return Value{
+					Kind: KindStr,
+					Str:  "error: " + err.Error(),
+				}
+			}
+		}
+
+		_ = sheetIndex
+
+		// ------------------------------------------------------------
+		// Startzeile bestimmen
+		// ------------------------------------------------------------
+
+		rowIdx := 1
+
+		if appendMode {
+
+			// Vorhandene Zeilen ermitteln
+			rows, err := f.GetRows(sheetName)
+			if err != nil {
+				return Value{
+					Kind: KindStr,
+					Str:  "error: " + err.Error(),
+				}
+			}
+
+			if len(rows) > 0 {
+				rowIdx = len(rows) + 1
+			}
+		}
+
+		// ------------------------------------------------------------
+		// Prüfen, ob eine Zeile ausgeschlossen werden soll
+		// ------------------------------------------------------------
+
+		rowExcluded := func(row []Value) bool {
+			if len(excludeSet) == 0 {
+				return false
+			}
+
+			for _, cell := range row {
+				if _, exists := excludeSet[ToString(cell)]; exists {
+					return true
+				}
+			}
+
+			return false
+		}
+
+		// ------------------------------------------------------------
+		// Eine Zeile schreiben
+		// ------------------------------------------------------------
+
+		writeRow := func(rowIdx int, row []Value) error {
+			for colIdx, cell := range row {
+
+				cellRef, err := excelize.CoordinatesToCellName(
+					colIdx+1,
+					rowIdx,
+				)
+
+				if err != nil {
+					return err
+				}
+
+				if err := f.SetCellValue(
+					sheetName,
+					cellRef,
+					valToInterface(cell),
+				); err != nil {
+					return err
+				}
+			}
+
+			return nil
+		}
+
+		// ------------------------------------------------------------
+		// Daten schreiben
+		// ------------------------------------------------------------
+
+		if data.Kind == KindArr2D {
+
+			for _, row := range data.Arr2D {
+
+				if rowExcluded(row) {
+					continue
+				}
+
+				if err := writeRow(rowIdx, row); err != nil {
+					return Value{
+						Kind: KindStr,
+						Str:  "error: " + err.Error(),
+					}
+				}
+
+				rowIdx++
+			}
+
+		} else {
+
+			for _, rowVal := range data.Arr {
+
+				var row []Value
+
+				if rowVal.Kind == KindArr {
+					row = rowVal.Arr
+				} else {
+					row = []Value{rowVal}
+				}
+
+				if rowExcluded(row) {
+					continue
+				}
+
+				if err := writeRow(rowIdx, row); err != nil {
+					return Value{
+						Kind: KindStr,
+						Str:  "error: " + err.Error(),
+					}
+				}
+
+				rowIdx++
+			}
+		}
+
+		// ------------------------------------------------------------
+		// Neues Sheet1 entfernen
+		//
+		// excelize.NewFile() erzeugt zunächst Sheet1.
+		// Wenn wir ein anderes Blatt angelegt haben, brauchen wir
+		// das leere Standardsheet nicht.
+		// ------------------------------------------------------------
+
+		if sheetName != "Sheet1" {
+			if idx, err := f.GetSheetIndex("Sheet1"); err == nil && idx >= 0 {
+				if f.GetSheetName(idx) == "Sheet1" {
+					_ = f.DeleteSheet("Sheet1")
+				}
+			}
+		}
+
+		// ------------------------------------------------------------
+		// Aktives Blatt setzen
+		// ------------------------------------------------------------
+
+		if idx, err := f.GetSheetIndex(sheetName); err == nil && idx >= 0 {
+			f.SetActiveSheet(idx)
+		}
+
+		// ------------------------------------------------------------
+		// Datei speichern
+		// ------------------------------------------------------------
+
+		if err := f.SaveAs(filename); err != nil {
+			return Value{
+				Kind: KindStr,
+				Str:  "error: " + err.Error(),
+			}
+		}
+
+		return Value{
+			Kind: KindStr,
+			Str:  "ok",
+		}
+	})
+
+	Register(ns+"FromXLSX", "array", "path, [sheetName]", "Lädt eine XLSX-Datei in ein 2D-Array. Ohne sheetName wird das erste Tabellenblatt gelesen.", func(args []Value) Value {
+		if len(args) < 1 {
+			return Value{Kind: KindArr2D, Arr2D: [][]Value{}}
+		}
+
+		path := args[0].Str
+
+		f, err := excelize.OpenFile(path)
+		if err != nil {
+			return Value{Kind: KindArr2D, Arr2D: [][]Value{}}
+		}
+		defer f.Close()
+
+		sheetName := ""
+		if len(args) >= 2 && args[1].Str != "" {
+			sheetName = args[1].Str
+		} else {
+			sheetName = f.GetSheetName(0)
+		}
+
+		rows, err := f.GetRows(sheetName)
+		if err != nil {
+			return Value{Kind: KindArr2D, Arr2D: [][]Value{}}
+		}
+
+		res2D := make([][]Value, len(rows))
+		for i, row := range rows {
+			resRow := make([]Value, len(row))
+			for j, cell := range row {
+				resRow[j] = Value{Kind: KindStr, Str: strings.TrimSpace(cell)}
+			}
+			res2D[i] = resRow
+		}
+
+		return Value{Kind: KindArr2D, Arr2D: res2D}
+	})
+
+	Register(ns+"XLSXSheets", "array", "path", "Gibt die Namen aller Tabellenblätter einer XLSX-Datei zurück.", func(args []Value) Value {
+		if len(args) < 1 {
+			return Value{Kind: KindArr, Arr: []Value{}}
+		}
+
+		f, err := excelize.OpenFile(args[0].Str)
+		if err != nil {
+			return Value{Kind: KindArr, Arr: []Value{}}
+		}
+		defer f.Close()
+
+		names := f.GetSheetList()
+		result := make([]Value, len(names))
+		for i, n := range names {
+			result[i] = StrVal(n)
+		}
+		return Value{Kind: KindArr, Arr: result}
 	})
 
 	Register(ns+"Clear", "array", "array", "Leert ein bestehendes Array (mutierend)", func(args []Value) Value {
