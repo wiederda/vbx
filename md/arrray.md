@@ -331,7 +331,7 @@ Export/Import als Datei wird für CSV und XLSX unterstützt.
   Bei einem 1D-Array aus verschachtelten Arrays wird jedes innere Array als eigene Zeile geschrieben.
   Bei einem flachen 1D-Array aus einfachen Werten (Strings, Zahlen) wird jedes Element als eigene Zeile mit genau einer Zelle geschrieben.
 
-  Mit `exclude` können Zeilen ausgeschlossen werden. Eine Zeile wird nicht geschrieben, wenn mindestens eine ihrer Zellen einen Wert aus dem Ausschluss-Array enthält.
+  Mit `exclude` können Zeilen ausgeschlossen werden. Eine Zeile wird nicht geschrieben, wenn mindestens eine ihrer Zellen einen Wert aus dem Ausschluss-Array {} enthält.
 
   Mit `append=True` werden die Daten an eine bereits vorhandene CSV-Datei angehängt. Ist die Datei noch nicht vorhanden, wird sie automatisch erstellt.
 
@@ -344,20 +344,23 @@ Export/Import als Datei wird für CSV und XLSX unterstützt.
 
 ---
 
-## array.FromCSV(path [, sep])
+## array.FromCSV(path [, sep, exclude])
+
 - **Konkret:**
   Lädt eine CSV-Datei in ein 2D-Array.
+
   Bereinigt automatisch ungültige Steuerzeichen und Null-Bytes.
   Konvertiert Windows-1252 nach UTF-8 falls nötig.
   Toleriert ungleichmäßige Spaltenanzahl und einsame Anführungszeichen.
+
+  Mit `exclude` können komplette Zeilen beim Einlesen ausgeschlossen werden. Eine Zeile wird übersprungen, wenn mindestens eine ihrer Zellen einen Wert aus dem Ausschluss-Array {} enthält.
+
 - **Parameter:**
   - `path`: Quelldatei.
   - `sep`: Optional. Trennzeichen (Standard: `;`).
-- **Rückgabe:**
-  `KindArr2D`
-  Leere Matrix bei Fehler.
+  - `exclude`: Optional. Array mit Werten, deren Vorkommen in einer beliebigen Zelle zum Überspringen der gesamten Zeile führt.
 
-  ---
+ ---
 
  ## array.ToXLSX(path, data [, sheetName, exclude, append])
 
@@ -371,7 +374,7 @@ Export/Import als Datei wird für CSV und XLSX unterstützt.
 
   Mit `append=True` bleibt das vorhandene Tabellenblatt erhalten und die neuen Daten werden ab der ersten freien Zeile angehängt. Existiert das Tabellenblatt noch nicht, wird es neu erstellt.
 
-  Mit `exclude` können Zeilen ausgeschlossen werden. Eine Zeile wird nicht geschrieben, wenn mindestens eine ihrer Zellen einen Wert aus dem Ausschluss-Array enthält.
+  Mit `exclude` können Zeilen ausgeschlossen werden. Eine Zeile wird nicht geschrieben, wenn mindestens eine ihrer Zellen einen Wert aus dem Ausschluss-Array {} enthält.
 
   Nutzt intern die Go-Bibliothek `excelize` zur direkten Erzeugung und Bearbeitung des XLSX-Dateiformats (ZIP+XML).
 
@@ -384,13 +387,22 @@ Export/Import als Datei wird für CSV und XLSX unterstützt.
 
 ---
 
-## array.FromXLSX(path [, sheetName])
+## array.FromXLSX(path [, sheetName, exclude, column])
+
 - **Konkret:**
-  Lädt eine XLSX-Datei in ein 2D-Array.
+  Lädt eine XLSX-Datei in ein Array.
+
   Ohne Angabe von `sheetName` wird das erste Tabellenblatt der Datei gelesen.
+  Enthält das Tabellenblatt nur eine Spalte, wird ein 1D-Array (`KindArr`) zurückgegeben.
+  Enthält das Tabellenblatt mehrere Spalten, wird ein 2D-Array (`KindArr2D`) zurückgegeben.
+
+  Mit `exclude` können komplette Zeilen beim Einlesen ausgeschlossen werden. Eine Zeile wird übersprungen, wenn mindestens eine ihrer Zellen einen Wert aus dem Ausschluss-Array {} enthält.
+
+  Mit `column` kann gezielt eine einzelne Spalte aus einer mehrspaltigen Tabelle eingelesen werden. Die Spaltennummer ist 0-basiert, wobei `0` der ersten Spalte (A), `1` der zweiten Spalte (B) usw. entspricht. Bei Verwendung von `column` wird ein 1D-Array (`KindArr`) zurückgegeben.
+
 - **Parameter:**
+
   - `path`: Quelldatei.
   - `sheetName`: Optional. Name des zu lesenden Tabellenblatts (Standard: erstes Blatt).
-- **Rückgabe:**
-  `KindArr2D`
-  Leere Matrix bei Fehler (Datei nicht gefunden, ungültiges Format, o. ä.).
+  - `exclude`: Optional. Array mit Werten, deren Vorkommen in einer beliebigen Zelle zum Überspringen der gesamten Zeile führt.
+  - `column`: Optional. 0-basierte Spaltennummer. Wird nur eine bestimmte Spalte einer mehrspaltigen Tabelle benötigt.

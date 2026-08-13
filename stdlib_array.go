@@ -534,63 +534,130 @@ func InitArrayFunctions() {
 		}
 	})
 
-	Register(ns+"FromCSV", "array", "path, [sep]", "Lädt eine CSV-Datei in ein 2D-Array. (Default-Separator: ;)", func(args []Value) Value {
+	Register(ns+"FromCSV", "array", "path, [sep, exclude]", "Lädt eine CSV-Datei in ein 2D-Array. (Default-Separator: ;)", func(args []Value) Value {
 		if len(args) < 1 {
-			return Value{Kind: KindArr2D, Arr2D: [][]Value{}}
+			return Value{
+				Kind:  KindArr2D,
+				Arr2D: [][]Value{},
+			}
 		}
 
 		path := args[0].Str
+
 		separator := ';'
-		if len(args) >= 2 && len(args[1].Str) > 0 {
+		if len(args) >= 2 && args[1].Kind == KindStr && args[1].Str != "" {
 			separator = rune(args[1].Str[0])
 		}
 
-		// 1. Datei komplett roh einlesen
+		// ------------------------------------------------------------
+		// Ausschlusswerte
+		// ------------------------------------------------------------
+
+		excludeSet := make(map[string]struct{})
+
+		if len(args) >= 3 && args[2].Kind == KindArr {
+			for _, ex := range args[2].Arr {
+				excludeSet[ToString(ex)] = struct{}{}
+			}
+		}
+
+		rowExcluded := func(row []string) bool {
+			if len(excludeSet) == 0 {
+				return false
+			}
+
+			for _, cell := range row {
+				if _, exists := excludeSet[strings.TrimSpace(cell)]; exists {
+					return true
+				}
+			}
+
+			return false
+		}
+
+		// ------------------------------------------------------------
+		// Datei komplett roh einlesen
+		// ------------------------------------------------------------
+
 		rawContent, err := os.ReadFile(path)
 		if err != nil {
-			return Value{Kind: KindArr2D, Arr2D: [][]Value{}}
+			return Value{
+				Kind:  KindArr2D,
+				Arr2D: [][]Value{},
+			}
 		}
 
 		rawContent = ensureUTF8(rawContent)
 
-		// 2. SANITIZING: Unsichtbare Steuerzeichen & Null-Bytes entfernen
-		// Wir filtern alles raus, was den Parser verwirrt, behalten aber Umlaute.
+		// ------------------------------------------------------------
+		// Sanitizing
+		// ------------------------------------------------------------
+
 		cleanContent := make([]byte, 0, len(rawContent))
+
 		for i := 0; i < len(rawContent); i++ {
 			b := rawContent[i]
 
-			// Erlaube: Druckbare ASCII/UTF8, Tab (\t), LF (\n), CR (\r)
-			// Entferne: Alles unter 32 (außer Whitespace), besonders das Null-Byte (0)
+			// Erlaube:
+			// Druckbare ASCII/UTF8
+			// Tab, LF, CR
+			//
+			// Entferne:
+			// Steuerzeichen unter 32
 			if b >= 32 || b == '\n' || b == '\r' || b == '\t' {
 				cleanContent = append(cleanContent, b)
 			}
 		}
 
-		// 3. Den gereinigten Content dem CSV-Reader übergeben
+		// ------------------------------------------------------------
+		// CSV lesen
+		// ------------------------------------------------------------
+
 		reader := csv.NewReader(bytes.NewReader(cleanContent))
+
 		reader.Comma = separator
-		reader.LazyQuotes = true    // WICHTIG: Ignoriert einsame Anführungszeichen
-		reader.FieldsPerRecord = -1 // WICHTIG: Erlaubt ungleichmäßige Spaltenanzahl
+		reader.LazyQuotes = true
+		reader.FieldsPerRecord = -1
 
 		records, err := reader.ReadAll()
 		if err != nil {
-			// Falls ReadAll trotz Reinigung scheitert (z.B. Multiline-Quote Fehler)
 			fmt.Println("CSV-Parser-Error nach Reinigung:", err)
-			return Value{Kind: KindArr2D, Arr2D: [][]Value{}}
-		}
 
-		// 4. In 2D-Value-Array umwandeln
-		res2D := make([][]Value, len(records))
-		for i, row := range records {
-			resRow := make([]Value, len(row))
-			for j, cell := range row {
-				// Trimmt zusätzlich Leerzeichen an den Rändern der Zellen
-				resRow[j] = Value{Kind: KindStr, Str: strings.TrimSpace(cell)}
+			return Value{
+				Kind:  KindArr2D,
+				Arr2D: [][]Value{},
 			}
-			res2D[i] = resRow
 		}
 
-		return Value{Kind: KindArr2D, Arr2D: res2D}
+		// ------------------------------------------------------------
+		// In 2D-Value-Array umwandeln
+		// ------------------------------------------------------------
+
+		res2D := make([][]Value, 0, len(records))
+
+		for _, row := range records {
+
+			// Ausschluss prüfen
+			if rowExcluded(row) {
+				continue
+			}
+
+			resRow := make([]Value, len(row))
+
+			for j, cell := range row {
+				resRow[j] = Value{
+					Kind: KindStr,
+					Str:  strings.TrimSpace(cell),
+				}
+			}
+
+			res2D = append(res2D, resRow)
+		}
+
+		return Value{
+			Kind:  KindArr2D,
+			Arr2D: res2D,
+		}
 	})
 
 	Register(ns+"ToXLSX", "array", "path, data, [sheetName, exclude, append]", "Speichert ein Array oder 2D-Array als XLSX-Datei. Vorhandene Blätter werden standardmäßig ersetzt. Mit append=True werden Daten angehängt.", func(args []Value) Value {
@@ -878,71 +945,199 @@ func InitArrayFunctions() {
 		}
 	})
 
-	Register(ns+"FromXLSX", "array", "path, [sheetName]", "Lädt eine XLSX-Datei in ein 2D-Array. Ohne sheetName wird das erste Tabellenblatt gelesen.", func(args []Value) Value {
+	Register(ns+"FromXLSX", "array", "path, [sheetName, exclude, column]", "Lädt eine XLSX-Datei in ein Array. Bei einer Spalte wird ein 1D-Array, bei mehreren Spalten ein 2D-Array zurückgegeben. Mit column kann gezielt eine Spalte eingelesen werden.", func(args []Value) Value {
 		if len(args) < 1 {
-			return Value{Kind: KindArr2D, Arr2D: [][]Value{}}
+			return Value{
+				Kind: KindArr,
+				Arr:  []Value{},
+			}
 		}
 
 		path := args[0].Str
 
 		f, err := excelize.OpenFile(path)
 		if err != nil {
-			return Value{Kind: KindArr2D, Arr2D: [][]Value{}}
+			return Value{
+				Kind: KindArr,
+				Arr:  []Value{},
+			}
 		}
 		defer f.Close()
 
+		// ------------------------------------------------------------
+		// Tabellenblatt
+		// ------------------------------------------------------------
+
 		sheetName := ""
-		if len(args) >= 2 && args[1].Str != "" {
+
+		if len(args) >= 2 && args[1].Kind == KindStr && args[1].Str != "" {
 			sheetName = args[1].Str
 		} else {
 			sheetName = f.GetSheetName(0)
 		}
 
+		// ------------------------------------------------------------
+		// Ausschlusswerte
+		// ------------------------------------------------------------
+
+		excludeSet := make(map[string]struct{})
+
+		if len(args) >= 3 && args[2].Kind == KindArr {
+			for _, ex := range args[2].Arr {
+				excludeSet[ToString(ex)] = struct{}{}
+			}
+		}
+
+		rowExcluded := func(row []string) bool {
+			if len(excludeSet) == 0 {
+				return false
+			}
+
+			for _, cell := range row {
+				if _, exists := excludeSet[strings.TrimSpace(cell)]; exists {
+					return true
+				}
+			}
+
+			return false
+		}
+
+		// ------------------------------------------------------------
+		// Spalte
+		// -1 = alle Spalten
+		// ------------------------------------------------------------
+
+		column := -1
+
+		if len(args) >= 4 && args[3].Kind == KindNum {
+			column = int(args[3].Num)
+
+			if column < 0 {
+				column = -1
+			}
+		}
+
+		// ------------------------------------------------------------
+		// XLSX lesen
+		// ------------------------------------------------------------
+
 		rows, err := f.GetRows(sheetName)
 		if err != nil {
-			return Value{Kind: KindArr2D, Arr2D: [][]Value{}}
-		}
-
-		res2D := make([][]Value, len(rows))
-		for i, row := range rows {
-			resRow := make([]Value, len(row))
-			for j, cell := range row {
-				resRow[j] = Value{Kind: KindStr, Str: strings.TrimSpace(cell)}
+			return Value{
+				Kind: KindArr,
+				Arr:  []Value{},
 			}
-			res2D[i] = resRow
 		}
 
-		return Value{Kind: KindArr2D, Arr2D: res2D}
-	})
+		// ------------------------------------------------------------
+		// Daten sammeln
+		// ------------------------------------------------------------
 
-	Register(ns+"XLSXSheets", "array", "path", "Gibt die Namen aller Tabellenblätter einer XLSX-Datei zurück.", func(args []Value) Value {
-		if len(args) < 1 {
-			return Value{Kind: KindArr, Arr: []Value{}}
+		// Wenn explizit eine Spalte angegeben wurde,
+		// wird immer ein 1D-Array zurückgegeben.
+		if column >= 0 {
+			result := make([]Value, 0, len(rows))
+
+			for _, row := range rows {
+
+				if rowExcluded(row) {
+					continue
+				}
+
+				if column >= len(row) {
+					result = append(result, StrVal(""))
+				} else {
+					result = append(
+						result,
+						StrVal(strings.TrimSpace(row[column])),
+					)
+				}
+			}
+
+			return Value{
+				Kind: KindArr,
+				Arr:  result,
+			}
 		}
 
-		f, err := excelize.OpenFile(args[0].Str)
-		if err != nil {
-			return Value{Kind: KindArr, Arr: []Value{}}
-		}
-		defer f.Close()
+		// ------------------------------------------------------------
+		// Anzahl der tatsächlich vorhandenen Spalten ermitteln
+		// ------------------------------------------------------------
 
-		names := f.GetSheetList()
-		result := make([]Value, len(names))
-		for i, n := range names {
-			result[i] = StrVal(n)
-		}
-		return Value{Kind: KindArr, Arr: result}
-	})
+		maxColumns := 0
 
-	Register(ns+"Clear", "array", "array", "Leert ein bestehendes Array (mutierend)", func(args []Value) Value {
-		if len(args) < 1 || args[0].Kind != KindArr {
-			return Value{}
+		for _, row := range rows {
+			if rowExcluded(row) {
+				continue
+			}
+
+			if len(row) > maxColumns {
+				maxColumns = len(row)
+			}
 		}
 
-		// Array leeren (mutierend)
-		args[0].Arr = args[0].Arr[:0]
+		// Keine Daten
+		if maxColumns == 0 {
+			return Value{
+				Kind: KindArr,
+				Arr:  []Value{},
+			}
+		}
 
-		return args[0]
+		// ------------------------------------------------------------
+		// Nur eine Spalte -> 1D-Array
+		// ------------------------------------------------------------
+
+		if maxColumns == 1 {
+			result := make([]Value, 0, len(rows))
+
+			for _, row := range rows {
+
+				if rowExcluded(row) {
+					continue
+				}
+
+				if len(row) == 0 {
+					result = append(result, StrVal(""))
+				} else {
+					result = append(
+						result,
+						StrVal(strings.TrimSpace(row[0])),
+					)
+				}
+			}
+
+			return Value{
+				Kind: KindArr,
+				Arr:  result,
+			}
+		}
+
+		// ------------------------------------------------------------
+		// Mehrere Spalten -> 2D-Array
+		// ------------------------------------------------------------
+
+		res2D := make([][]Value, 0, len(rows))
+
+		for _, row := range rows {
+
+			if rowExcluded(row) {
+				continue
+			}
+
+			resRow := make([]Value, len(row))
+
+			for j, cell := range row {
+				resRow[j] = StrVal(strings.TrimSpace(cell))
+			}
+
+			res2D = append(res2D, resRow)
+		}
+
+		return Value{
+			Kind:  KindArr2D,
+			Arr2D: res2D,
+		}
 	})
 
 	Register(ns+"Clone", "array", "array", "Erstellt eine Kopie eines Arrays (shallow copy)", func(args []Value) Value {
