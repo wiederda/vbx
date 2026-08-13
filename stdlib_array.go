@@ -534,7 +534,7 @@ func InitArrayFunctions() {
 		}
 	})
 
-	Register(ns+"FromCSV", "array", "path, [sep, exclude]", "Lädt eine CSV-Datei in ein 2D-Array. (Default-Separator: ;)", func(args []Value) Value {
+	Register(ns+"FromCSV", "array", "path, [sep, exclude]", "Lädt eine CSV-Datei in ein 2D-Array. Leere Zeilen werden ignoriert. (Default-Separator: ;)", func(args []Value) Value {
 		if len(args) < 1 {
 			return Value{
 				Kind:  KindArr2D,
@@ -544,8 +544,16 @@ func InitArrayFunctions() {
 
 		path := args[0].Str
 
+		// ------------------------------------------------------------
+		// Separator
+		// ------------------------------------------------------------
+
 		separator := ';'
-		if len(args) >= 2 && args[1].Kind == KindStr && args[1].Str != "" {
+
+		if len(args) >= 2 &&
+			args[1].Kind == KindStr &&
+			args[1].Str != "" {
+
 			separator = rune(args[1].Str[0])
 		}
 
@@ -556,23 +564,47 @@ func InitArrayFunctions() {
 		excludeSet := make(map[string]struct{})
 
 		if len(args) >= 3 && args[2].Kind == KindArr {
+
 			for _, ex := range args[2].Arr {
 				excludeSet[ToString(ex)] = struct{}{}
 			}
 		}
 
 		rowExcluded := func(row []string) bool {
+
 			if len(excludeSet) == 0 {
 				return false
 			}
 
 			for _, cell := range row {
-				if _, exists := excludeSet[strings.TrimSpace(cell)]; exists {
+
+				value := strings.TrimSpace(cell)
+
+				if _, exists := excludeSet[value]; exists {
 					return true
 				}
 			}
 
 			return false
+		}
+
+		// ------------------------------------------------------------
+		// Leere Zeile
+		//
+		// Eine Zeile gilt als leer, wenn alle Zellen nach
+		// TrimSpace keinen Inhalt enthalten.
+		// ------------------------------------------------------------
+
+		rowEmpty := func(row []string) bool {
+
+			for _, cell := range row {
+
+				if strings.TrimSpace(cell) != "" {
+					return false
+				}
+			}
+
+			return true
 		}
 
 		// ------------------------------------------------------------
@@ -596,6 +628,7 @@ func InitArrayFunctions() {
 		cleanContent := make([]byte, 0, len(rawContent))
 
 		for i := 0; i < len(rawContent); i++ {
+
 			b := rawContent[i]
 
 			// Erlaube:
@@ -604,7 +637,11 @@ func InitArrayFunctions() {
 			//
 			// Entferne:
 			// Steuerzeichen unter 32
-			if b >= 32 || b == '\n' || b == '\r' || b == '\t' {
+			if b >= 32 ||
+				b == '\n' ||
+				b == '\r' ||
+				b == '\t' {
+
 				cleanContent = append(cleanContent, b)
 			}
 		}
@@ -620,8 +657,13 @@ func InitArrayFunctions() {
 		reader.FieldsPerRecord = -1
 
 		records, err := reader.ReadAll()
+
 		if err != nil {
-			fmt.Println("CSV-Parser-Error nach Reinigung:", err)
+
+			fmt.Println(
+				"CSV-Parser-Error nach Reinigung:",
+				err,
+			)
 
 			return Value{
 				Kind:  KindArr2D,
@@ -642,9 +684,15 @@ func InitArrayFunctions() {
 				continue
 			}
 
+			// Leere Zeilen ignorieren
+			if rowEmpty(row) {
+				continue
+			}
+
 			resRow := make([]Value, len(row))
 
 			for j, cell := range row {
+
 				resRow[j] = Value{
 					Kind: KindStr,
 					Str:  strings.TrimSpace(cell),
@@ -660,7 +708,7 @@ func InitArrayFunctions() {
 		}
 	})
 
-	Register(ns+"ToXLSX", "array", "path, data, [sheetName, exclude, append]", "Speichert ein Array oder 2D-Array als XLSX-Datei. Vorhandene Blätter werden standardmäßig ersetzt. Mit append=True werden Daten angehängt.", func(args []Value) Value {
+	Register(ns+"ToXLSX", "array", "path, data, [sheetName, exclude, append, headers]", "Speichert ein Array oder 2D-Array als XLSX-Datei. Vorhandene Blätter werden standardmäßig ersetzt. Mit append=True werden Daten angehängt. Mit headers können optionale Spaltenüberschriften angegeben werden.", func(args []Value) Value {
 		if len(args) < 2 {
 			return Value{
 				Kind: KindStr,
@@ -677,11 +725,16 @@ func InitArrayFunctions() {
 
 		sheetName := "Sheet1"
 
-		if len(args) >= 3 && args[2].Kind == KindStr && args[2].Str != "" {
+		if len(args) >= 3 &&
+			args[2].Kind == KindStr &&
+			args[2].Str != "" {
 			sheetName = args[2].Str
 		}
 
+		// ------------------------------------------------------------
 		// Ausschlusswerte
+		// ------------------------------------------------------------
+
 		excludeSet := make(map[string]struct{})
 
 		if len(args) >= 4 && args[3].Kind == KindArr {
@@ -690,13 +743,24 @@ func InitArrayFunctions() {
 			}
 		}
 
+		// ------------------------------------------------------------
 		// Append
+		// ------------------------------------------------------------
+
 		appendMode := false
 
-		if len(args) >= 5 {
-			if args[4].Kind == KindBool {
-				appendMode = args[4].Bool
-			}
+		if len(args) >= 5 && args[4].Kind == KindBool {
+			appendMode = args[4].Bool
+		}
+
+		// ------------------------------------------------------------
+		// Überschriften
+		// ------------------------------------------------------------
+
+		var headers []Value
+
+		if len(args) >= 6 && args[5].Kind == KindArr {
+			headers = args[5].Arr
 		}
 
 		// ------------------------------------------------------------
@@ -736,7 +800,6 @@ func InitArrayFunctions() {
 		// ------------------------------------------------------------
 
 		sheetIndex, err := f.GetSheetIndex(sheetName)
-
 		if err != nil {
 			return Value{
 				Kind: KindStr,
@@ -760,7 +823,7 @@ func InitArrayFunctions() {
 					}
 				}
 
-				// Blatt wieder neu anlegen
+				// Blatt neu anlegen
 				sheetIndex, err = f.NewSheet(sheetName)
 				if err != nil {
 					return Value{
@@ -788,47 +851,29 @@ func InitArrayFunctions() {
 		_ = sheetIndex
 
 		// ------------------------------------------------------------
-		// Startzeile bestimmen
+		// Vorhandene Zeilen ermitteln
+		// ------------------------------------------------------------
+
+		rows, err := f.GetRows(sheetName)
+		if err != nil {
+			return Value{
+				Kind: KindStr,
+				Str:  "error: " + err.Error(),
+			}
+		}
+
+		// ------------------------------------------------------------
+		// Startzeile
 		// ------------------------------------------------------------
 
 		rowIdx := 1
 
-		if appendMode {
-
-			// Vorhandene Zeilen ermitteln
-			rows, err := f.GetRows(sheetName)
-			if err != nil {
-				return Value{
-					Kind: KindStr,
-					Str:  "error: " + err.Error(),
-				}
-			}
-
-			if len(rows) > 0 {
-				rowIdx = len(rows) + 1
-			}
+		if appendMode && len(rows) > 0 {
+			rowIdx = len(rows) + 1
 		}
 
 		// ------------------------------------------------------------
-		// Prüfen, ob eine Zeile ausgeschlossen werden soll
-		// ------------------------------------------------------------
-
-		rowExcluded := func(row []Value) bool {
-			if len(excludeSet) == 0 {
-				return false
-			}
-
-			for _, cell := range row {
-				if _, exists := excludeSet[ToString(cell)]; exists {
-					return true
-				}
-			}
-
-			return false
-		}
-
-		// ------------------------------------------------------------
-		// Eine Zeile schreiben
+		// Zeile schreiben
 		// ------------------------------------------------------------
 
 		writeRow := func(rowIdx int, row []Value) error {
@@ -853,6 +898,88 @@ func InitArrayFunctions() {
 			}
 
 			return nil
+		}
+
+		// ------------------------------------------------------------
+		// Überschriften schreiben
+		// ------------------------------------------------------------
+
+		if len(headers) > 0 {
+
+			// Bei Append nur schreiben, wenn das Blatt leer ist.
+			if !appendMode || len(rows) == 0 {
+
+				headerStyle, err := f.NewStyle(&excelize.Style{
+					Font: &excelize.Font{
+						Bold: true,
+					},
+				})
+
+				if err != nil {
+					return Value{
+						Kind: KindStr,
+						Str:  "error: " + err.Error(),
+					}
+				}
+
+				for colIdx, cell := range headers {
+
+					cellRef, err := excelize.CoordinatesToCellName(
+						colIdx+1,
+						rowIdx,
+					)
+
+					if err != nil {
+						return Value{
+							Kind: KindStr,
+							Str:  "error: " + err.Error(),
+						}
+					}
+
+					if err := f.SetCellValue(
+						sheetName,
+						cellRef,
+						valToInterface(cell),
+					); err != nil {
+						return Value{
+							Kind: KindStr,
+							Str:  "error: " + err.Error(),
+						}
+					}
+
+					if err := f.SetCellStyle(
+						sheetName,
+						cellRef,
+						cellRef,
+						headerStyle,
+					); err != nil {
+						return Value{
+							Kind: KindStr,
+							Str:  "error: " + err.Error(),
+						}
+					}
+				}
+
+				rowIdx++
+			}
+		}
+
+		// ------------------------------------------------------------
+		// Zeile ausschließen
+		// ------------------------------------------------------------
+
+		rowExcluded := func(row []Value) bool {
+			if len(excludeSet) == 0 {
+				return false
+			}
+
+			for _, cell := range row {
+				if _, exists := excludeSet[ToString(cell)]; exists {
+					return true
+				}
+			}
+
+			return false
 		}
 
 		// ------------------------------------------------------------
@@ -905,18 +1032,12 @@ func InitArrayFunctions() {
 		}
 
 		// ------------------------------------------------------------
-		// Neues Sheet1 entfernen
-		//
-		// excelize.NewFile() erzeugt zunächst Sheet1.
-		// Wenn wir ein anderes Blatt angelegt haben, brauchen wir
-		// das leere Standardsheet nicht.
+		// Leeres Sheet1 von excelize.NewFile() entfernen
 		// ------------------------------------------------------------
 
 		if sheetName != "Sheet1" {
 			if idx, err := f.GetSheetIndex("Sheet1"); err == nil && idx >= 0 {
-				if f.GetSheetName(idx) == "Sheet1" {
-					_ = f.DeleteSheet("Sheet1")
-				}
+				_ = f.DeleteSheet("Sheet1")
 			}
 		}
 
@@ -945,7 +1066,7 @@ func InitArrayFunctions() {
 		}
 	})
 
-	Register(ns+"FromXLSX", "array", "path, [sheetName, exclude, column]", "Lädt eine XLSX-Datei in ein Array. Bei einer Spalte wird ein 1D-Array, bei mehreren Spalten ein 2D-Array zurückgegeben. Mit column kann gezielt eine Spalte eingelesen werden.", func(args []Value) Value {
+	Register(ns+"FromXLSX", "array", "path, [sheetName, exclude, column]", "Lädt eine XLSX-Datei in ein Array. Bei einer Spalte wird ein 1D-Array, bei mehreren Spalten ein 2D-Array zurückgegeben. Mit column kann gezielt eine Spalte eingelesen werden. Leere Zeilen werden ignoriert.", func(args []Value) Value {
 		if len(args) < 1 {
 			return Value{
 				Kind: KindArr,
@@ -954,6 +1075,10 @@ func InitArrayFunctions() {
 		}
 
 		path := args[0].Str
+
+		// ------------------------------------------------------------
+		// XLSX öffnen
+		// ------------------------------------------------------------
 
 		f, err := excelize.OpenFile(path)
 		if err != nil {
@@ -970,9 +1095,14 @@ func InitArrayFunctions() {
 
 		sheetName := ""
 
-		if len(args) >= 2 && args[1].Kind == KindStr && args[1].Str != "" {
+		if len(args) >= 2 &&
+			args[1].Kind == KindStr &&
+			args[1].Str != "" {
+
 			sheetName = args[1].Str
+
 		} else {
+
 			sheetName = f.GetSheetName(0)
 		}
 
@@ -994,7 +1124,9 @@ func InitArrayFunctions() {
 			}
 
 			for _, cell := range row {
-				if _, exists := excludeSet[strings.TrimSpace(cell)]; exists {
+				value := strings.TrimSpace(cell)
+
+				if _, exists := excludeSet[value]; exists {
 					return true
 				}
 			}
@@ -1003,8 +1135,29 @@ func InitArrayFunctions() {
 		}
 
 		// ------------------------------------------------------------
+		// Leere Zeile
+		//
+		// Eine Zeile gilt als leer, wenn alle vorhandenen
+		// Zellen nach TrimSpace leer sind.
+		// ------------------------------------------------------------
+
+		rowEmpty := func(row []string) bool {
+			for _, cell := range row {
+				if strings.TrimSpace(cell) != "" {
+					return false
+				}
+			}
+
+			return true
+		}
+
+		// ------------------------------------------------------------
 		// Spalte
+		//
 		// -1 = alle Spalten
+		//  0 = A
+		//  1 = B
+		//  2 = C
 		// ------------------------------------------------------------
 
 		column := -1
@@ -1029,24 +1182,30 @@ func InitArrayFunctions() {
 			}
 		}
 
-		// ------------------------------------------------------------
-		// Daten sammeln
-		// ------------------------------------------------------------
+		// ============================================================
+		// GEZIELTE SPALTE
+		// ============================================================
 
-		// Wenn explizit eine Spalte angegeben wurde,
-		// wird immer ein 1D-Array zurückgegeben.
 		if column >= 0 {
+
 			result := make([]Value, 0, len(rows))
 
 			for _, row := range rows {
 
-				if rowExcluded(row) {
+				// Ausschluss und komplett leere Zeilen ignorieren
+				if rowExcluded(row) || rowEmpty(row) {
 					continue
 				}
 
+				// Spalte existiert in dieser Zeile nicht
 				if column >= len(row) {
-					result = append(result, StrVal(""))
+					result = append(
+						result,
+						StrVal(""),
+					)
+
 				} else {
+
 					result = append(
 						result,
 						StrVal(strings.TrimSpace(row[column])),
@@ -1060,45 +1219,54 @@ func InitArrayFunctions() {
 			}
 		}
 
-		// ------------------------------------------------------------
-		// Anzahl der tatsächlich vorhandenen Spalten ermitteln
-		// ------------------------------------------------------------
+		// ============================================================
+		// ALLE SPALTEN
+		// ============================================================
+
+		var filteredRows [][]string
 
 		maxColumns := 0
 
 		for _, row := range rows {
-			if rowExcluded(row) {
+
+			// Ausschluss und komplett leere Zeilen ignorieren
+			if rowExcluded(row) || rowEmpty(row) {
 				continue
 			}
+
+			filteredRows = append(filteredRows, row)
 
 			if len(row) > maxColumns {
 				maxColumns = len(row)
 			}
 		}
 
+		// ------------------------------------------------------------
 		// Keine Daten
-		if maxColumns == 0 {
+		// ------------------------------------------------------------
+
+		if len(filteredRows) == 0 {
 			return Value{
 				Kind: KindArr,
 				Arr:  []Value{},
 			}
 		}
 
-		// ------------------------------------------------------------
-		// Nur eine Spalte -> 1D-Array
-		// ------------------------------------------------------------
+		// ============================================================
+		// EINE SPALTE -> 1D-ARRAY
+		// ============================================================
 
 		if maxColumns == 1 {
-			result := make([]Value, 0, len(rows))
 
-			for _, row := range rows {
+			result := make([]Value, 0, len(filteredRows))
 
-				if rowExcluded(row) {
-					continue
-				}
+			for _, row := range filteredRows {
 
 				if len(row) == 0 {
-					result = append(result, StrVal(""))
+					result = append(
+						result,
+						StrVal(""),
+					)
 				} else {
 					result = append(
 						result,
@@ -1113,22 +1281,20 @@ func InitArrayFunctions() {
 			}
 		}
 
-		// ------------------------------------------------------------
-		// Mehrere Spalten -> 2D-Array
-		// ------------------------------------------------------------
+		// ============================================================
+		// MEHRERE SPALTEN -> 2D-ARRAY
+		// ============================================================
 
-		res2D := make([][]Value, 0, len(rows))
+		res2D := make([][]Value, 0, len(filteredRows))
 
-		for _, row := range rows {
-
-			if rowExcluded(row) {
-				continue
-			}
+		for _, row := range filteredRows {
 
 			resRow := make([]Value, len(row))
 
 			for j, cell := range row {
-				resRow[j] = StrVal(strings.TrimSpace(cell))
+				resRow[j] = StrVal(
+					strings.TrimSpace(cell),
+				)
 			}
 
 			res2D = append(res2D, resRow)
@@ -1138,6 +1304,25 @@ func InitArrayFunctions() {
 			Kind:  KindArr2D,
 			Arr2D: res2D,
 		}
+	})
+
+	Register(ns+"XLSXSheets", "array", "path", "Gibt die Namen aller Tabellenblätter einer XLSX-Datei zurück.", func(args []Value) Value {
+		if len(args) < 1 {
+			return Value{Kind: KindArr, Arr: []Value{}}
+		}
+
+		f, err := excelize.OpenFile(args[0].Str)
+		if err != nil {
+			return Value{Kind: KindArr, Arr: []Value{}}
+		}
+		defer f.Close()
+
+		names := f.GetSheetList()
+		result := make([]Value, len(names))
+		for i, n := range names {
+			result[i] = StrVal(n)
+		}
+		return Value{Kind: KindArr, Arr: result}
 	})
 
 	Register(ns+"Clone", "array", "array", "Erstellt eine Kopie eines Arrays (shallow copy)", func(args []Value) Value {
@@ -1182,6 +1367,33 @@ func InitArrayFunctions() {
 		})
 
 		return Value{Kind: KindArr, Arr: res}
+	})
+
+	Register(ns+"NaturalSort", "array", "array", "Sortiert ein Array nach natürlicher Reihenfolge und gibt eine Kopie zurück.", func(args []Value) Value {
+		if len(args) < 1 || args[0].Kind != KindArr {
+			return Value{}
+		}
+
+		res := cloneArray(args[0].Arr)
+
+		sort.SliceStable(res, func(i, j int) bool {
+
+			// Reine Zahlen numerisch vergleichen
+			if res[i].Kind == KindNum && res[j].Kind == KindNum {
+				return res[i].Num < res[j].Num
+			}
+
+			// Natürliche Sortierung
+			return naturalLess(
+				ToString(res[i]),
+				ToString(res[j]),
+			)
+		})
+
+		return Value{
+			Kind: KindArr,
+			Arr:  res,
+		}
 	})
 
 	Register(ns+"Unique", "array", "array", "Entfernt doppelte Werte (typsicherer Vergleich)", func(args []Value) Value {

@@ -216,6 +216,20 @@ Export/Import als Datei wird für CSV und XLSX unterstützt.
 
 ---
 
+## array.NaturalSort(array)
+
+- **Konkret:**
+  Sortiert ein Array nach einer natürlichen, menschenlesbaren Reihenfolge und gibt eine sortierte Kopie zurück.
+  Im Gegensatz zu `array.Sort` berücksichtigt `NaturalSort` Zahlen innerhalb von Texten. Dadurch werden beispielsweise `Film2` und `Film10` korrekt sortiert.
+  Die Sortierung berücksichtigt außerdem Sonderzeichen, Groß-/Kleinschreibung und deutsche Umlaute.
+  Die Sortierreihenfolge orientiert sich an der Sortierung des Windows Explorers. Dabei werden Sonderzeichen vor Zahlen und Zahlen vor Buchstaben eingeordnet.
+- **Parameter:**
+  - `array`: 1D-Array.
+- **Rückgabe:**
+  `ArrVal` (sortierte Kopie)
+  
+---
+
 ## array.Reverse(array)
 - **Konkret:**
   Gibt ein neues Array mit umgekehrter Reihenfolge zurück (nicht In-Place).
@@ -362,7 +376,7 @@ Export/Import als Datei wird für CSV und XLSX unterstützt.
 
  ---
 
- ## array.ToXLSX(path, data [, sheetName, exclude, append])
+ ## array.ToXLSX(path, data [, sheetName, exclude, append, headers])
 
 - **Konkret:**
   Speichert ein 1D- oder 2D-Array als XLSX-Datei (Excel-Format), ohne dass Excel oder eine andere Office-Anwendung installiert sein muss.
@@ -372,18 +386,20 @@ Export/Import als Datei wird für CSV und XLSX unterstützt.
   Wird eine bereits vorhandene XLSX-Datei angegeben, kann ein weiteres Tabellenblatt hinzugefügt werden.
   Standardmäßig wird ein bereits vorhandenes Tabellenblatt mit demselben Namen gelöscht und anschließend neu erstellt.
 
-  Mit `append=True` bleibt das vorhandene Tabellenblatt erhalten und die neuen Daten werden ab der ersten freien Zeile angehängt. Existiert das Tabellenblatt noch nicht, wird es neu erstellt.
+  Mit `append=True` bleibt das vorhandene Tabellenblatt erhalten und die neuen Daten werden ab der ersten freien Zeile angehängt. Existiert das Tabellenblatt noch nicht, wird es neu erstellt. Überschriften werden nicht erneut geschrieben, wenn das Tabellenblatt bereits Daten enthält.
 
-  Mit `exclude` können Zeilen ausgeschlossen werden. Eine Zeile wird nicht geschrieben, wenn mindestens eine ihrer Zellen einen Wert aus dem Ausschluss-Array {} enthält.
+  Mit `exclude` können Zeilen ausgeschlossen werden. Eine Zeile wird nicht geschrieben, wenn mindestens eine ihrer Zellen einen Wert aus dem Ausschluss-Array `{}` enthält.
 
-  Nutzt intern die Go-Bibliothek `excelize` zur direkten Erzeugung und Bearbeitung des XLSX-Dateiformats (ZIP+XML).
+  Mit `headers` können Spaltenüberschriften angegeben werden. Die Überschriften werden in der ersten Zeile geschrieben und fett dargestellt.
 
 - **Parameter:**
+
   - `path`: Zieldatei.
   - `data`: `ArrVal` oder `KindArr2D`.
   - `sheetName`: Optional. Name des Tabellenblatts (Standard: `"Sheet1"`).
-  - `exclude`: Optional. Array {} mit Werten, deren Vorkommen in einer beliebigen Zelle zum Überspringen der gesamten Zeile führt.
+  - `exclude`: Optional. Array `{}` mit Werten, deren Vorkommen in einer beliebigen Zelle zum Überspringen der gesamten Zeile führt.
   - `append`: Optional. Boolean. Bei `True` werden die Daten an das vorhandene Tabellenblatt angehängt (Standard: `False`).
+  - `headers`: Optional. Array `{}` mit den Spaltenüberschriften. Die Überschriften werden fett dargestellt.
 
 ---
 
