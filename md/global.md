@@ -414,6 +414,17 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
 
 ---
 
+## Inspect(value)
+- **Konkret:**
+  Debug-Hilfsfunktion: Zeigt die oberste Struktur eines Wertes auf der Konsole (Typ, bei Maps alle Schlüssel mit Typ und Wert), ohne rekursiv in die Tiefe zu gehen.
+  Bei Arrays wird nur das erste Element als Beispiel gezeigt, nicht jedes Element einzeln – nützlich um schnell zu verstehen, welche Felder z. B. `sftp.List` oder `folder.FindDuplicates` zurückgeben, ohne sich durch hunderte identisch aufgebaute Einträge scrollen zu müssen.
+- **Parameter:**
+  - `value`: Beliebiger Wert.
+- **Rückgabe:**
+  `NullVal` (die eigentliche Ausgabe erfolgt direkt auf der Konsole, nicht als Rückgabewert).
+
+---
+
 ## Format(expression, style)
 - **Konkret:**
   Universelle Formatierung für Zahlen, Datumsangaben und Text.

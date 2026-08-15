@@ -951,3 +951,14 @@ func copyFileInternalBuffered(src, dst string, mode os.FileMode) error {
 	_, err = io.CopyBuffer(out, in, buf)
 	return err
 }
+
+func inspectTop(v Value) {
+	if v.Kind != KindMap {
+		fmt.Printf("  %s: %s\n", GetKindName(v.Kind), ToString(v))
+		return
+	}
+
+	for key, val := range v.Map {
+		fmt.Printf("  %s (%s): %s\n", key, GetKindName(val.Kind), ToString(val))
+	}
+}

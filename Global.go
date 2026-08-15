@@ -93,6 +93,39 @@ func InitGlobal() {
 		return StrVal(pidStr)
 	})
 
+	Register("Inspect", "global", "value", "Zeigt die oberste Struktur eines Wertes (Typ und Schlüssel/Feldnamen), ohne rekursiv in Tiefe zu gehen. Bei Arrays wird das erste Element als Beispiel gezeigt.", func(args []Value) Value {
+		if len(args) < 1 {
+			return NullVal()
+		}
+
+		v := args[0]
+
+		switch v.Kind {
+		case KindArr:
+			fmt.Printf("Array (%d Elemente)\n", len(v.Arr))
+			if len(v.Arr) > 0 {
+				fmt.Println("Beispiel (erstes Element):")
+				inspectTop(v.Arr[0])
+			}
+
+		case KindArr2D:
+			rows := len(v.Arr2D)
+			cols := 0
+			if rows > 0 {
+				cols = len(v.Arr2D[0])
+			}
+			fmt.Printf("Array2D (%d Zeilen x %d Spalten)\n", rows, cols)
+
+		case KindMap:
+			inspectTop(v)
+
+		default:
+			fmt.Printf("%s: %s\n", GetKindName(v.Kind), ToString(v))
+		}
+
+		return NullVal()
+	})
+
 	Register("Compare", "global", "v1, v2", "Vergleicht Versionsnummern im Format Major.Minor.Patch. Rückgabe: -1, 0, 1", func(args []Value) Value {
 		if len(args) < 2 {
 			return ErrorVal("version.Compare: zwei Versionen benötigt")
