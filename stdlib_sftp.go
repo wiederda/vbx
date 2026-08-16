@@ -5,9 +5,12 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -92,11 +95,11 @@ func InitSftpFunctions() {
 	// ------------------------
 	// sftp.ConnectWithKey
 	// ------------------------
-	Register(ns+"ConnectWithKey", "sftp", "host, port, user, keyPath, alias",
+	Register(ns+"ConnectWithKey", "sftp", "host, port, user, keyPath, alias, [knownHostsPath]",
 		"Öffnet eine SFTP-Verbindung per Private-Key-Authentifizierung (z.B. aus global.GenerateSSHKey) und speichert sie unter einem Alias.",
 		func(args []Value) Value {
 			if len(args) < 5 {
-				return ErrorVal("sftp.ConnectWithKey(host, port, user, keyPath, alias) benötigt 5 Argumente")
+				return ErrorVal("sftp.ConnectWithKey(host, port, user, keyPath, alias [, knownHostsPath]) benötigt mindestens 5 Argumente")
 			}
 
 			host := args[0].Str
@@ -120,12 +123,17 @@ func InitSftpFunctions() {
 				return ErrorVal("Private Key konnte nicht geparst werden: " + err.Error())
 			}
 
+			hostKeyCallback, errVal := buildHostKeyCallback(args, 5)
+			if errVal != nil {
+				return *errVal
+			}
+
 			config := &ssh.ClientConfig{
 				User: user,
 				Auth: []ssh.AuthMethod{
 					ssh.PublicKeys(signer),
 				},
-				HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+				HostKeyCallback: hostKeyCallback,
 				Timeout:         10 * time.Second,
 			}
 
@@ -269,6 +277,62 @@ func InitSftpFunctions() {
 		})
 
 	// ------------------------
+	// sftp.DownloadFolder
+	// ------------------------
+	Register(ns+"DownloadFolder", "sftp", "alias, remotePath, localBasePath, [recursive], [progress]",
+		"Lädt einen kompletten Remote-Ordner herunter. Legt lokal einen Ordner mit demselben Namen wie das letzte Segment von remotePath an (falls nicht vorhanden) und lädt alle enthaltenen Dateien hinein.",
+		func(args []Value) Value {
+			if len(args) < 3 {
+				return ErrorVal("sftp.DownloadFolder(alias, remotePath, localBasePath [, recursive, progress]) benötigt mindestens 3 Argumente")
+			}
+			alias := strings.ToLower(args[0].Str)
+			remotePath := strings.TrimSuffix(args[1].Str, "/")
+			localBasePath := args[2].Str
+
+			recursive := false
+			if len(args) >= 4 {
+				recursive = isTruthy(args[3])
+			}
+
+			showProgress := false
+			if len(args) >= 5 {
+				showProgress = isTruthy(args[4])
+			}
+
+			conn, errVal := getSftpConn(alias)
+			if errVal != nil {
+				return *errVal
+			}
+
+			absLocalBase, errVal := absPathVal(localBasePath)
+			if errVal != nil {
+				return *errVal
+			}
+
+			folderName := path.Base(remotePath)
+			localTarget := filepath.Join(absLocalBase, folderName)
+
+			if err := os.MkdirAll(localTarget, 0755); err != nil {
+				return ErrorVal("Lokaler Zielordner konnte nicht angelegt werden: " + err.Error())
+			}
+
+			// Erst zählen, damit die Fortschrittsanzeige "X von Y" zeigen kann,
+			// statt nur einen laufenden Zähler ohne Gesamtzahl.
+			total := 0
+			if showProgress {
+				total, _ = countRemoteFiles(conn, remotePath, recursive)
+			}
+
+			current := 0
+			count, err := downloadFolderRecursiveP(conn, remotePath, localTarget, recursive, showProgress, total, &current)
+			if err != nil {
+				return ErrorVal(err.Error())
+			}
+
+			return NumVal(float64(count))
+		})
+
+	// ------------------------
 	// sftp.FindByExt
 	// ------------------------
 	Register(ns+"FindByExt", "sftp", "alias, remotePath, ext, [all]",
@@ -327,16 +391,117 @@ func InitSftpFunctions() {
 		})
 
 	// ------------------------
-	// sftp.List
+	// sftp.DownloadByExt
 	// ------------------------
-	Register(ns+"List", "sftp", "alias, remotePath",
-		"Listet den Inhalt eines Remote-Verzeichnisses. Gibt ein Array von Maps zurück (name, size, isDir, modTime).",
+	Register(ns+"DownloadByExt", "sftp", "alias, remotePath, ext, localBasePath, [all]",
+		"Sucht Dateien mit einer bestimmten Endung in einem Remote-Verzeichnis und lädt sie direkt herunter, ohne die genauen Dateinamen zu kennen. Kombiniert sftp.FindByExt und sftp.Download in einem Aufruf.",
 		func(args []Value) Value {
-			if len(args) < 2 {
-				return ErrorVal("sftp.List(alias, remotePath) benötigt Alias und Pfad")
+			if len(args) < 4 {
+				return ErrorVal("sftp.DownloadByExt(alias, remotePath, ext, localBasePath [, all]) benötigt mindestens 4 Argumente")
 			}
 			alias := strings.ToLower(args[0].Str)
 			remotePath := args[1].Str
+			ext := strings.ToLower(strings.TrimPrefix(args[2].Str, "."))
+			localBasePath := args[3].Str
+
+			all := false
+			if len(args) >= 5 {
+				all = isTruthy(args[4])
+			}
+
+			conn, errVal := getSftpConn(alias)
+			if errVal != nil {
+				return *errVal
+			}
+
+			absLocalBase, errVal := absPathVal(localBasePath)
+			if errVal != nil {
+				return *errVal
+			}
+
+			if err := os.MkdirAll(absLocalBase, 0755); err != nil {
+				return ErrorVal("Lokales Zielverzeichnis konnte nicht angelegt werden: " + err.Error())
+			}
+
+			entries, err := conn.client.ReadDir(remotePath)
+			if err != nil {
+				return ErrorVal("Verzeichnis konnte nicht gelesen werden: " + err.Error())
+			}
+
+			var treffer []string
+			for _, e := range entries {
+				if e.IsDir() {
+					continue
+				}
+				fileExt := strings.ToLower(strings.TrimPrefix(filepath.Ext(e.Name()), "."))
+				if fileExt == ext {
+					treffer = append(treffer, e.Name())
+				}
+			}
+
+			sort.SliceStable(treffer, func(i, j int) bool {
+				return naturalLess(treffer[i], treffer[j])
+			})
+
+			if len(treffer) == 0 {
+				return NumVal(0)
+			}
+
+			// Ohne 'all': nur die erste (natürlich sortierte) Datei laden
+			if !all {
+				treffer = treffer[:1]
+			}
+
+			downloaded := 0
+			for _, name := range treffer {
+				remoteFilePath := remotePath + "/" + name
+				localFilePath := filepath.Join(absLocalBase, name)
+
+				remoteFile, err := conn.client.Open(remoteFilePath)
+				if err != nil {
+					return ErrorVal(fmt.Sprintf("Remote-Datei konnte nicht geöffnet werden (%s): %s", name, err.Error()))
+				}
+
+				localFile, err := os.Create(localFilePath)
+				if err != nil {
+					remoteFile.Close()
+					return ErrorVal(fmt.Sprintf("Lokale Datei konnte nicht erstellt werden (%s): %s", name, err.Error()))
+				}
+
+				_, copyErr := io.Copy(localFile, remoteFile)
+				remoteFile.Close()
+				localFile.Close()
+
+				if copyErr != nil {
+					return ErrorVal(fmt.Sprintf("Download fehlgeschlagen (%s): %s", name, copyErr.Error()))
+				}
+
+				downloaded++
+			}
+
+			return NumVal(float64(downloaded))
+		})
+
+	// ------------------------
+	// sftp.List
+	// ------------------------
+	Register(ns+"List", "sftp", "alias, remotePath, [sortBy], [desc]",
+		"Listet den Inhalt eines Remote-Verzeichnisses. Gibt ein Array von Maps zurück (name, size, isDir, modTime). Optional direkt sortiert.",
+		func(args []Value) Value {
+			if len(args) < 2 {
+				return ErrorVal("sftp.List(alias, remotePath [, sortBy, desc]) benötigt Alias und Pfad")
+			}
+			alias := strings.ToLower(args[0].Str)
+			remotePath := args[1].Str
+
+			sortBy := ""
+			if len(args) >= 3 {
+				sortBy = args[2].Str
+			}
+			desc := false
+			if len(args) >= 4 {
+				desc = isTruthy(args[3])
+			}
 
 			conn, errVal := getSftpConn(alias)
 			if errVal != nil {
@@ -346,6 +511,24 @@ func InitSftpFunctions() {
 			entries, err := conn.client.ReadDir(remotePath)
 			if err != nil {
 				return ErrorVal("Verzeichnis konnte nicht gelesen werden: " + err.Error())
+			}
+
+			if sortBy != "" {
+				sort.SliceStable(entries, func(i, j int) bool {
+					var less bool
+					switch strings.ToLower(sortBy) {
+					case "size":
+						less = entries[i].Size() < entries[j].Size()
+					case "modtime":
+						less = entries[i].ModTime().Before(entries[j].ModTime())
+					default: // "name"
+						less = entries[i].Name() < entries[j].Name()
+					}
+					if desc {
+						return !less
+					}
+					return less
+				})
 			}
 
 			result := make([]Value, len(entries))
@@ -377,11 +560,15 @@ func getSftpConn(alias string) (*SftpConn, *Value) {
 }
 
 // buildHostKeyCallback liest optional einen knownHostsPath-Parameter aus args[idx].
-// Ist er angegeben, wird echte Host-Key-Verifikation genutzt (via
-// golang.org/x/crypto/ssh/knownhosts). Ist er leer/nicht angegeben, wird
-// weiterhin InsecureIgnoreHostKey verwendet - das bleibt der Standard, um
-// bestehende Skripte nicht zu brechen, ist aber NICHT empfohlen für
-// Verbindungen außerhalb des eigenen, vertrauten Netzes.
+// Ist er angegeben, wird echte Host-Key-Verifikation genutzt: bei einem
+// bisher UNBEKANNTEN Host wird der Key automatisch zur known_hosts-Datei
+// hinzugefügt (Trust-on-First-Use, wie ssh es beim ersten interaktiven
+// Connect auch tut - nur ohne Nachfrage). Bei einem Host, dessen Key sich
+// GEÄNDERT hat (möglicher Angriff oder Server wurde neu aufgesetzt), wird
+// weiterhin abgelehnt - das automatische Hinzufügen gilt NUR für neue,
+// bisher nicht verzeichnete Hosts.
+// Ist knownHostsPath leer/nicht angegeben, bleibt InsecureIgnoreHostKey
+// der Standard (unverändertes Verhalten für den lokalen Netzbetrieb).
 func buildHostKeyCallback(args []Value, idx int) (ssh.HostKeyCallback, *Value) {
 	if len(args) <= idx || args[idx].Str == "" {
 		return ssh.InsecureIgnoreHostKey(), nil
@@ -392,11 +579,83 @@ func buildHostKeyCallback(args []Value, idx int) (ssh.HostKeyCallback, *Value) {
 		return nil, errVal
 	}
 
-	callback, err := knownhosts.New(knownHostsPath)
+	if _, err := os.Stat(knownHostsPath); os.IsNotExist(err) {
+		if err := os.MkdirAll(filepath.Dir(knownHostsPath), 0700); err != nil {
+			v := ErrorVal("known_hosts-Verzeichnis konnte nicht erstellt werden: " + err.Error())
+			return nil, &v
+		}
+		f, err := os.OpenFile(knownHostsPath, os.O_CREATE|os.O_WRONLY, 0600)
+		if err != nil {
+			v := ErrorVal("known_hosts-Datei konnte nicht erstellt werden: " + err.Error())
+			return nil, &v
+		}
+		f.Close()
+	}
+
+	baseCallback, err := knownhosts.New(knownHostsPath)
 	if err != nil {
 		v := ErrorVal("known_hosts-Datei konnte nicht geladen werden: " + err.Error())
 		return nil, &v
 	}
 
-	return callback, nil
+	autoAddCallback := ssh.HostKeyCallback(func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+		err := baseCallback(hostname, remote, key)
+		if err == nil {
+			return nil
+		}
+
+		var keyErr *knownhosts.KeyError
+		if errors.As(err, &keyErr) {
+			if len(keyErr.Want) == 0 {
+				// Backup anlegen, bevor die Datei verändert wird - analog
+				// zum .old-Muster, das an anderer Stelle im Projekt bereits
+				// vor Schreibvorgängen genutzt wird.
+				if backupErr := backupFileOld(knownHostsPath); backupErr != nil {
+					return fmt.Errorf("Backup von known_hosts fehlgeschlagen: %w", backupErr)
+				}
+
+				line := knownhosts.Line([]string{knownhosts.Normalize(hostname)}, key)
+
+				f, openErr := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_WRONLY, 0600)
+				if openErr != nil {
+					return fmt.Errorf("known_hosts konnte nicht zum Schreiben geöffnet werden: %w", openErr)
+				}
+				defer f.Close()
+
+				if _, writeErr := f.WriteString(line + "\n"); writeErr != nil {
+					return fmt.Errorf("Host-Key konnte nicht gespeichert werden: %w", writeErr)
+				}
+
+				return nil
+			}
+		}
+
+		return err
+	})
+
+	return autoAddCallback, nil
+}
+
+// backupFileOld kopiert eine bestehende Datei nach <path>.old, bevor sie
+// verändert wird. Überschreibt eine evtl. vorhandene .old-Datei, damit sie
+// immer den Stand direkt vor der letzten Änderung zeigt. Existiert die
+// Originaldatei (noch) nicht oder ist leer, wird kein Backup angelegt.
+func backupFileOld(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	if info.Size() == 0 {
+		return nil
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(path+".old", data, 0600)
 }

@@ -962,3 +962,147 @@ func inspectTop(v Value) {
 		fmt.Printf("  %s (%s): %s\n", key, GetKindName(val.Kind), ToString(val))
 	}
 }
+
+// downloadFolderRecursive läuft ein Remote-Verzeichnis ab und lädt alle
+// enthaltenen Dateien in den entsprechenden lokalen Zielordner herunter.
+// Bei recursive=true werden Unterordner mit derselben Struktur angelegt
+// und ebenfalls abgearbeitet.
+func downloadFolderRecursive(conn *SftpConn, remotePath string, localTarget string, recursive bool) (int, error) {
+	entries, err := conn.client.ReadDir(remotePath)
+	if err != nil {
+		return 0, fmt.Errorf("Verzeichnis konnte nicht gelesen werden (%s): %w", remotePath, err)
+	}
+
+	count := 0
+
+	for _, e := range entries {
+		remoteItemPath := remotePath + "/" + e.Name()
+
+		if e.IsDir() {
+			if !recursive {
+				continue
+			}
+			localSubTarget := filepath.Join(localTarget, e.Name())
+			if err := os.MkdirAll(localSubTarget, 0755); err != nil {
+				return count, fmt.Errorf("Unterordner konnte nicht angelegt werden (%s): %w", localSubTarget, err)
+			}
+			subCount, err := downloadFolderRecursive(conn, remoteItemPath, localSubTarget, recursive)
+			count += subCount
+			if err != nil {
+				return count, err
+			}
+			continue
+		}
+
+		localFilePath := filepath.Join(localTarget, e.Name())
+
+		remoteFile, err := conn.client.Open(remoteItemPath)
+		if err != nil {
+			return count, fmt.Errorf("Remote-Datei konnte nicht geöffnet werden (%s): %w", remoteItemPath, err)
+		}
+
+		localFile, err := os.Create(localFilePath)
+		if err != nil {
+			remoteFile.Close()
+			return count, fmt.Errorf("Lokale Datei konnte nicht erstellt werden (%s): %w", localFilePath, err)
+		}
+
+		_, copyErr := io.Copy(localFile, remoteFile)
+		remoteFile.Close()
+		localFile.Close()
+
+		if copyErr != nil {
+			return count, fmt.Errorf("Download fehlgeschlagen (%s): %w", e.Name(), copyErr)
+		}
+
+		count++
+	}
+
+	return count, nil
+}
+
+// countRemoteFiles zählt vorab die Gesamtzahl der Dateien (für die
+// Fortschrittsanzeige "X von Y"), ohne sie herunterzuladen.
+func countRemoteFiles(conn *SftpConn, remotePath string, recursive bool) (int, error) {
+	entries, err := conn.client.ReadDir(remotePath)
+	if err != nil {
+		return 0, err
+	}
+
+	count := 0
+	for _, e := range entries {
+		if e.IsDir() {
+			if recursive {
+				sub, err := countRemoteFiles(conn, remotePath+"/"+e.Name(), recursive)
+				if err != nil {
+					return count, err
+				}
+				count += sub
+			}
+			continue
+		}
+		count++
+	}
+	return count, nil
+}
+
+// downloadFolderRecursiveP wie downloadFolderRecursive, mit optionaler
+// Fortschrittsausgabe auf stdout ("[3/42] Datei.mp4").
+func downloadFolderRecursiveP(conn *SftpConn, remotePath string, localTarget string, recursive bool, showProgress bool, total int, current *int) (int, error) {
+	entries, err := conn.client.ReadDir(remotePath)
+	if err != nil {
+		return 0, fmt.Errorf("Verzeichnis konnte nicht gelesen werden (%s): %w", remotePath, err)
+	}
+
+	count := 0
+
+	for _, e := range entries {
+		remoteItemPath := remotePath + "/" + e.Name()
+
+		if e.IsDir() {
+			if !recursive {
+				continue
+			}
+			localSubTarget := filepath.Join(localTarget, e.Name())
+			if err := os.MkdirAll(localSubTarget, 0755); err != nil {
+				return count, fmt.Errorf("Unterordner konnte nicht angelegt werden (%s): %w", localSubTarget, err)
+			}
+			subCount, err := downloadFolderRecursiveP(conn, remoteItemPath, localSubTarget, recursive, showProgress, total, current)
+			count += subCount
+			if err != nil {
+				return count, err
+			}
+			continue
+		}
+
+		localFilePath := filepath.Join(localTarget, e.Name())
+
+		if showProgress {
+			*current++
+			fmt.Printf("[%d/%d] %s\n", *current, total, e.Name())
+		}
+
+		remoteFile, err := conn.client.Open(remoteItemPath)
+		if err != nil {
+			return count, fmt.Errorf("Remote-Datei konnte nicht geöffnet werden (%s): %w", remoteItemPath, err)
+		}
+
+		localFile, err := os.Create(localFilePath)
+		if err != nil {
+			remoteFile.Close()
+			return count, fmt.Errorf("Lokale Datei konnte nicht erstellt werden (%s): %w", localFilePath, err)
+		}
+
+		_, copyErr := io.Copy(localFile, remoteFile)
+		remoteFile.Close()
+		localFile.Close()
+
+		if copyErr != nil {
+			return count, fmt.Errorf("Download fehlgeschlagen (%s): %w", e.Name(), copyErr)
+		}
+
+		count++
+	}
+
+	return count, nil
+}

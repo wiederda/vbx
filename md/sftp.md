@@ -78,6 +78,38 @@ Standardmäßig wird der Host-Key nicht geprüft (praktisch im eigenen, vertraut
 
 ---
 
+## sftp.DownloadFolder(alias, remotePath, localBasePath [, recursive, progress])
+- **Konkret:**
+  Lädt einen kompletten Remote-Ordner herunter, ohne dass die enthaltenen Dateinamen vorab bekannt sein müssen.
+  Legt lokal automatisch einen Ordner mit dem Namen des letzten `remotePath`-Segments an (z. B. `remotePath = "Movies/Zurück.in.die.Zukunft.1985"` → lokaler Ordner `Zurück.in.die.Zukunft.1985`, nicht der komplette Pfad).
+  Mit `recursive = true` werden auch Unterordner mit identischer Struktur angelegt und heruntergeladen; ohne (Standard) werden nur Dateien der obersten Ebene übertragen, Unterordner ignoriert.
+  Mit `progress = true` wird der Fortschritt als `[aktuell/gesamt] Dateiname` auf der Konsole ausgegeben (vorab wird die Gesamtzahl ermittelt).
+- **Parameter:**
+  - `alias`: Verbindungsalias.
+  - `remotePath`: Zu ladendes Verzeichnis auf dem Server.
+  - `localBasePath`: Lokales Basisverzeichnis, in dem der neue Ordner angelegt wird.
+  - `recursive`: Optional. `BoolVal` – bei `true` werden Unterordner mit einbezogen (Standard: `false`).
+  - `progress`: Optional. `BoolVal` – bei `true` Fortschrittsausgabe auf der Konsole (Standard: `false`).
+- **Rückgabe:**
+  `NumVal` (Anzahl heruntergeladener Dateien), `ErrorVal` bei Fehler.
+
+**Beispiel (kompletter Workflow):**
+```vbx
+#use sftp
+
+sftp.Connect("IP", Port, "meinUser", "meinPasswort", "nas")
+
+Dim inhalt = sftp.List("nas", "Test")
+Inspect(inhalt)
+
+Dim anzahl = sftp.DownloadFolder("nas", "Test/Zurück.in.die.Zukunft.1985", "C:\Downloads")
+Print "Heruntergeladen: " & anzahl & " Dateien"
+
+sftp.Close("nas")
+```
+
+---
+
 ## sftp.FindByExt(alias, remotePath, ext [, all])
 - **Konkret:**
   Sucht Dateien mit einer bestimmten Endung in einem Remote-Verzeichnis, ohne dass der genaue Dateiname bekannt sein muss.
@@ -95,13 +127,33 @@ Standardmäßig wird der Host-Key nicht geprüft (praktisch im eigenen, vertraut
 
 ---
 
-## sftp.List(alias, remotePath)
+## sftp.DownloadByExt(alias, remotePath, ext, localBasePath [, all])
+- **Konkret:**
+  Sucht Dateien mit einer bestimmten Endung in einem Remote-Verzeichnis und lädt sie direkt herunter, ohne dass der genaue Dateiname bekannt sein muss. Kombiniert `sftp.FindByExt` und `sftp.Download` in einem Aufruf.
+  Der lokale Dateiname entspricht immer dem Remote-Dateinamen (keine Umbenennung). Für einen abweichenden lokalen Namen stattdessen `sftp.FindByExt` gefolgt von `sftp.Download` mit explizitem `localPath` nutzen.
+  Das lokale Zielverzeichnis wird automatisch angelegt, falls es noch nicht existiert.
+  Durchsucht nur die direkte Ebene von `remotePath`, nicht rekursiv.
+- **Parameter:**
+  - `alias`: Verbindungsalias.
+  - `remotePath`: Zu durchsuchendes Verzeichnis auf dem Server.
+  - `ext`: Dateiendung, mit oder ohne führenden Punkt (z. B. `"xlsx"` oder `".xlsx"`).
+  - `localBasePath`: Lokales Zielverzeichnis.
+  - `all`: Optional. `BoolVal` – bei `true` werden alle Treffer heruntergeladen, bei `false` (Standard) nur die erste natürlich sortierte Datei.
+- **Rückgabe:**
+  `NumVal` (Anzahl heruntergeladener Dateien, `0` wenn keine passende Datei gefunden wurde), `ErrorVal` bei Verbindungs- oder Übertragungsfehler.
+
+---
+
+## sftp.List(alias, remotePath [, sortBy, desc])
 - **Konkret:**
   Listet den Inhalt eines Remote-Verzeichnisses.
-  `remotePath` bezieht sich auf das Dateisystem des SFTP-Servers, nicht auf den lokalen Rechner. Je nach Server-Konfiguration (z. B. Synology-Freigaben) kann der sichtbare Wurzelpfad vom vollen Dateisystempfad abweichen – im Zweifel zuerst mit `"."` oder `"/"` testen, um den tatsächlichen Startpunkt zu ermitteln.
+  `remotePath` bezieht sich auf das Dateisystem des SFTP-Servers, nicht auf den lokalen Rechner. Je nach Server-Konfiguration (z. B. Synology-Freigaben) kann der sichtbare Wurzelpfad vom vollen Dateisystempfad abweichen – im Zweifel zuerst mit `"."` oder `"/"` testen.
+  Optional wird das Ergebnis direkt sortiert zurückgegeben, ohne dass danach ein separater Sortier-Aufruf nötig ist.
 - **Parameter:**
   - `alias`: Verbindungsalias.
   - `remotePath`: Zu listendes Verzeichnis auf dem Server.
+  - `sortBy`: Optional. Sortierkriterium: `"name"` (Standard, auch wenn nicht angegeben), `"size"` oder `"modTime"`.
+  - `desc`: Optional. `BoolVal` – bei `true` absteigend sortieren (z. B. neueste Datei zuerst bei `"modTime"`). Standard: aufsteigend.
 - **Rückgabe:**
   `ArrVal`
   Array von Maps mit folgenden Schlüsseln:
