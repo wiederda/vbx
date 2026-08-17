@@ -804,8 +804,24 @@ func InitFolderFunctions() {
 
 		ignore := map[string]bool{}
 		if len(args) >= 2 {
-			for _, s := range strings.Split(args[1].Str, ",") {
-				ignore[strings.TrimSpace(s)] = true
+			arg := getArg(args, 1)
+			switch arg.Kind {
+			case KindArr:
+				for _, v := range arg.Arr {
+					name := strings.TrimSpace(v.Str)
+					if name != "" {
+						ignore[name] = true
+					}
+				}
+			case KindArr2D:
+				return ErrorVal("folder.Count: 'ignore' erwartet eine flache Liste (1D), kein 2D-Array")
+			default:
+				for _, s := range strings.Split(arg.Str, ",") {
+					name := strings.TrimSpace(s)
+					if name != "" {
+						ignore[name] = true
+					}
+				}
 			}
 		}
 
@@ -1042,36 +1058,4 @@ func FolderStats(path string, ignore map[string]bool) (files, dirs int64, size i
 	})
 
 	return
-}
-
-func WalkWithWorkers(root string, workers int, fn func(string, fs.DirEntry) error) error {
-	jobs := make(chan string, workers*4)
-	var wg sync.WaitGroup
-
-	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil
-		}
-		jobs <- p
-		return nil
-	})
-
-	if err != nil {
-		return err
-	}
-
-	close(jobs)
-
-	for i := 0; i < workers; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for p := range jobs {
-				_ = fn(p, nil)
-			}
-		}()
-	}
-
-	wg.Wait()
-	return nil
 }

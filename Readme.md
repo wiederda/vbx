@@ -12,7 +12,7 @@ VBX besteht aus drei Hauptkomponenten:
 * **Modul-System** – Erweiterungen für Netzwerk, Kryptografie, Datenbanken und mehr
 * **Shell-Interface** – Direkte Ausführung von Funktionen über die Kommandozeile
 
-Über 600 Funktionen stehen zur Verfügung, ohne den Kern unnötig aufzublähen.
+Über **600 Funktionen** stehen zur Verfügung, ohne den Kern unnötig aufzublähen.
 
 ---
 

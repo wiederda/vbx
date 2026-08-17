@@ -56,14 +56,17 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
 ---
 
 ## folder.Count(path [, ignore])
-- **Konkret:**
-  Gibt eine Zusammenfassung mit Anzahl Ordner, Dateien und Gesamtgröße zurück.
-- **Parameter:**
-  - `path`: Verzeichnispfad.
-  - `ignore`: Optional. Kommagetrennte Liste von Datei-/Ordnernamen die ignoriert werden.
-- **Rückgabe:**
-  `StrVal`
-  Beispiel: `"Ordner: 3, Dateien: 12 | Größe: 1.4 MB"`.
+- Konkret: Gibt eine Zusammenfassung mit Anzahl Ordner, Dateien und Gesamtgröße zurück (rekursiv).
+- Parameter:
+   - `path`: Verzeichnispfad.
+   - `ignore`: Optional. Liste von Datei-/Ordnernamen (Basename, nicht Pfad), die von der Zählung ausgeschlossen werden.
+     Vergleich ist exakt und case-sensitive. Kann als Komma-String (`"node_modules, .git"`)
+     oder als Array (`{"node_modules", ".git"}`) übergeben werden.
+     Ein ignorierter Ordner wird komplett übersprungen (Ordner selbst + gesamter Inhalt zählen nicht mit).
+     Eine ignorierte Datei wird nur selbst übersprungen, der restliche Ordnerinhalt zählt normal.
+- Hinweis: Nicht lesbare Unterordner (z. B. fehlende Berechtigung) werden derzeit still übersprungen
+  und mindern die Zählung ohne Fehlermeldung.
+- Rückgabe: `StrVal` Beispiel: `"Ordner: 3, Dateien: 12 | Größe: 1.4 MB"`
 
 ---
 

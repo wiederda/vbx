@@ -122,7 +122,7 @@ func InitCryptFunctions() {
 		lower := false
 		upper := false
 		specials := false
-		firstLetter := false
+		firstLetter := true // Default jetzt true: Passwort startet standardmäßig mit einem Buchstaben
 
 		// --- 1. Argumente ---
 		if len(args) >= 1 {
@@ -141,7 +141,7 @@ func InitCryptFunctions() {
 			specials = toBoolSafe(args[4], false)
 		}
 		if len(args) >= 6 {
-			firstLetter = toBoolSafe(args[5], false)
+			firstLetter = toBoolSafe(args[5], true) // Default für toBoolSafe ebenfalls true
 		}
 
 		if length < 10 {
@@ -157,8 +157,14 @@ func InitCryptFunctions() {
 		lowerChars := "abcdefghijklmnopqrstuvwxyz"
 		upperChars := "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 		numberChars := "0123456789"
-		specialChars := "+-/*#,;.:-_^!()[]{}=?ß'äÄöÖüÜ<>@"
+		specialChars := "+-/*#,;.:-_^!()[]{}=?<>@"
 		letters := lowerChars + upperChars
+
+		// Falls firstLetter=true, muss mindestens lower oder upper aktiv sein,
+		// sonst gibt es keine Buchstaben für pass[0].
+		if firstLetter && !lower && !upper {
+			lower = true
+		}
 
 		charset := ""
 		mustInclude := []byte{}
