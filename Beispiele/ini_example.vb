@@ -1,7 +1,8 @@
 #use ini
-' ------------------------------
-' INI Testskript
-' ------------------------------
+
+' ============================
+' Ini Beispiele für VBmini
+' ============================
 
 Dim res,sections,dbKeys,cacheKeys
 

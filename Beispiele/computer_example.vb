@@ -1,4 +1,9 @@
 #use computer,net
+
+' ============================
+' Computer Beispiele für VBmini
+' ============================
+
 Print "Benutzername: " & UserName()
 Print "Computername: " & ComputerName()
 Print "Betriebssystem: " & OS()

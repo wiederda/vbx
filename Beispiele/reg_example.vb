@@ -1,7 +1,8 @@
 #use reg
-' --------------------------------
-' Registry Test
-' --------------------------------
+
+' ============================
+' Reg Beispiele für VBmini
+' ============================
 
 Print "=== Registry Write ==="
 reg.Write("HKCU", "Software\\VBMiniTest", "Version", "1.0")

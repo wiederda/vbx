@@ -1,3 +1,4 @@
+#use db
 ' --- 1. VERBINDUNGEN ÖFFNEN ---
 ' MSSQL (Quelle) - Nutzt Integrated Security (AD-Anmeldung)
 Print "Öffne MSSQL..."

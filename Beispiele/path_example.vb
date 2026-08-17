@@ -1,6 +1,11 @@
+
+' ============================
+' Path Beispiele für VBmini
+' ============================
+
 Dim pfad
 
-pfad = "/home/vbmini/testfolder/subfolder/file3.txt"
+pfad = "/testfolder/subfolder/file3.txt"
 Print "Pfad=" & pfad
 
 Print "Ext=" & file.Ext(pfad)  ' <-- hier Str holen

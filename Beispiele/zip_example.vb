@@ -1,4 +1,9 @@
 #use zip
+
+' ============================
+' ZIP Beispiele für VBmini
+' ============================
+
 Dim files, neu, path="/home/vbmini/testfolder"
 
 files=array.Create(path & "/file1.txt", path & "/file2.txt", path & "/subfolder/file3.txt")

@@ -1,4 +1,9 @@
 #use proc
+
+' ============================
+' Proc Beispiele für VBmini
+' ============================
+
 ' Prozess starten
 Dim pid
 pid = proc.Start("/usr/bin/sleep", "30")

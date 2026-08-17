@@ -1474,6 +1474,16 @@ func InitArrayFunctions() {
 		return args[0]
 	})
 
+	Register(ns+"Clear", "array", "array", "Leert ein Array (In-Place).", func(args []Value) Value {
+		if len(args) < 1 || args[0].Kind != KindArr {
+			return args[0]
+		}
+
+		args[0].Arr = args[0].Arr[:0]
+
+		return args[0]
+	})
+
 	// array.Chunk(arr, size) -> [ [1,2], [3,4], [5] ]
 	Register(ns+"Chunk", "array", "arr, size", "Unterteilt ein 1D-Array in mehrere Teil-Arrays (2D).", func(args []Value) Value {
 		// Validierung

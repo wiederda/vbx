@@ -1,4 +1,9 @@
 #use net
+
+' ============================
+' Net Beispiele für VBmini
+' ============================
+
 Print "--- Quick Service Check ---"
 Dim host = "google.de"
 Dim ips = net.ResolveAll(host)

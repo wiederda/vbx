@@ -1,6 +1,10 @@
 #use tar
 
-Dim files, path="/home/vbmini/testfolder"
+' ============================
+' Tar Beispiele für VBmini
+' ============================
+
+Dim files, path="/home/testfolder"
 files=array.Create(path & "/file1.txt", path & "/file2.txt", path & "/subfolder/file3.txt")
 
 If folder.Exists(path) = true then
@@ -23,21 +27,11 @@ If file.Exists(path & "/archive.tar.gz") = true then
 file.Delete(path & "/archive.tar.gz") 
 End If
 
-
-
 Print "0=" & array.GetIndex(files, 0)
 
 ' --- 7. TAR erstellen ---
 tar.Create(path & "/archive.tar", files)
 tar.GzCreate(path & "/archive.tar.gz", files)
-
-' --- 8. TAR entpacken ---
-'tar.Extract("testfolder/archive.tar", "testfolder/extracted_tar")
-'Print "TAR erfolgreich entpackt."
-
-' --- 10. TAR.GZ entpacken ---
-'tar.GzExtract("testfolder/archive.tar.gz", "testfolder/extracted_targz")
-'Print "TAR.GZ erfolgreich entpackt."
 End If
 
 

@@ -1,4 +1,9 @@
 #use xml
+
+' ============================
+' XML Beispiele für VBmini
+' ============================
+
 Dim res
 
 if file.Exists("/home/vbmini/Beispiele/test.xml")=true Then

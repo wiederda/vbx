@@ -45,7 +45,7 @@ var optionalModuleFunctions = map[string]int{
 	"rand":     6,
 	"reg":      4,
 	"service":  8,
-	"sftp":     7,
+	"sftp":     9,
 	"smtp":     1,
 	"steg":     4,
 	"string":   31,

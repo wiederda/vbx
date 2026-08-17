@@ -1,4 +1,9 @@
 #use data
+
+' ============================
+' Data Beispiele für VBmini
+' ============================
+
 ' Datenmengen
 Dim bytes
 Dim kb

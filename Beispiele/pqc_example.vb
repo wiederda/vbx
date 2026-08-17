@@ -1,5 +1,9 @@
 #use pqc, crypt
 
+' ============================
+' PQC Beispiele für VBmini
+' ============================
+
 Cls()
 Dim meinGeheimnis = "Verschlüsselt mit Post-Quanten-Logik 2026"
 

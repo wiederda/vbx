@@ -1,8 +1,8 @@
+#use kuma
 
-' ------------------------------------------------------------
-' test_kuma.vb
-' Testskript für alle kuma.*-Funktionen
-' ------------------------------------------------------------
+' ============================
+' Uptime-Kuma Beispiele für VBmini
+' ============================
 
 Dim server, user, password, secret
 server = "http://"
@@ -11,7 +11,7 @@ password = "test"
 secret = ""   ' TOTP-Secret eintragen, falls 2FA aktiv ist, sonst leer lassen
 
 Dim monitorIDs
-monitorIDs = Array(5, 7)   ' anpassen an eure echten Monitor-IDs
+monitorIDs = {5, 7}   ' anpassen an eure echten Monitor-IDs
 
 Print "=== kuma.SetMaintenance ==="
 Dim maintenanceID
@@ -20,7 +20,7 @@ Print "Ergebnis: " & maintenanceID
 
 If Left(maintenanceID, 6) = "error:" Then
     Print "FEHLER bei SetMaintenance - Abbruch."
-    End
+    Exit
 End If
 
 Print ""

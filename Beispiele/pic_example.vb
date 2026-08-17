@@ -1,3 +1,5 @@
+#use picture
+
 picture.Convert("pic/bild.webp", "pic/input.png", "png")
 
 ' Einzelbild konvertieren in JPG, 80% Qualität

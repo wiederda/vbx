@@ -1,8 +1,8 @@
 #use json, template
 
-' ----------------------------------------
-' Beispiel 1: E-Mail-Text generieren
-' ----------------------------------------
+' ============================
+' Template Beispiele für VBmini
+' ============================
 
 Dim data = json.FromJSON("{""name"":""Max"",""server"":""srv01"",""fehler"":""Dienst nicht erreichbar""}")
 

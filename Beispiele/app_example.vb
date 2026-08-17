@@ -1,3 +1,8 @@
+
+' ============================
+' App Beispiele für VBmini
+' ============================
+
 Print "=== APP MODULE TEST ==="
 Print ""
 Print ""

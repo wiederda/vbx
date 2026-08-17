@@ -1,5 +1,9 @@
 #use map
 
+' ============================
+' Map Beispiele für VBmini
+' ============================
+
 Dim user = map.Create()
 
 ' Werte setzen

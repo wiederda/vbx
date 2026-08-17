@@ -1,3 +1,8 @@
+
+' ============================
+' Variablen Beispiele für VBmini
+' ============================
+
 Print "=== VARIABLEN, ARRAYS & FUNKTIONEN TEST ==="
 
 ' Variablen mit Initialisierung

@@ -1,5 +1,9 @@
 #use string
 
+' ============================
+' String Beispiele für VBmini
+' ============================
+
 Print string.EncodeBase64("Hello")          ' → "SGVsbG8="
 Print string.DecodeBase64("SGVsbG8=")       ' → "Hello"
 

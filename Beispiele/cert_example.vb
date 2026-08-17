@@ -1,3 +1,9 @@
+#use cert
+
+' ============================
+' Cert Beispiele für VBmini
+' ============================
+
 Dim path
 path = "testfolder/"
 ' Zertifikat laden

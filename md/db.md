@@ -118,7 +118,6 @@ Verbindungen werden über einen Alias verwaltet – `db.Open` muss zuerst aufger
 
 ---
 
-
 ## db.ExecFile(alias, path [, dryRun])
 - **Konkret:**
   Liest eine `.sql`-Datei und führt sie aus.

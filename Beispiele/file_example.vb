@@ -1,3 +1,8 @@
+
+' ============================
+' File Beispiele für VBmini
+' ============================
+
 Print "=== FILE MODULE TEST ==="
 ' Datei anlegen
 

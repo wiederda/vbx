@@ -1,3 +1,8 @@
+
+' ============================
+' Folder Beispiele für VBmini
+' ============================
+
 Print "=== FOLDER MODULE FULL TEST ==="
 
 Dim base

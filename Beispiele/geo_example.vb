@@ -1,8 +1,10 @@
-' Beispiel:
+#use geo
 
-loc = geo.Lookup("Boston")
-print "City: " & array.GetIndex(loc, 0)      
-print "State: " & array.GetIndex(loc, 1)     
-print "Country: " & array.GetIndex(loc, 2)   
-print "Latitude: " & array.GetIndex(loc, 3)  
-print "Longitude: " & array.GetIndex(loc, 4) 
+'geo_example
+
+Dim loc = geo.Lookup("Boston")
+print "City: " & loc(0)      
+print "State: " & loc(1)     
+print "Country: " & loc(2)   
+print "Latitude: " & loc(3)  
+print "Longitude: " & loc(4) 
