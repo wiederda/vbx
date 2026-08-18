@@ -43,7 +43,7 @@ var optionalModuleFunctions = map[string]int{
 	"pqc":      14,
 	"proc":     30,
 	"rand":     6,
-	"reg":      4,
+	"reg":      7,
 	"service":  8,
 	"sftp":     9,
 	"smtp":     1,

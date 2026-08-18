@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"unsafe"
 )
 
 // ---------------- Crypt State ----------------
@@ -73,6 +74,77 @@ func InitCryptFunctions() {
 
 		return ok(StrVal(guid))
 	})
+
+	// crypt.Wipe
+	Register("crypt.Wipe", "crypt", "byteArray",
+		"Überschreibt ein Byte-Array (z.B. von reg.ReadProtectedValueBytes) in-place mit Nullen. Sollte aufgerufen werden, sobald ein entschlüsselter Wert nicht mehr benötigt wird.", func(args []Value) Value {
+			if len(args) != 1 {
+				return ErrorVal("crypt.Wipe erwartet genau 1 Argument")
+			}
+			if args[0].Kind != KindArr {
+				return ErrorVal("crypt.Wipe erwartet ein Byte-Array (KindArr)")
+			}
+
+			// WICHTIG: args[0].Arr ist ein Slice-Header, der denselben
+			// Backing-Array wie die Original-Variable im Environment teilt
+			// (solange dort kein append() eine Neu-Allokation ausgelöst hat).
+			// Elementweises Überschreiben wirkt daher auch auf die Original-Variable.
+			for i := range args[0].Arr {
+				args[0].Arr[i] = NumVal(0)
+			}
+
+			return BoolVal(true)
+		})
+
+	// crypt.WipeString
+	// ACHTUNG: Nutzt "unsafe", um Go's String-Immutability bewusst zu brechen.
+	// Damit wird der tatsächliche Speicherinhalt eines Strings mit Nullbytes
+	// überschrieben - nicht nur die Variable auf einen neuen (leeren) String
+	// umgebogen, wie es "x = """ tun würde.
+	Register("crypt.WipeString", "crypt", "value",
+		"Überschreibt den Speicherinhalt eines Strings mit Nullbytes (0x00). Im Gegensatz zu 'x = \"\"' wird hier der tatsächliche RAM-Inhalt gelöscht, nicht nur die Variable umgebogen. Nach dem Aufruf enthält die Variable eine Zeichenkette gleicher Länge, aber nur aus Nullbytes.", func(args []Value) Value {
+			if len(args) != 1 {
+				return ErrorVal("crypt.WipeString erwartet genau 1 Argument")
+			}
+			if args[0].Kind != KindStr {
+				return ErrorVal("crypt.WipeString erwartet einen String")
+			}
+
+			s := args[0].Str
+			if len(s) == 0 {
+				return BoolVal(true) // nichts zu tun
+			}
+
+			// Mutable View auf den Backing-Speicher des Strings holen.
+			// Ab Go 1.20: unsafe.StringData + unsafe.Slice
+			data := unsafe.Slice(unsafe.StringData(s), len(s))
+			for i := range data {
+				data[i] = 0
+			}
+
+			return BoolVal(true)
+		})
+
+	// crypt.BytesToString
+	Register("crypt.BytesToString", "crypt", "byteArray",
+		"Wandelt ein Byte-Array (0-255 Werte) in einen UTF-8-String um. Für kurzzeitige Verwendung gedacht - danach crypt.Wipe auf das Byte-Array anwenden.", func(args []Value) Value {
+			if len(args) != 1 {
+				return ErrorVal("crypt.BytesToString erwartet genau 1 Argument")
+			}
+			if args[0].Kind != KindArr {
+				return ErrorVal("crypt.BytesToString erwartet ein Byte-Array (KindArr)")
+			}
+
+			buf := make([]byte, len(args[0].Arr))
+			for i, v := range args[0].Arr {
+				if v.Kind != KindNum {
+					return ErrorVal("crypt.BytesToString: Array enthält Nicht-Zahlen-Werte")
+				}
+				buf[i] = byte(int(v.Num))
+			}
+
+			return StrVal(string(buf))
+		})
 
 	Register(ns+"RNGCryptoProvider", "crypt", "length", "Erzeugt kryptografisch sichere Zufallsbytes und gibt sie als Hex-String zurück.", func(args []Value) Value {
 		length := 16
