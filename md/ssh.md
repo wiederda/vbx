@@ -11,11 +11,13 @@ per SSH-Key (kein Klartext-Passwort in Skripten).
   Erstellt ein SSH-Schlüsselpaar und schreibt es auf die Festplatte.
   Private Key mit Rechten `0600`, Public Key mit `0644`.
   Bricht ab, wenn die Zieldateien bereits existieren.
+
 - **Parameter:**
   - `outDir`: Optional. Zielverzeichnis (Standard: `~/.ssh`).
   - `algo`: Optional. `"rsa"` (Standard) oder `"ed25519"`.
   - `bits`: Optional. Schlüssellänge für RSA (Standard: 4096, Minimum wird erzwungen).
   - `pass`: Optional. Passphrase (aktuell nicht verwendet).
+  
 - **Rückgabe:**
   `StrVal`
   Basispfad des erstellten Schlüsselpaares (ohne `.pub`).
@@ -44,6 +46,9 @@ Prozessaufrufe hinweg nicht wiederverwendbar.
   bislang unbekannter Host wird beim ersten Connect automatisch eingetragen, eine spätere
   Änderung des Host-Keys (möglicher Angriff oder Server-Neuaufsetzung ohne neue known_hosts)
   wird abgelehnt.
+
+**Rückgabe:** `BoolVal(true)` bei erfolgreichem Verbindungsaufbau, sonst `ErrorVal` mit
+Fehlermeldung.
 
 ---
 
@@ -140,19 +145,6 @@ eingetragen sein (siehe `GenerateSSHKey`).
 
 ---
 
-## CLI-Shortcuts
-
-```go
-"remoteexec": {"ssh.ExecOnce", "host, user, keyPath, cmd, [port], [knownHostsPath], [printOutput]",
-    "Führt per SSH-Key-Auth einen einzelnen Befehl aus und schließt die Verbindung wieder."},
-"remoteboot": {"ssh.RebootWithKey", "host, user, keyPath, [port], [delay], [knownHostsPath]",
-    "Löst per SSH-Key-Auth einen Reboot auf einem Zielsystem aus."},
-```
-
-`ssh.Connect`/`ssh.Exec`/`ssh.Close` haben bewusst keinen eigenen Shortcut-Eintrag: der
-Alias ist nur innerhalb eines einzelnen laufenden VBX-Prozesses gültig und über getrennte
-Shortcut-Aufrufe (= getrennte Prozesse) nicht wiederverwendbar.
-
 ## Sicherheitshinweise
 
 - Ausschließlich Key-Auth, kein Passwort-Parameter in der gesamten `ssh.*`-Bibliothek.
@@ -162,3 +154,26 @@ Shortcut-Aufrufe (= getrennte Prozesse) nicht wiederverwendbar.
   Risiko, in Netzen mit geringerem Vertrauen sollte `knownHostsPath` gesetzt werden.
 - `ssh.Exec`/`ssh.ExecOnce` führen beliebige Befehle aus. Wer Skript und privaten Key hat,
   hat vollen Shell-Zugriff auf jeden Server, für den der zugehörige Public Key hinterlegt ist.
+
+## Passphrase-geschützte Keys werden NICHT unterstützt
+
+Alle `ssh.*`-Funktionen erwarten einen **unverschlüsselten** privaten Key (`keyPath`). Ist
+der Key mit einer Passphrase geschützt, schlägt `ssh.ParsePrivateKey` fehl und die Funktion
+gibt einen entsprechenden Fehler zurück (sinngemäß "this private key is passphrase
+protected").
+
+**Das ist bewusst so, kein Versehen:** Für den Automatisierungs-Anwendungsfall (Cron,
+CLI-Shortcuts, Reboot-Trigger) müsste die Passphrase ohnehin irgendwo im Skript/Aufruf
+hinterlegt werden – damit wäre der Schutz, den eine Passphrase bieten soll, wieder aufgehoben:
+Wer Skript und Passphrase hat, hat denselben Zugriff wie mit einem ungeschützten Key. Der
+einzige verbleibende Vorteil einer Passphrase wäre Schutz gegen den Fall, dass *nur* die
+Key-Datei entwendet wird (z.B. aus einem Backup) – ohne das Skript.
+
+**Empfohlene Alternative für Automatisierung:** ein dedizierter, ungeschützter Key nur für
+diesen einen Zweck (z.B. nur Reboot), auf dem Zielserver in `authorized_keys` mit einer
+`command=`-Einschränkung versehen. Das begrenzt den Schaden bei Diebstahl der Key-Datei
+deutlich wirksamer als eine Passphrase, die im Skript ohnehin wieder auftauchen müsste:
+
+```
+command="/sbin/shutdown -r now",no-port-forwarding,no-X11-forwarding,no-agent-forwarding ssh-ed25519 AAAA... automation-reboot-key
+```
