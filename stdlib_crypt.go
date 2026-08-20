@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"os"
+	"unicode"
 	"unsafe"
 )
 
@@ -76,7 +78,7 @@ func InitCryptFunctions() {
 	})
 
 	// crypt.Wipe
-	Register("crypt.Wipe", "crypt", "byteArray",
+	Register(ns+"Wipe", "crypt", "byteArray",
 		"Überschreibt ein Byte-Array (z.B. von reg.ReadProtectedValueBytes) in-place mit Nullen. Sollte aufgerufen werden, sobald ein entschlüsselter Wert nicht mehr benötigt wird.", func(args []Value) Value {
 			if len(args) != 1 {
 				return ErrorVal("crypt.Wipe erwartet genau 1 Argument")
@@ -101,7 +103,7 @@ func InitCryptFunctions() {
 	// Damit wird der tatsächliche Speicherinhalt eines Strings mit Nullbytes
 	// überschrieben - nicht nur die Variable auf einen neuen (leeren) String
 	// umgebogen, wie es "x = """ tun würde.
-	Register("crypt.WipeString", "crypt", "value",
+	Register(ns+"WipeString", "crypt", "value",
 		"Überschreibt den Speicherinhalt eines Strings mit Nullbytes (0x00). Im Gegensatz zu 'x = \"\"' wird hier der tatsächliche RAM-Inhalt gelöscht, nicht nur die Variable umgebogen. Nach dem Aufruf enthält die Variable eine Zeichenkette gleicher Länge, aber nur aus Nullbytes.", func(args []Value) Value {
 			if len(args) != 1 {
 				return ErrorVal("crypt.WipeString erwartet genau 1 Argument")
@@ -126,7 +128,7 @@ func InitCryptFunctions() {
 		})
 
 	// crypt.BytesToString
-	Register("crypt.BytesToString", "crypt", "byteArray",
+	Register(ns+"BytesToString", "crypt", "byteArray",
 		"Wandelt ein Byte-Array (0-255 Werte) in einen UTF-8-String um. Für kurzzeitige Verwendung gedacht - danach crypt.Wipe auf das Byte-Array anwenden.", func(args []Value) Value {
 			if len(args) != 1 {
 				return ErrorVal("crypt.BytesToString erwartet genau 1 Argument")
@@ -430,4 +432,399 @@ func InitCryptFunctions() {
 			}}
 		})
 
+	Register(ns+"AESEncryptFile", "crypt", "sourcePath, destPath, pass [, deleteSource]",
+		"Verschlüsselt eine Datei mit AES-256-GCM und speichert sie unter destPath. Mit deleteSource=true wird die Original-Datei nach erfolgreicher Verschlüsselung gelöscht (Standard: false). Rückgabe: [OK, Msg]",
+		func(args []Value) Value {
+
+			if len(args) < 3 {
+				return Value{Kind: KindArr, Arr: []Value{
+					BoolVal(false),
+					StrVal("AESEncryptFile benötigt sourcePath, destPath und Passwort"),
+				}}
+			}
+
+			srcPath, errVal := absPathVal(args[0].Str)
+			if errVal != nil {
+				return Value{Kind: KindArr, Arr: []Value{
+					BoolVal(false),
+					StrVal("Pfad-Fehler (sourcePath): " + errVal.Str),
+				}}
+			}
+			destPath, errVal := absPathVal(args[1].Str)
+			if errVal != nil {
+				return Value{Kind: KindArr, Arr: []Value{
+					BoolVal(false),
+					StrVal("Pfad-Fehler (destPath): " + errVal.Str),
+				}}
+			}
+			pass := args[2].Str
+
+			deleteSource := false
+			if len(args) > 3 && args[3].Kind == KindBool {
+				deleteSource = args[3].Bool
+			}
+
+			data, err := os.ReadFile(srcPath)
+			if err != nil {
+				return Value{Kind: KindArr, Arr: []Value{
+					BoolVal(false),
+					StrVal("Datei-Lesefehler: " + err.Error()),
+				}}
+			}
+
+			// --- Key aus Passwort ---
+			key := sha256.Sum256([]byte(pass))
+
+			// --- Cipher erstellen ---
+			block, err := aes.NewCipher(key[:])
+			if err != nil {
+				return Value{Kind: KindArr, Arr: []Value{
+					BoolVal(false),
+					StrVal("Cipher Fehler: " + err.Error()),
+				}}
+			}
+
+			// --- GCM ---
+			gcm, err := cipher.NewGCM(block)
+			if err != nil {
+				return Value{Kind: KindArr, Arr: []Value{
+					BoolVal(false),
+					StrVal("GCM Fehler: " + err.Error()),
+				}}
+			}
+
+			// --- Nonce ---
+			nonce := make([]byte, gcm.NonceSize())
+			if _, err := io.ReadFull(crand.Reader, nonce); err != nil {
+				return Value{Kind: KindArr, Arr: []Value{
+					BoolVal(false),
+					StrVal("Nonce Fehler: " + err.Error()),
+				}}
+			}
+
+			// --- Verschlüsselung ---
+			// Format: nonce + ciphertext
+			encrypted := gcm.Seal(nonce, nonce, data, nil)
+
+			// --- Atomar schreiben: erst .tmp, dann umbenennen ---
+			tmpPath := destPath + ".tmp"
+			if err := os.WriteFile(tmpPath, encrypted, 0600); err != nil {
+				return Value{Kind: KindArr, Arr: []Value{
+					BoolVal(false),
+					StrVal("Schreibfehler: " + err.Error()),
+				}}
+			}
+			if err := os.Rename(tmpPath, destPath); err != nil {
+				return Value{Kind: KindArr, Arr: []Value{
+					BoolVal(false),
+					StrVal("Rename-Fehler: " + err.Error()),
+				}}
+			}
+
+			// --- Optional: Original löschen (NUR nach erfolgreichem Schreiben) ---
+			if deleteSource {
+				if err := os.Remove(srcPath); err != nil {
+					// Verschlüsselung war erfolgreich, nur das Löschen schlug fehl.
+					// Das melden wir als Teilerfolg, nicht als kompletten Fehler.
+					return Value{Kind: KindArr, Arr: []Value{
+						BoolVal(true),
+						StrVal("OK, aber Original konnte nicht gelöscht werden: " + err.Error()),
+					}}
+				}
+			}
+
+			return Value{Kind: KindArr, Arr: []Value{
+				BoolVal(true),
+				StrVal("OK"),
+			}}
+		})
+
+	Register(ns+"AESDecryptFileToString", "crypt", "sourcePath, pass",
+		"Entschlüsselt eine mit crypt.AESEncryptFile verschlüsselte Datei direkt im Speicher und gibt den Inhalt zurück. Die Datei bleibt dabei verschlüsselt auf der Platte - es wird zu keinem Zeitpunkt eine Klartext-Version geschrieben. Rückgabe: [OK, Content, Msg]",
+		func(args []Value) Value {
+
+			if len(args) < 2 {
+				return Value{Kind: KindArr, Arr: []Value{
+					BoolVal(false),
+					StrVal(""),
+					StrVal("AESDecryptFileToString benötigt sourcePath und Passwort"),
+				}}
+			}
+
+			srcPath, errVal := absPathVal(args[0].Str)
+			if errVal != nil {
+				return Value{Kind: KindArr, Arr: []Value{
+					BoolVal(false),
+					StrVal(""),
+					StrVal("Pfad-Fehler: " + errVal.Str),
+				}}
+			}
+			pass := args[1].Str
+
+			data, err := os.ReadFile(srcPath)
+			if err != nil {
+				return Value{Kind: KindArr, Arr: []Value{
+					BoolVal(false),
+					StrVal(""),
+					StrVal("Datei-Lesefehler: " + err.Error()),
+				}}
+			}
+
+			key := sha256.Sum256([]byte(pass))
+
+			block, err := aes.NewCipher(key[:])
+			if err != nil {
+				return Value{Kind: KindArr, Arr: []Value{
+					BoolVal(false),
+					StrVal(""),
+					StrVal("Cipher Fehler: " + err.Error()),
+				}}
+			}
+
+			gcm, err := cipher.NewGCM(block)
+			if err != nil {
+				return Value{Kind: KindArr, Arr: []Value{
+					BoolVal(false),
+					StrVal(""),
+					StrVal("GCM Fehler: " + err.Error()),
+				}}
+			}
+
+			nonceSize := gcm.NonceSize()
+			if len(data) < nonceSize {
+				return Value{Kind: KindArr, Arr: []Value{
+					BoolVal(false),
+					StrVal(""),
+					StrVal("Datei ist zu kurz oder beschädigt (kein gültiger Nonce-Header)"),
+				}}
+			}
+
+			nonce, ciphertext := data[:nonceSize], data[nonceSize:]
+			plain, err := gcm.Open(nil, nonce, ciphertext, nil)
+			if err != nil {
+				return Value{Kind: KindArr, Arr: []Value{
+					BoolVal(false),
+					StrVal(""),
+					StrVal("Entschlüsselung fehlgeschlagen (falsches Passwort oder Datei beschädigt): " + err.Error()),
+				}}
+			}
+
+			content := string(plain)
+
+			// plain-Buffer nullen, sobald die (unvermeidliche) String-Kopie
+			// erzeugt ist. Der String selbst bleibt danach nur über
+			// crypt.WipeString löschbar (siehe crypt.md).
+			for i := range plain {
+				plain[i] = 0
+			}
+
+			return Value{Kind: KindArr, Arr: []Value{
+				BoolVal(true),
+				StrVal(content),
+				StrVal("OK"),
+			}}
+		})
+
+	Register(ns+"AESDecryptFile", "crypt", "sourcePath, destPath, pass [, deleteSource]",
+		"Entschlüsselt eine mit crypt.AESEncryptFile verschlüsselte Datei und speichert sie unter destPath. Mit deleteSource=true wird die verschlüsselte Quelldatei nach erfolgreicher Entschlüsselung gelöscht (Standard: false). Rückgabe: [OK, Msg]",
+		func(args []Value) Value {
+
+			if len(args) < 3 {
+				return Value{Kind: KindArr, Arr: []Value{
+					BoolVal(false),
+					StrVal("AESDecryptFile benötigt sourcePath, destPath und Passwort"),
+				}}
+			}
+
+			srcPath, errVal := absPathVal(args[0].Str)
+			if errVal != nil {
+				return Value{Kind: KindArr, Arr: []Value{
+					BoolVal(false),
+					StrVal("Pfad-Fehler (sourcePath): " + errVal.Str),
+				}}
+			}
+			destPath, errVal := absPathVal(args[1].Str)
+			if errVal != nil {
+				return Value{Kind: KindArr, Arr: []Value{
+					BoolVal(false),
+					StrVal("Pfad-Fehler (destPath): " + errVal.Str),
+				}}
+			}
+			pass := args[2].Str
+
+			deleteSource := false
+			if len(args) > 3 && args[3].Kind == KindBool {
+				deleteSource = args[3].Bool
+			}
+
+			data, err := os.ReadFile(srcPath)
+			if err != nil {
+				return Value{Kind: KindArr, Arr: []Value{
+					BoolVal(false),
+					StrVal("Datei-Lesefehler: " + err.Error()),
+				}}
+			}
+
+			key := sha256.Sum256([]byte(pass))
+
+			block, err := aes.NewCipher(key[:])
+			if err != nil {
+				return Value{Kind: KindArr, Arr: []Value{
+					BoolVal(false),
+					StrVal("Cipher Fehler: " + err.Error()),
+				}}
+			}
+
+			gcm, err := cipher.NewGCM(block)
+			if err != nil {
+				return Value{Kind: KindArr, Arr: []Value{
+					BoolVal(false),
+					StrVal("GCM Fehler: " + err.Error()),
+				}}
+			}
+
+			nonceSize := gcm.NonceSize()
+			if len(data) < nonceSize {
+				return Value{Kind: KindArr, Arr: []Value{
+					BoolVal(false),
+					StrVal("Datei ist zu kurz oder beschädigt (kein gültiger Nonce-Header)"),
+				}}
+			}
+
+			nonce, ciphertext := data[:nonceSize], data[nonceSize:]
+			plain, err := gcm.Open(nil, nonce, ciphertext, nil)
+			if err != nil {
+				return Value{Kind: KindArr, Arr: []Value{
+					BoolVal(false),
+					StrVal("Entschlüsselung fehlgeschlagen (falsches Passwort oder Datei beschädigt): " + err.Error()),
+				}}
+			}
+			defer func() {
+				for i := range plain {
+					plain[i] = 0
+				}
+			}()
+
+			tmpPath := destPath + ".tmp"
+			if err := os.WriteFile(tmpPath, plain, 0600); err != nil {
+				return Value{Kind: KindArr, Arr: []Value{
+					BoolVal(false),
+					StrVal("Schreibfehler: " + err.Error()),
+				}}
+			}
+			if err := os.Rename(tmpPath, destPath); err != nil {
+				return Value{Kind: KindArr, Arr: []Value{
+					BoolVal(false),
+					StrVal("Rename-Fehler: " + err.Error()),
+				}}
+			}
+
+			// --- Optional: verschlüsselte Quelldatei löschen ---
+			if deleteSource {
+				if err := os.Remove(srcPath); err != nil {
+					return Value{Kind: KindArr, Arr: []Value{
+						BoolVal(true),
+						StrVal("OK, aber verschlüsseltes Original konnte nicht gelöscht werden: " + err.Error()),
+					}}
+				}
+			}
+
+			return Value{Kind: KindArr, Arr: []Value{
+				BoolVal(true),
+				StrVal("OK"),
+			}}
+		})
+
+	// crypt.CheckPasswordPolicy
+	Register(ns+"CheckPassword", "crypt",
+		"password [, minLength] [, maxLength] [, requireUpper] [, requireLower] [, requireDigit] [, requireSpecial]",
+		"Prüft ein vom Nutzer gewähltes Passwort gegen konfigurierbare Regeln (Mindestlänge, Groß-/Kleinschreibung, Ziffern, Sonderzeichen). Gibt eine Map mit Detail-Ergebnissen zurück, statt das Passwort blind zu übernehmen.",
+		func(args []Value) Value {
+			if len(args) < 1 {
+				return ErrorVal("crypt.CheckPasswordPolicy erwartet mindestens 1 Argument (password)")
+			}
+			if args[0].Kind != KindStr {
+				return ErrorVal("crypt.CheckPasswordPolicy: 'password' muss ein String sein")
+			}
+			pw := args[0].Str
+
+			// Defaults, falls nicht angegeben
+			minLength := 8
+			maxLength := 128
+			requireUpper := true
+			requireLower := true
+			requireDigit := true
+			requireSpecial := true
+
+			if len(args) > 1 && args[1].Kind == KindNum {
+				minLength = int(args[1].Num)
+			}
+			if len(args) > 2 && args[2].Kind == KindNum {
+				maxLength = int(args[2].Num)
+			}
+			if len(args) > 3 && args[3].Kind == KindBool {
+				requireUpper = args[3].Bool
+			}
+			if len(args) > 4 && args[4].Kind == KindBool {
+				requireLower = args[4].Bool
+			}
+			if len(args) > 5 && args[5].Kind == KindBool {
+				requireDigit = args[5].Bool
+			}
+			if len(args) > 6 && args[6].Kind == KindBool {
+				requireSpecial = args[6].Bool
+			}
+
+			runeCount := len([]rune(pw))
+			hasUpper := false
+			hasLower := false
+			hasDigit := false
+			hasSpecial := false
+
+			for _, r := range pw {
+				switch {
+				case unicode.IsUpper(r):
+					hasUpper = true
+				case unicode.IsLower(r):
+					hasLower = true
+				case unicode.IsDigit(r):
+					hasDigit = true
+				case unicode.IsPunct(r) || unicode.IsSymbol(r):
+					hasSpecial = true
+				}
+			}
+
+			var errs []Value
+
+			if runeCount < minLength {
+				errs = append(errs, StrVal(fmt.Sprintf("Passwort ist zu kurz (mindestens %d Zeichen erforderlich, hat %d)", minLength, runeCount)))
+			}
+			if runeCount > maxLength {
+				errs = append(errs, StrVal(fmt.Sprintf("Passwort ist zu lang (maximal %d Zeichen erlaubt, hat %d)", maxLength, runeCount)))
+			}
+			if requireUpper && !hasUpper {
+				errs = append(errs, StrVal("Mindestens ein Großbuchstabe erforderlich"))
+			}
+			if requireLower && !hasLower {
+				errs = append(errs, StrVal("Mindestens ein Kleinbuchstabe erforderlich"))
+			}
+			if requireDigit && !hasDigit {
+				errs = append(errs, StrVal("Mindestens eine Ziffer erforderlich"))
+			}
+			if requireSpecial && !hasSpecial {
+				errs = append(errs, StrVal("Mindestens ein Sonderzeichen erforderlich"))
+			}
+
+			result := map[string]Value{
+				"Valid":      BoolVal(len(errs) == 0),
+				"Length":     NumVal(float64(runeCount)),
+				"HasUpper":   BoolVal(hasUpper),
+				"HasLower":   BoolVal(hasLower),
+				"HasDigit":   BoolVal(hasDigit),
+				"HasSpecial": BoolVal(hasSpecial),
+				"Errors":     Value{Kind: KindArr, Arr: errs},
+			}
+
+			return Value{Kind: KindMap, Map: result}
+		})
 }

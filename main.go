@@ -24,7 +24,7 @@ var optionalModuleFunctions = map[string]int{
 	"cert":     12,
 	"convert":  5,
 	"computer": 14,
-	"crypt":    6,
+	"crypt":    13,
 	"data":     15,
 	"db":       30,
 	"debug":    11,
@@ -47,6 +47,7 @@ var optionalModuleFunctions = map[string]int{
 	"service":  8,
 	"sftp":     9,
 	"smtp":     1,
+	"ssh":      5,
 	"steg":     4,
 	"string":   31,
 	"tar":      13,
@@ -502,8 +503,11 @@ func getCLIShortcuts() map[string]Shortcut {
 		"copyfolder":     {"folder.Copy", "src, dst, [progress]", "Kopiert einen Ordner rekursiv mit parallelen Workern an einen neuen Ort. progress=True zeigt Fortschritt auf der Konsole."},
 		"rename":         {"file.Rename", "alt, neu", "Benennt eine Datei um."},
 		"qcsignidentity": {"pqc.SetupSignIdentity", "path, encrypt", "Erzeugt Keys.(id_sig.pub / id_sig) Bei 'encrypt=false' erfolgt eine Sicherheitswarnung!"},
-		"generatesshkey": {"GenerateSSHKey", "[outFile, algo, bits, pass]",
+		"generatesshkey": {"ssh.GenerateSSHKey", "[outFile, algo, bits, pass]",
 			"Erstellt ein SSH-Paar. RSA mit min. 4096 Bit. Ed25519 nutzt fix 256 Bit. Überschreibt keine vorhandenen Dateien im .ssh Ordner der Users."},
+		"remoteboot": {"ssh.RebootWithKey", "host, user, keyPath, [port], [delay], [knownHostsPath]", "Löst per SSH-Key-Auth einen Reboot aus."},
+		"remoteexec": {"ssh.ExecOnce", "host, user, keyPath, cmd, [port], [knownHostsPath]",
+			"Führt per SSH-Key-Auth einen einzelnen Befehl aus und schließt die Verbindung wieder."},
 	}
 	return m
 }

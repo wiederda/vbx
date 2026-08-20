@@ -991,13 +991,40 @@ func InitFileFunctions() {
 			return ErrorVal("Verzeichnis existiert nicht: " + filepath.Dir(path))
 		}
 
+		// Prüfen, ob die Datei bereits existiert und ob ihr letztes Byte
+		// ein Zeilenumbruch ist. Ohne diese Prüfung würde die neue Zeile
+		// direkt hinter den bestehenden Inhalt geschrieben, falls die
+		// Datei nicht bereits mit \n endet (z.B. bei einer Datei, die
+		// zuvor per file.Write ohne abschließenden Umbruch erzeugt wurde).
+		needsLeadingNewline := false
+		if info, err := os.Stat(path); err == nil && info.Size() > 0 {
+			rf, err := os.Open(path)
+			if err != nil {
+				return ErrorVal("Datei konnte nicht zum Prüfen geöffnet werden: " + err.Error())
+			}
+			lastByte := make([]byte, 1)
+			_, err = rf.ReadAt(lastByte, info.Size()-1)
+			rf.Close()
+			if err != nil {
+				return ErrorVal("Letztes Byte konnte nicht gelesen werden: " + err.Error())
+			}
+			if lastByte[0] != '\n' {
+				needsLeadingNewline = true
+			}
+		}
+
 		f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			return ErrorVal("Datei konnte nicht geöffnet werden: " + err.Error())
 		}
 		defer f.Close()
 
-		if _, err := f.WriteString(args[1].Str + "\n"); err != nil {
+		content := args[1].Str + "\n"
+		if needsLeadingNewline {
+			content = "\n" + content
+		}
+
+		if _, err := f.WriteString(content); err != nil {
 			return ErrorVal("Schreibfehler beim Anhängen: " + err.Error())
 		}
 

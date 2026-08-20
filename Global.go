@@ -3,17 +3,12 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"crypto/ed25519"
 	"crypto/md5"
-	"crypto/rand"
-	"crypto/rsa"
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/pem"
 	"fmt"
 	"math"
 	"net/url"
@@ -27,7 +22,6 @@ import (
 
 	"github.com/shirou/gopsutil/v3/mem"
 	"github.com/shirou/gopsutil/v3/process"
-	"golang.org/x/crypto/ssh"
 	"golang.org/x/net/idna"
 	"golang.org/x/term"
 	"golang.org/x/text/language"
@@ -165,124 +159,8 @@ func InitGlobal() {
 		return NumVal(0)
 	})
 
-	Register("GenerateSSHKey", "crypt", "[outFile, algo, bits, pass]",
-		"Erstellt ein SSH-Paar (RSA/Ed25519). Schreibt physisch in .ssh oder Zielpfad.",
-		func(args []Value) Value {
-			// 1. DEFAULTS & DATEN-VORBEREITUNG
-			home, _ := os.UserHomeDir()
-			algo := "rsa"
-			bits := 4096 // Absolute Untergrenze für RSA
-
-			// 2. INPUT-CHECK & ALGO-WAHL
-			if len(args) >= 2 && args[1].Str != "" {
-				algo = strings.ToLower(args[1].Str)
-			}
-
-			// Bits korrigieren / setzen
-			if algo == "ed25519" {
-				bits = 256
-			} else {
-				algo = "rsa" // Fallback für Unbekanntes
-				if len(args) >= 3 {
-					uBits, _ := strconv.Atoi(args[2].Str)
-					if uBits > bits {
-						bits = uBits
-					}
-				}
-			}
-
-			// 3. PFAD-HANDLING (Erzwingt Verzeichnis-Struktur)
-			var targetDir string
-			if len(args) >= 1 && strings.TrimSpace(args[0].Str) != "" {
-				// Wir nehmen den Input IMMER als Verzeichnis-Pfad
-				targetDir, _ = absPathVal(args[0].Str)
-			} else {
-				// Default: ~/.ssh
-				targetDir = filepath.Join(home, ".ssh")
-			}
-
-			// JETZT: Ordner erstellen, bevor wir überhaupt an Dateinamen denken!
-			// Wenn targetDir "/root/ssh" ist, wird hier ein ORDNER namens "ssh" erstellt.
-			if err := os.MkdirAll(targetDir, 0700); err != nil {
-				return ErrorVal("Berechtigungsfehler: Konnte Ordner nicht erstellen: " + err.Error())
-			}
-
-			// Erst wenn der Ordner sicher existiert, bauen wir den Dateipfad zusammen
-			basePath := filepath.Join(targetDir, "id_"+algo+"_vbmini")
-
-			// 4. SICHERHEITS-CHECK: EXISTENZ DER DATEI IM ORDNER
-			privPath := basePath
-			pubPath := basePath + ".pub"
-
-			if _, err := os.Stat(privPath); err == nil {
-				return ErrorVal("Abbruch: Datei existiert bereits im Zielordner: " + privPath)
-			}
-			if _, err := os.Stat(pubPath); err == nil {
-				return ErrorVal("Abbruch: Public Key existiert bereits (" + pubPath + ").")
-			}
-
-			// --- AB HIER: PHYSIKALISCHE GENERIERUNG ---
-			var privPem []byte
-			var pubBytes []byte
-
-			if algo == "ed25519" {
-				// ED25519 LOGIK
-				pub, priv, err := ed25519.GenerateKey(rand.Reader)
-				if err != nil {
-					return ErrorVal("Ed25519 Fehler: " + err.Error())
-				}
-
-				// MarshalPrivateKey liefert []byte (die rohen Daten)
-				pemBlock, err := ssh.MarshalPrivateKey(priv, "")
-				if err != nil {
-					return ErrorVal("Marshal Fehler: " + err.Error())
-				}
-
-				privPem = pem.EncodeToMemory(pemBlock)
-
-				// Public Key Format
-				pubKey, _ := ssh.NewPublicKey(pub)
-				pubBytes = ssh.MarshalAuthorizedKey(pubKey)
-
-			} else {
-				// RSA LOGIK
-				privateKey, err := rsa.GenerateKey(rand.Reader, bits)
-				if err != nil {
-					return ErrorVal("RSA Fehler: " + err.Error())
-				}
-
-				// MarshalPKCS1PrivateKey liefert []byte
-				rawPrivBytes := x509.MarshalPKCS1PrivateKey(privateKey)
-
-				privPem = pem.EncodeToMemory(&pem.Block{
-					Type:  "RSA PRIVATE KEY",
-					Bytes: rawPrivBytes, // Korrekt: []byte in []byte Feld
-				})
-
-				// Public Key Format
-				pubKey, _ := ssh.NewPublicKey(&privateKey.PublicKey)
-				pubBytes = ssh.MarshalAuthorizedKey(pubKey)
-			}
-
-			// 5. SCHREIBEN DER DATEIEN
-			// Private Key (0600)
-			if err := os.WriteFile(privPath, privPem, 0600); err != nil {
-				return ErrorVal("Schreibfehler Private Key: " + err.Error())
-			}
-
-			// Public Key (0644)
-			if err := os.WriteFile(pubPath, pubBytes, 0644); err != nil {
-				return ErrorVal("Schreibfehler Public Key: " + err.Error())
-			}
-
-			fmt.Printf("✔ SSH-Key (%s, %d Bit) erfolgreich erstellt.\n", algo, bits)
-			//fmt.Printf("  Pfad: %s\n", outFile)
-
-			return StrVal(basePath)
-		})
-
 	// 497: ToClipboard
-	Register("ToClipboard", "system", "text", "Kopiert Text in die Zwischenablage.", func(args []Value) Value {
+	Register("ToClipboard", "global", "text", "Kopiert Text in die Zwischenablage.", func(args []Value) Value {
 		// Nutzt deine toStringSafe Logik
 		text := ""
 		if len(args) > 0 {

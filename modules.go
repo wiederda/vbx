@@ -52,6 +52,7 @@ var optionalModulesMap = map[string]func(*Environment){
 	"rand":     func(e *Environment) { InitRandFunctions() },
 	"proc":     func(e *Environment) { InitProcFunctions() },
 	"sftp":     func(e *Environment) { InitSftpFunctions() },
+	"ssh":      func(e *Environment) { InitSSHFunctions() },
 	"steg":     func(e *Environment) { InitStegFunctions() },
 	"template": func(e *Environment) { InitTemplateFunctions() },
 	"win":      func(e *Environment) { InitWinFunctions() },

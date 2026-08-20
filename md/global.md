@@ -676,22 +676,6 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
 
 ---
 
-## GenerateSSHKey([outDir, algo, bits, pass])
-- **Konkret:**
-  Erstellt ein SSH-Schlüsselpaar und schreibt es auf die Festplatte.
-  Private Key mit Rechten `0600`, Public Key mit `0644`.
-  Bricht ab, wenn die Zieldateien bereits existieren.
-- **Parameter:**
-  - `outDir`: Optional. Zielverzeichnis (Standard: `~/.ssh`).
-  - `algo`: Optional. `"rsa"` (Standard) oder `"ed25519"`.
-  - `bits`: Optional. Schlüssellänge für RSA (Standard: 4096, Minimum wird erzwungen).
-  - `pass`: Optional. Passphrase (aktuell nicht verwendet).
-- **Rückgabe:**
-  `StrVal`
-  Basispfad des erstellten Schlüsselpaares (ohne `.pub`).
-
----
-
 ## Password([prompt])
 - **Konkret:**
   Liest eine Eingabe von der Konsole ohne sie anzuzeigen (Echo unterdrückt).
