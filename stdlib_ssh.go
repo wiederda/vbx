@@ -37,14 +37,14 @@ func InitSSHFunctions() {
 	// ------------------------
 	// ssh.Connect
 	// ------------------------
-	Register(ns+"Connect", "ssh", "host, user, keyPath, alias, [port], [knownHostsPath]",
+	Register(ns+"Connect", "ssh", "host, user, keyPath, alias, [knownHostsPath], [port]",
 		"Öffnet eine SSH-Verbindung per Key-Auth und speichert sie unter einem Alias für nachfolgende ssh.Exec-Aufrufe. "+
-			"port default 22. knownHostsPath optional - ohne Angabe wird der Host-Key nicht geprüft (InsecureIgnoreHostKey); "+
+			"knownHostsPath optional - ohne Angabe wird der Host-Key nicht geprüft (InsecureIgnoreHostKey); "+
 			"mit Angabe wird er wie bei sftp.Connect gegen eine known_hosts-Datei geprüft (Trust-on-First-Use). "+
-			"keyPath zeigt auf den privaten Key lokal.",
+			"port default 22. keyPath zeigt auf den privaten Key lokal.",
 		func(args []Value) Value {
 			if len(args) < 4 {
-				return ErrorVal("ssh.Connect(host, user, keyPath, alias [, port, knownHostsPath]) benötigt mindestens 4 Argumente")
+				return ErrorVal("ssh.Connect(host, user, keyPath, alias [, knownHostsPath, port]) benötigt mindestens 4 Argumente")
 			}
 
 			host := args[0].Str
@@ -52,14 +52,14 @@ func InitSSHFunctions() {
 			keyPath := args[2].Str
 			alias := strings.ToLower(args[3].Str)
 
-			port := 22
-			if len(args) >= 5 {
-				port = int(toNumVal(args[4]))
-			}
-
 			absKeyPath, errVal := absPathVal(keyPath)
 			if errVal != nil {
 				return *errVal
+			}
+
+			port := 22
+			if len(args) >= 6 {
+				port = int(toNumVal(args[5]))
 			}
 
 			keyBytes, err := os.ReadFile(absKeyPath)
@@ -72,7 +72,7 @@ func InitSSHFunctions() {
 				return ErrorVal("Private Key konnte nicht geparst werden: " + err.Error())
 			}
 
-			hostKeyCallback, errVal := buildHostKeyCallback(args, 5)
+			hostKeyCallback, errVal := buildHostKeyCallback(args, 4)
 			if errVal != nil {
 				return *errVal
 			}
@@ -183,7 +183,7 @@ func InitSSHFunctions() {
 	// wiederverwendbar sein. ssh.ExecOnce kapselt Connect+Exec+Close in
 	// einem Aufruf, kein explizites Close nötig (Prozessende räumt die
 	// Verbindung ohnehin auf).
-	Register(ns+"ExecOnce", "ssh", "host, user, keyPath, cmd, [port], [knownHostsPath], [printOutput]",
+	Register(ns+"ExecOnce", "ssh", "host, user, keyPath, cmd, [printOutput], [knownHostsPath], [port]",
 		"Verbindet, führt genau einen Befehl aus und schließt die Verbindung wieder - für Einzelaufrufe (z.B. CLI-Shortcuts), "+
 			"bei denen sich ssh.Connect/ssh.Exec/ssh.Close (für mehrere Befehle in einem laufenden Skript gedacht) nicht lohnt. "+
 			"printOutput (Default true) gibt stdout und Exit-Code zusätzlich direkt auf der Konsole aus - praktisch für "+
@@ -192,7 +192,7 @@ func InitSSHFunctions() {
 			"Rückgabe: Map mit stdout, exitCode. port default 22, knownHostsPath optional.",
 		func(args []Value) Value {
 			if len(args) < 4 {
-				return ErrorVal("ssh.ExecOnce(host, user, keyPath, cmd [, port, knownHostsPath, printOutput]) benötigt mindestens 4 Argumente")
+				return ErrorVal("ssh.ExecOnce(host, user, keyPath, cmd [, printOutput, knownHostsPath, port]) benötigt mindestens 4 Argumente")
 			}
 
 			host := args[0].Str
@@ -200,19 +200,19 @@ func InitSSHFunctions() {
 			keyPath := args[2].Str
 			cmd := args[3].Str
 
-			port := 22
-			if len(args) >= 5 {
-				port = int(toNumVal(args[4]))
-			}
-
 			printOutput := true
-			if len(args) >= 7 {
-				printOutput = isTruthy(args[6])
+			if len(args) >= 5 {
+				printOutput = isTruthy(args[4])
 			}
 
 			absKeyPath, errVal := absPathVal(keyPath)
 			if errVal != nil {
 				return *errVal
+			}
+
+			port := 22
+			if len(args) >= 7 {
+				port = int(toNumVal(args[6]))
 			}
 
 			keyBytes, err := os.ReadFile(absKeyPath)
@@ -283,30 +283,30 @@ func InitSSHFunctions() {
 	// ------------------------
 	// ssh.RebootWithKey (Key-Auth)
 	// ------------------------
-	Register(ns+"RebootWithKey", "ssh", "host, user, keyPath, [port], [delay], [knownHostsPath]",
+	Register(ns+"RebootWithKey", "ssh", "host, user, keyPath, [delay], [knownHostsPath], [port]",
 		"Löst per SSH-Key-Authentifizierung einen Reboot auf einem Zielsystem aus (shutdown -r). keyPath zeigt auf den "+
 			"PRIVATEN Key lokal (z.B. aus GenerateSSHKey) - der öffentliche Key (.pub) muss vorher in ~/.ssh/authorized_keys "+
 			"auf dem Zielserver eingetragen sein. "+
-			"port ist der SSH-Port (Default 22, nur bei Abweichung angeben). "+
 			"delay ist die Wartezeit in Sekunden bis zum Reboot (Default 30), damit die SSH-Session sauber schließt, bevor das System herunterfährt; "+
-			"0 löst einen sofortigen Reboot aus. Mit knownHostsPath wird der Host-Key wie bei sftp.ConnectWithKey gegen eine known_hosts-Datei geprüft (optional).",
+			"0 löst einen sofortigen Reboot aus. Mit knownHostsPath wird der Host-Key wie bei sftp.ConnectWithKey gegen eine known_hosts-Datei geprüft (optional). "+
+			"port ist der SSH-Port (Default 22, nur bei Abweichung angeben).",
 		func(args []Value) Value {
 			if len(args) < 3 {
-				return ErrorVal("ssh.RebootWithKey(host, user, keyPath [, port, delay, knownHostsPath]) benötigt mindestens 3 Argumente")
+				return ErrorVal("ssh.RebootWithKey(host, user, keyPath [, delay, knownHostsPath, port]) benötigt mindestens 3 Argumente")
 			}
 
 			host := args[0].Str
 			user := args[1].Str
 			keyPath := args[2].Str
 
-			port := 22
+			delay := 30
 			if len(args) >= 4 {
-				port = int(toNumVal(args[3]))
+				delay = int(toNumVal(args[3]))
 			}
 
-			delay := 30
-			if len(args) >= 5 {
-				delay = int(toNumVal(args[4]))
+			port := 22
+			if len(args) >= 6 {
+				port = int(toNumVal(args[5]))
 			}
 
 			absKeyPath, errVal := absPathVal(keyPath)
@@ -324,7 +324,7 @@ func InitSSHFunctions() {
 				return ErrorVal("Private Key konnte nicht geparst werden: " + err.Error())
 			}
 
-			hostKeyCallback, errVal := buildHostKeyCallback(args, 5)
+			hostKeyCallback, errVal := buildHostKeyCallback(args, 4)
 			if errVal != nil {
 				return *errVal
 			}

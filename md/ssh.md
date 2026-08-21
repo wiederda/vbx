@@ -4,8 +4,6 @@ Funktionen für Remote-SSH-Zugriff: einzelne Befehlsausführung, Mehrfach-Exec �
 offene Verbindung, sowie ein spezialisierter Reboot-Befehl. Authentifizierung ausschließlich
 per SSH-Key (kein Klartext-Passwort in Skripten).
 
----
-
 ## GenerateSSHKey([outDir, algo, bits, pass])
 - **Konkret:**
   Erstellt ein SSH-Schlüsselpaar und schreibt es auf die Festplatte.
@@ -40,12 +38,12 @@ Prozessaufrufe hinweg nicht wiederverwendbar.
 - `user` – SSH-User
 - `keyPath` – Pfad zum privaten Key lokal (z.B. aus `GenerateSSHKey`)
 - `alias` – Bezeichner, unter dem die Verbindung gespeichert wird (Groß-/Kleinschreibung wird ignoriert)
-- `port` *(optional, Default 22)* – SSH-Port
 - `knownHostsPath` *(optional)* – Pfad zu einer known_hosts-Datei. Ohne Angabe wird der
   Host-Key nicht geprüft (`InsecureIgnoreHostKey`). Mit Angabe: Trust-on-First-Use – ein
   bislang unbekannter Host wird beim ersten Connect automatisch eingetragen, eine spätere
   Änderung des Host-Keys (möglicher Angriff oder Server-Neuaufsetzung ohne neue known_hosts)
   wird abgelehnt.
+- `port` *(optional, Default 22)* – SSH-Port
 
 **Rückgabe:** `BoolVal(true)` bei erfolgreichem Verbindungsaufbau, sonst `ErrorVal` mit
 Fehlermeldung.
@@ -110,9 +108,9 @@ gesetzt werden, um doppelte bzw. unerwünschte Konsolenausgaben zu vermeiden.
 - `user` – SSH-User
 - `keyPath` – Pfad zum privaten Key lokal
 - `cmd` – auszuführender Shell-Befehl
-- `port` *(optional, Default 22)* – SSH-Port
-- `knownHostsPath` *(optional)* – wie bei `ssh.Connect`
 - `printOutput` *(optional, Default True)* – bei `False` keine Konsolenausgabe, nur Rückgabe-Map
+- `knownHostsPath` *(optional)* – wie bei `ssh.Connect`
+- `port` *(optional, Default 22)* – SSH-Port
 
 **Rückgabe:** Map mit `stdout`, `exitCode` (siehe `ssh.Exec`).
 
@@ -137,13 +135,12 @@ eingetragen sein (siehe `GenerateSSHKey`).
 - `host` – Zielhost (ohne Port)
 - `user` – SSH-User
 - `keyPath` – Pfad zum privaten Key lokal
-- `port` *(optional, Default 22)*
 - `delay` *(optional, Default 30)* – Sekunden bis zum Reboot
 - `knownHostsPath` *(optional)* – wie bei `ssh.Connect`
+- `port` *(optional, Default 22)*
 
 **Rückgabe:** `BoolVal(true)` bei erfolgreich ausgelöstem Reboot, sonst `ErrorVal`.
 
----
 
 ## Sicherheitshinweise
 

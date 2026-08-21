@@ -505,8 +505,8 @@ func getCLIShortcuts() map[string]Shortcut {
 		"qcsignidentity": {"pqc.SetupSignIdentity", "path, encrypt", "Erzeugt Keys.(id_sig.pub / id_sig) Bei 'encrypt=false' erfolgt eine Sicherheitswarnung!"},
 		"generatesshkey": {"ssh.GenerateSSHKey", "[outFile, algo, bits, pass]",
 			"Erstellt ein SSH-Paar. RSA mit min. 4096 Bit. Ed25519 nutzt fix 256 Bit. Überschreibt keine vorhandenen Dateien im .ssh Ordner der Users."},
-		"remoteboot": {"ssh.RebootWithKey", "host, user, keyPath, [port], [delay], [knownHostsPath]", "Löst per SSH-Key-Auth einen Reboot aus."},
-		"remoteexec": {"ssh.ExecOnce", "host, user, keyPath, cmd, [port], [knownHostsPath]",
+		"remoteboot": {"ssh.RebootWithKey", "host, user, keyPath, [delay], [knownHostsPath], [port]", "Löst per SSH-Key-Auth einen Reboot aus."},
+		"remoteexec": {"ssh.ExecOnce", "host, user, keyPath, cmd, [printOutput], [knownHostsPath], [port]",
 			"Führt per SSH-Key-Auth einen einzelnen Befehl aus und schließt die Verbindung wieder."},
 	}
 	return m
