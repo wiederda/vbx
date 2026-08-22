@@ -1,6 +1,6 @@
 
 ' ============================
-' File Beispiele für VBmini
+' File Beispiele für VBX
 ' ============================
 
 Print "=== FILE MODULE TEST ==="

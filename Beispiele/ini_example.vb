@@ -1,7 +1,7 @@
 #use ini
 
 ' ============================
-' Ini Beispiele für VBmini
+' Ini Beispiele für VBX
 ' ============================
 
 Dim res,sections,dbKeys,cacheKeys

@@ -1,7 +1,7 @@
 #use map
 
 ' ============================
-' Map Beispiele für VBmini
+' Map Beispiele für VBX
 ' ============================
 
 Dim user = map.Create()

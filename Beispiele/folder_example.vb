@@ -1,6 +1,6 @@
 
 ' ============================
-' Folder Beispiele für VBmini
+' Folder Beispiele für VBX
 ' ============================
 
 Print "=== FOLDER MODULE FULL TEST ==="

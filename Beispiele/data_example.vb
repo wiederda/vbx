@@ -1,7 +1,7 @@
 #use data
 
 ' ============================
-' Data Beispiele für VBmini
+' Data Beispiele für VBX
 ' ============================
 
 ' Datenmengen

@@ -1,7 +1,7 @@
 #use json, template
 
 ' ============================
-' Template Beispiele für VBmini
+' Template Beispiele für VBX
 ' ============================
 
 Dim data = json.FromJSON("{""name"":""Max"",""server"":""srv01"",""fehler"":""Dienst nicht erreichbar""}")

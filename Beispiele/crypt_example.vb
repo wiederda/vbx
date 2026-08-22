@@ -1,6 +1,6 @@
 #use crypt
 ' ============================
-' Crypt Beispiele für VBmini
+' Crypt Beispiele für VBX
 ' ============================
 
 Print "=== Hashes ==="

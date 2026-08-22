@@ -42,20 +42,24 @@ func InitSftpFunctions() {
 	// ------------------------
 	// sftp.Connect
 	// ------------------------
-	Register(ns+"Connect", "sftp", "host, port, user, password, alias, [knownHostsPath]",
-		"Öffnet eine SFTP-Verbindung per Passwort-Authentifizierung und speichert sie unter einem Alias. Mit knownHostsPath wird der Host-Key gegen eine known_hosts-Datei geprüft (empfohlen bei Verbindungen außerhalb des eigenen Netzes).",
+	Register(ns+"Connect", "sftp", "host, user, password, alias, [knownHostsPath], [port]",
+		"Öffnet eine SFTP-Verbindung per Passwort-Authentifizierung und speichert sie unter einem Alias. Mit knownHostsPath wird der Host-Key gegen eine known_hosts-Datei geprüft (empfohlen bei Verbindungen außerhalb des eigenen Netzes). port ist der SSH-Port (Default 22, nur bei Abweichung angeben).",
 		func(args []Value) Value {
-			if len(args) < 5 {
-				return ErrorVal("sftp.Connect(host, port, user, password, alias [, knownHostsPath]) benötigt mindestens 5 Argumente")
+			if len(args) < 4 {
+				return ErrorVal("sftp.Connect(host, user, password, alias [, knownHostsPath, port]) benötigt mindestens 4 Argumente")
 			}
 
 			host := args[0].Str
-			port := int(toNumVal(args[1]))
-			user := args[2].Str
-			password := args[3].Str
-			alias := strings.ToLower(args[4].Str)
+			user := args[1].Str
+			password := args[2].Str
+			alias := strings.ToLower(args[3].Str)
 
-			hostKeyCallback, errVal := buildHostKeyCallback(args, 5)
+			port := 22
+			if len(args) >= 6 {
+				port = int(toNumVal(args[5]))
+			}
+
+			hostKeyCallback, errVal := buildHostKeyCallback(args, 4)
 			if errVal != nil {
 				return *errVal
 			}
@@ -95,18 +99,22 @@ func InitSftpFunctions() {
 	// ------------------------
 	// sftp.ConnectWithKey
 	// ------------------------
-	Register(ns+"ConnectWithKey", "sftp", "host, port, user, keyPath, alias, [knownHostsPath]",
-		"Öffnet eine SFTP-Verbindung per Private-Key-Authentifizierung (z.B. aus global.GenerateSSHKey) und speichert sie unter einem Alias.",
+	Register(ns+"ConnectWithKey", "sftp", "host, user, keyPath, alias, [knownHostsPath], [port]",
+		"Öffnet eine SFTP-Verbindung per Private-Key-Authentifizierung (z.B. aus global.GenerateSSHKey) und speichert sie unter einem Alias. port ist der SSH-Port (Default 22, nur bei Abweichung angeben).",
 		func(args []Value) Value {
-			if len(args) < 5 {
-				return ErrorVal("sftp.ConnectWithKey(host, port, user, keyPath, alias [, knownHostsPath]) benötigt mindestens 5 Argumente")
+			if len(args) < 4 {
+				return ErrorVal("sftp.ConnectWithKey(host, user, keyPath, alias [, knownHostsPath, port]) benötigt mindestens 4 Argumente")
 			}
 
 			host := args[0].Str
-			port := int(toNumVal(args[1]))
-			user := args[2].Str
-			keyPath := args[3].Str
-			alias := strings.ToLower(args[4].Str)
+			user := args[1].Str
+			keyPath := args[2].Str
+			alias := strings.ToLower(args[3].Str)
+
+			port := 22
+			if len(args) >= 6 {
+				port = int(toNumVal(args[5]))
+			}
 
 			absKeyPath, errVal := absPathVal(keyPath)
 			if errVal != nil {
@@ -123,7 +131,7 @@ func InitSftpFunctions() {
 				return ErrorVal("Private Key konnte nicht geparst werden: " + err.Error())
 			}
 
-			hostKeyCallback, errVal := buildHostKeyCallback(args, 5)
+			hostKeyCallback, errVal := buildHostKeyCallback(args, 4)
 			if errVal != nil {
 				return *errVal
 			}

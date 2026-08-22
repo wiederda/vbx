@@ -1,7 +1,7 @@
 #use net
 
 ' ============================
-' Net Beispiele für VBmini
+' Net Beispiele für VBX
 ' ============================
 
 Print "--- Quick Service Check ---"

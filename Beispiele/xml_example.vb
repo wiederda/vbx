@@ -1,7 +1,7 @@
 #use xml
 
 ' ============================
-' XML Beispiele für VBmini
+' XML Beispiele für VBX
 ' ============================
 
 Dim res

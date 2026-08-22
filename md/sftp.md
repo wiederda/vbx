@@ -6,7 +6,7 @@ Standardmäßig wird der Host-Key nicht geprüft (praktisch im eigenen, vertraut
 
 ---
 
-## sftp.Connect(host, port, user, password, alias [, knownHostsPath])
+## sftp.Connect(host, user, password, alias [, knownHostsPath, port])
 - **Konkret:**
   Öffnet eine SFTP-Verbindung per Passwort-Authentifizierung und speichert sie unter einem Alias.
   Existiert unter dem Alias bereits eine Verbindung, wird diese vorher sauber geschlossen (kein Leak).
@@ -14,29 +14,29 @@ Standardmäßig wird der Host-Key nicht geprüft (praktisch im eigenen, vertraut
   Mit `knownHostsPath` wird der Host-Key gegen eine `known_hosts`-Datei geprüft; ist der Host dort nicht verzeichnet, schlägt die Verbindung mit einem Fehler fehl.
 - **Parameter:**
   - `host`: Hostname oder IP-Adresse.
-  - `port`: SSH/SFTP-Port (Standard meist `22`).
   - `user`: Benutzername.
   - `password`: Passwort.
   - `alias`: Frei wählbarer Name für diese Verbindung.
   - `knownHostsPath`: Optional. Pfad zu einer `known_hosts`-Datei zur Host-Key-Verifikation. Empfohlen außerhalb des eigenen Netzes.
+  - `port`: Optional. SSH/SFTP-Port (Standard meist `22`).
 - **Rückgabe:**
   `BoolVal` (`true`) bei Erfolg, `ErrorVal` bei Fehler (Verbindung fehlgeschlagen, Host-Key nicht vertrauenswürdig, etc.).
 - **Timeout:** 10 Sekunden.
 
 ---
 
-## sftp.ConnectWithKey(host, port, user, keyPath, alias [, knownHostsPath])
+## sftp.ConnectWithKey(host, user, keyPath, alias [, knownHostsPath, port])
 - **Konkret:**
   Öffnet eine SFTP-Verbindung per Private-Key-Authentifizierung statt Passwort.
   Passt gut zu Schlüsseln aus `GenerateSSHKey`.
   Verhalten bezüglich `knownHostsPath` identisch zu `sftp.Connect`.
 - **Parameter:**
   - `host`: Hostname oder IP-Adresse.
-  - `port`: SSH/SFTP-Port.
   - `user`: Benutzername.
   - `keyPath`: Pfad zum privaten SSH-Schlüssel.
   - `alias`: Frei wählbarer Name für diese Verbindung.
   - `knownHostsPath`: Optional. Pfad zu einer `known_hosts`-Datei. Empfohlen außerhalb des eigenen Netzes.
+  - `port`: Optional. SSH/SFTP-Port (Standard meist `22`).
 - **Rückgabe:**
   `BoolVal` (`true`) bei Erfolg, `ErrorVal` bei Fehler (Key nicht lesbar/parsbar, Verbindung fehlgeschlagen, etc.).
 - **Timeout:** 10 Sekunden.

@@ -29,6 +29,7 @@ var optionalModulesMap = map[string]func(*Environment){
 	"convert": func(e *Environment) { InitConvertFunctions() },
 	"crypt":   func(e *Environment) { InitCryptFunctions() },
 	"geo":     func(e *Environment) { InitGeoFunctions() },
+	"git":     func(e *Environment) { InitGitFunctions() },
 	"yaml":    func(e *Environment) { InitYamlFunctions() },
 	"smtp":    func(e *Environment) { InitSmtpFunctions() },
 	"service": func(e *Environment) { InitServiceFunctions() },

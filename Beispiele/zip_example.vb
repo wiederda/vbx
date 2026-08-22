@@ -1,7 +1,7 @@
 #use zip
 
 ' ============================
-' ZIP Beispiele für VBmini
+' ZIP Beispiele für VBX
 ' ============================
 
 Dim files, neu, path="/home/vbmini/testfolder"

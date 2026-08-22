@@ -1,7 +1,7 @@
 #use kuma
 
 ' ============================
-' Uptime-Kuma Beispiele für VBmini
+' Uptime-Kuma Beispiele für VBX
 ' ============================
 
 Dim server, user, password, secret

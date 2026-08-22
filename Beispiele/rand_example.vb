@@ -1,7 +1,7 @@
 #use rand
 
 ' ============================
-' Rand Beispiele für VBmini
+' Rand Beispiele für VBX
 ' ============================
 
 Print "=== Zufallstest ==="

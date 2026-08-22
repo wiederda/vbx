@@ -1,6 +1,6 @@
 
 ' ============================
-' Path Beispiele für VBmini
+' Path Beispiele für VBX
 ' ============================
 
 Dim pfad

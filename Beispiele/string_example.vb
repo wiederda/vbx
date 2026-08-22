@@ -1,7 +1,7 @@
 #use string
 
 ' ============================
-' String Beispiele für VBmini
+' String Beispiele für VBX
 ' ============================
 
 Print string.EncodeBase64("Hello")          ' → "SGVsbG8="

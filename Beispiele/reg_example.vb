@@ -1,7 +1,7 @@
 #use reg
 
 ' ============================
-' Reg Beispiele für VBmini
+' Reg Beispiele für VBX
 ' ============================
 
 Print "=== Registry Write ==="

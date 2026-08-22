@@ -1,6 +1,6 @@
 
 ' ============================
-' Math Beispiele für VBmini
+' Math Beispiele für VBX
 ' ============================
 
 Print "=== MATH MODULE TEST ==="

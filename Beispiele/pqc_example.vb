@@ -1,7 +1,7 @@
 #use pqc, crypt
 
 ' ============================
-' PQC Beispiele für VBmini
+' PQC Beispiele für VBX
 ' ============================
 
 Cls()

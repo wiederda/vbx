@@ -1,7 +1,7 @@
 #use proc
 
 ' ============================
-' Proc Beispiele für VBmini
+' Proc Beispiele für VBX
 ' ============================
 
 ' Prozess starten

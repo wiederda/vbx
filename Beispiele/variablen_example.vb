@@ -1,6 +1,6 @@
 
 ' ============================
-' Variablen Beispiele für VBmini
+' Variablen Beispiele für VBX
 ' ============================
 
 Print "=== VARIABLEN, ARRAYS & FUNKTIONEN TEST ==="

@@ -1,7 +1,7 @@
 #use computer,net
 
 ' ============================
-' Computer Beispiele für VBmini
+' Computer Beispiele für VBX
 ' ============================
 
 Print "Benutzername: " & UserName()
