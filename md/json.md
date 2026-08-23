@@ -118,6 +118,17 @@ Thread-sicher via `sync.RWMutex`.
 
 ---
 
+## json.PropertyCount(objekt)
+- **Konkret:**
+  Gibt die Anzahl der Top-Level-Eigenschaften eines JSON-Objekts zurück.
+  Verschachtelte Objekte werden nicht rekursiv mitgezählt – nur die direkten Schlüssel.
+- **Parameter:**
+  - `objekt`: Ein JSON-Objekt (Map), typischerweise aus `json.FromJSON` oder `json.Get`.
+- **Rückgabe:**
+  `NumVal` – Anzahl der Top-Level-Eigenschaften. `ErrorVal`, falls `objekt` kein JSON-Objekt ist (z. B. ein Array).
+
+---
+
 ## json.Append(path, value)
 - **Konkret:**
   Fügt einen Wert an ein Array in der geladenen Struktur an.

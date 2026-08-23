@@ -364,6 +364,25 @@ Print Add(1, 2, 3, 4)     ' 10
 
 ---
 
+# Fehlerbehandlung
+
+Funktionen, die scheitern können, geben einen Fehlerwert (`ErrorVal`) zurück statt eines regulären Wertes. Wird dieser Fehlerwert direkt in einer Bedingung, Berechnung oder Verkettung verwendet, bricht das Skript sofort ab. Um das zu vermeiden, kann der Fehlerwert einer Variable zugewiesen und anschließend geprüft werden.
+
+```vbx
+#use json
+Dim result = json.PropertyCount(obj)
+
+If IsError(result) Then
+    Print "Fehler: " & ErrorText(result)
+Else
+    Print "Anzahl: " & result
+End If
+```
+
+`IsError(wert)` – Prüft, ob `wert` ein Fehlerwert ist. Gibt `true` oder `false` zurück.
+`ErrorText(wert)` – Gibt den Fehlertext eines Fehlerwerts als String zurück. Ist `wert` kein Fehler, wird ein leerer String zurückgegeben.
+Beide sind Sprach-Kernfunktionen (keine Modul-Funktionen) und immer verfügbar, unabhängig von `#use`.
+
 # Maps
 
 Maps speichern Schlüssel/Wert-Paare. Sie entstehen über Funktionen wie `json.FromJSON` oder `map.Create`.

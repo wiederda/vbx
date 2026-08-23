@@ -35,7 +35,7 @@ var optionalModuleFunctions = map[string]int{
 	"git":      18,
 	"hash":     8,
 	"ini":      8,
-	"json":     24,
+	"json":     25,
 	"kuma":     5,
 	"map":      11,
 	"net":      17,

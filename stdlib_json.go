@@ -303,6 +303,19 @@ func InitJsonFunctions() {
 		return Value{Kind: KindArr, Arr: arr}
 	})
 
+	// ---------------- json.PropertyCount ----------------
+	Register(ns+"PropertyCount", "json", "objekt",
+		"Gibt die Anzahl der Top-Level-Eigenschaften eines JSON-Objekts zurück.",
+		func(args []Value) Value {
+			if len(args) < 1 {
+				return ErrorVal("json.PropertyCount(objekt) benötigt ein Argument")
+			}
+			if args[0].Kind != KindMap {
+				return ErrorVal("json.PropertyCount: Wert ist kein JSON-Objekt")
+			}
+			return NumVal(float64(len(args[0].Map)))
+		})
+
 	// ---------------- json.Append ----------------
 	Register(ns+"Append", "json", "pfad, wert", "Fügt ein Element an ein bestehendes Array innerhalb der Struktur an.", func(args []Value) Value {
 		if len(args) < 2 {

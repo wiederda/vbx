@@ -334,6 +334,27 @@ func evalFunctionCall(name string, args []Expr, env *Environment) Value {
 		}
 	}
 
+	// direkt VOR "2. Argumente auswerten" einfügen, analog zum Dump-Sonderfall weiter unten:
+	if strings.EqualFold(name, "IsError") {
+		if len(args) < 1 {
+			return BoolVal(false)
+		}
+		val := evalExpr(args[0], env)
+		return BoolVal(val.Kind == KindError)
+	}
+
+	// NEU: ErrorText direkt danach einfügen
+	if strings.EqualFold(name, "ErrorText") {
+		if len(args) < 1 {
+			return StrVal("")
+		}
+		val := evalExpr(args[0], env)
+		if val.Kind == KindError {
+			return StrVal(val.Str)
+		}
+		return StrVal("")
+	}
+
 	// 2. Argumente auswerten
 	evaluated := make([]Value, len(args))
 	for i, arg := range args {
@@ -473,9 +494,10 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 
 	case *AssignNode:
 		val := evalExpr(n.Value, env)
-		if val.Kind == KindError {
-			return val, SignalError
-		}
+		// Kein Abbruch mehr hier bei KindError – der Fehlerwert wird wie ein
+		// normaler Wert zugewiesen, damit er per IsError() geprüft werden kann.
+		// Wird der Fehlerwert danach in einer Bedingung/Berechnung verwendet,
+		// greift der Abbruch trotzdem ganz normal an der jeweiligen Stelle.
 
 		// 1. VB-Spezifisch: Rückgabewert setzen
 		currFunc, _ := env.Get("_currentFuncName")
@@ -486,14 +508,11 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 
 		// 2. Deklaration vs. Zuweisung
 		if n.IsDeclaration {
-			// HIER: Das dritte Argument hinzufügen!
-			// n.InLoop muss von deinem Parser/Walker gesetzt werden
 			env.Define(n.Name, val, n.InLoop)
 		} else {
 			// Normale Zuweisung (x = 10): Suche erst lokal, dann global
 			err := env.Update(n.Name, val)
 			if err != nil {
-				// Falls Update fehlschlägt, weil die Variable nirgends existiert:
 				scopeInfo := "Public (global)"
 				if env.parent != nil {
 					scopeInfo = "lokal (Dim) oder Public (global)"
