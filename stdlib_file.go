@@ -1031,7 +1031,7 @@ func InitFileFunctions() {
 		return BoolVal(true)
 	})
 
-	Register("HasContent", "file", "pfad", "Prüft, ob eine Datei existiert und mehr als 0 Byte Inhalt hat. Gibt bei nicht existierender Datei false zurück.", func(args []Value) Value {
+	Register(ns+"HasContent", "file", "pfad", "Prüft, ob eine Datei existiert und mehr als 0 Byte Inhalt hat. Gibt bei nicht existierender Datei false zurück.", func(args []Value) Value {
 		path, errVal := absPathVal(args[0].Str)
 		if errVal != nil {
 			return *errVal

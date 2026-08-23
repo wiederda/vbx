@@ -389,9 +389,9 @@ func evalFunctionCall(name string, args []Expr, env *Environment) Value {
 			}
 		}
 
-		_, sig := evalStatements(fn.Body, local)
+		retVal, sig := evalStatements(fn.Body, local)
 		if sig == SignalError {
-			return ErrorVal("Fehler in Funktion: " + name)
+			return ErrorVal(fmt.Sprintf("Fehler in Funktion '%s': %s", name, retVal.Str))
 		}
 
 		ret, _ := local.Get("_fnReturn")
@@ -425,9 +425,9 @@ func evalFunctionCall(name string, args []Expr, env *Environment) Value {
 			}
 		}
 
-		_, sig := evalStatements(s.Body, local)
+		retVal, sig := evalStatements(s.Body, local)
 		if sig == SignalError {
-			return ErrorVal("Fehler in Sub: " + name)
+			return ErrorVal(fmt.Sprintf("Fehler in Sub '%s': %s", name, retVal.Str))
 		}
 		return NumVal(0)
 	}
