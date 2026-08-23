@@ -12,7 +12,7 @@ VBX besteht aus drei Hauptkomponenten:
 * **Modul-System** – Erweiterungen für Netzwerk, Kryptografie, Datenbanken und mehr
 * **Shell-Interface** – Direkte Ausführung von Funktionen über die Kommandozeile
 
-Über **600 Funktionen** stehen zur Verfügung, ohne den Kern unnötig aufzublähen.
+Über **650 Funktionen** stehen zur Verfügung, ohne den Kern unnötig aufzublähen.
 
 ---
 
@@ -164,7 +164,7 @@ Immer verfügbar:
 
 ## Optionale Module
 
-[ad.*](md/ad.md), [cert.*](md/cert.md), [computer.*](md/computer.md), [convert.*](md/convert.md), [crypt.*](md/crypt.md), [data.*](md/data.md), [db.*](md/db.md), [debug.*](md/debug.md), [docker.*](md/docker.md), [env.*](md/env.md), [fin.*](md/fin.md), [geo.*](md/geo.md), [hash.*](md/hash.md), [ini.*](md/ini.md), [json.*](md/json.md), [map.*](md/map.md), [net.*](md/net.md), [pgp.*](md/pgp.md), [picture.*](md/picture.md), [pqc.*](md/pqc.md), [proc.*](md/proc.md), [rand.*](md/rand.md), [reg.*](md/reg.md), [service.*](md/service.md), [sftp.*](md/sftp.md), [smtp.*](md/smtp.md), [steg.*](md/steg.md), [string.*](md/string.md), [tar.*](md/tar.md), [template.*](md/template.md), [uptime-kuma.*](md/uptime-kuma.md) [win.*](md/win.md), [xml.*](md/xml.md), [yaml.*](md/yaml.md), [zip.*](md/zip.md)
+[ad.*](md/ad.md), [cert.*](md/cert.md), [computer.*](md/computer.md), [convert.*](md/convert.md), [crypt.*](md/crypt.md), [data.*](md/data.md), [db.*](md/db.md), [debug.*](md/debug.md), [docker.*](md/docker.md), [env.*](md/env.md), [fin.*](md/fin.md), [geo.*](md/geo.md), [git.*](md/git.md), [hash.*](md/hash.md), [ini.*](md/ini.md), [json.*](md/json.md), [map.*](md/map.md), [net.*](md/net.md), [pgp.*](md/pgp.md), [picture.*](md/picture.md), [pqc.*](md/pqc.md), [proc.*](md/proc.md), [rand.*](md/rand.md), [reg.*](md/reg.md), [service.*](md/service.md), [sftp.*](md/sftp.md), [smtp.*](md/smtp.md), [ssh.*](md/ssh.md), [steg.*](md/steg.md), [string.*](md/string.md), [tar.*](md/tar.md), [template.*](md/template.md), [uptime-kuma.*](md/uptime-kuma.md) [win.*](md/win.md), [xml.*](md/xml.md), [yaml.*](md/yaml.md), [zip.*](md/zip.md)
 
 ---
 

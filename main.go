@@ -32,7 +32,7 @@ var optionalModuleFunctions = map[string]int{
 	"env":      3,
 	"fin":      7,
 	"geo":      1,
-	"git":      17,
+	"git":      18,
 	"hash":     8,
 	"ini":      8,
 	"json":     24,

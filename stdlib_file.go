@@ -1031,6 +1031,18 @@ func InitFileFunctions() {
 		return BoolVal(true)
 	})
 
+	Register("HasContent", "file", "pfad", "Prüft, ob eine Datei existiert und mehr als 0 Byte Inhalt hat. Gibt bei nicht existierender Datei false zurück.", func(args []Value) Value {
+		path, errVal := absPathVal(args[0].Str)
+		if errVal != nil {
+			return *errVal
+		}
+		info, statErr := os.Stat(path)
+		if statErr != nil {
+			return BoolVal(false)
+		}
+		return BoolVal(info.Size() > 0)
+	})
+
 	// ---------------- ReadAllLines ----------------
 	Register(ns+"ReadAllLines", "file", "pfad", "Liest eine Textdatei zeilenweise in ein Array.", func(args []Value) Value {
 		if len(args) < 1 {

@@ -76,6 +76,17 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
 
 ---
 
+## file.HasContent(path)
+- **Konkret:**
+  Prüft, ob eine Datei existiert und mehr als 0 Byte Inhalt hat.
+- **Parameter:**
+  - `path`: Zu prüfender Pfad.
+- **Rückgabe:**
+  `BoolVal`
+  `true` = Datei existiert und ist größer als 0 Byte. `false` = Datei existiert nicht oder ist leer.
+
+--- 
+
 ## file.Delete(path)
 - **Konkret:**
   Löscht eine Datei. Existiert die Datei nicht, wird kein Fehler zurückgegeben.
