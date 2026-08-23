@@ -218,24 +218,49 @@ func tokenize(input string) []Token {
 			}
 			emit(STRING, sb.String())
 			i = j + 1
-		// Zahlen
+			// Zahlen
+			// Zahlen / Identifier mit führender Zahl
 		case unicode.IsDigit(ch):
 			j := i
-			dots := 0
-			for j < len(runes) && (unicode.IsDigit(runes[j]) || runes[j] == '.') {
-				if runes[j] == '.' {
-					dots++
-				}
+
+			// Zuerst die Ziffern lesen
+			for j < len(runes) && unicode.IsDigit(runes[j]) {
 				j++
 			}
-			if dots > 1 {
-				emitError("Ungültige Zahl: %s", string(runes[i:j]))
+
+			// Falls direkt ein Buchstabe oder '_' folgt:
+			// -> Identifier statt Zahl
+			//
+			// Beispiele:
+			//   7z
+			//   7zip
+			//   123abc
+			//   7_z
+			if j < len(runes) && (unicode.IsLetter(runes[j]) || runes[j] == '_') {
+				for j < len(runes) &&
+					(unicode.IsLetter(runes[j]) ||
+						unicode.IsDigit(runes[j]) ||
+						runes[j] == '_') {
+					j++
+				}
+
+				word := string(runes[i:j])
+				emit(IDENT, word)
 				i = j
 				continue
 			}
+
+			// Normale Zahl, eventuell mit Dezimalpunkt
+			if j < len(runes) && runes[j] == '.' {
+				j++
+
+				for j < len(runes) && unicode.IsDigit(runes[j]) {
+					j++
+				}
+			}
+
 			emit(NUMBER, string(runes[i:j]))
 			i = j
-
 		// Identifier / Keywords
 		case unicode.IsLetter(ch) || ch == '_':
 			// 1. Check auf Zeilenfortsetzung

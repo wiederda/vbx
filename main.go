@@ -20,6 +20,7 @@ var loadedModules = make(map[string]bool)
 
 // var BuildDate string   // wird via ldflags gesetzt
 var optionalModuleFunctions = map[string]int{
+	"7z":       5,
 	"ad":       8,
 	"cert":     12,
 	"convert":  5,

@@ -28,6 +28,7 @@ const (
 	KindMap
 	KindNil
 	KindNone
+	KindBytes
 )
 
 type Signal int
@@ -60,6 +61,7 @@ type Value struct {
 	Arr2D [][]Value
 	Obj   *Object
 	Map   map[string]Value // <-- neu
+	Bytes []byte
 }
 
 type CaseBranch struct {

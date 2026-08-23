@@ -453,7 +453,6 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
 - **Rückgabe:**
   `ArrVal`
   Array der duplizierten Zeilen (als `StrVal`), **alphabetisch sortiert**.
-- **Fix:** Vorher war die Reihenfolge undeterministisch (Go-Map-Iteration); jetzt wird vor der Rückgabe sortiert.
 
 ---
 

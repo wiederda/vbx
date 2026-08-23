@@ -276,87 +276,77 @@ func InitPQCFunctions() {
 	// pqc.GenerateKeyPair()  →  [bool, pubB64, privB64, err]
 	// ---------------------------------------------------------------------------
 	Register(ns+"GenerateKeyPair", "pqc", "-",
-		"Erzeugt ein ML-KEM-768 Schlüsselpaar.",
+		"Erzeugt ein ML-KEM-768 Schlüsselpaar. Rückgabe: [pubB64, privB64].",
 		func(args []Value) Value {
 			pub, priv, err := circlkem.GenerateKeyPair(nil)
 			if err != nil {
-				return keypairErr("Schlüsselgenerierung fehlgeschlagen: " + err.Error())
+				return ErrorVal("Schlüsselgenerierung fehlgeschlagen: " + err.Error())
 			}
-
 			pubBytes, err := pub.MarshalBinary()
 			if err != nil {
-				return keypairErr("Public Key serialisierung fehlgeschlagen: " + err.Error())
+				return ErrorVal("Public Key serialisierung fehlgeschlagen: " + err.Error())
 			}
-
 			privBytes, err := priv.MarshalBinary()
 			if err != nil {
-				return keypairErr("Private Key serialisierung fehlgeschlagen: " + err.Error())
+				return ErrorVal("Private Key serialisierung fehlgeschlagen: " + err.Error())
 			}
-
-			return keypairResult(
-				base64.StdEncoding.EncodeToString(pubBytes),
-				base64.StdEncoding.EncodeToString(privBytes),
-			)
+			return Value{Kind: KindArr, Arr: []Value{
+				StrVal(base64.StdEncoding.EncodeToString(pubBytes)),
+				StrVal(base64.StdEncoding.EncodeToString(privBytes)),
+			}}
 		})
 
 	// ---------------------------------------------------------------------------
 	// pqc.GenerateSigKeyPair()  →  [bool, pubB64, privB64, err]
 	// ---------------------------------------------------------------------------
 	Register(ns+"GenerateSigKeyPair", "pqc", "-",
-		"Erzeugt ein ML-DSA-65 Signatur-Schlüsselpaar.",
+		"Erzeugt ein ML-DSA-65 Signatur-Schlüsselpaar. Rückgabe: [pubB64, privB64].",
 		func(args []Value) Value {
 			scheme := mldsa65.Scheme()
 			pk, sk, err := scheme.GenerateKey()
 			if err != nil {
-				return keypairErr("Schlüsselgenerierung fehlgeschlagen: " + err.Error())
+				return ErrorVal("Schlüsselgenerierung fehlgeschlagen: " + err.Error())
 			}
-
 			pubBytes, err := pk.MarshalBinary()
 			if err != nil {
-				return keypairErr("Public Key serialisierung fehlgeschlagen: " + err.Error())
+				return ErrorVal("Public Key serialisierung fehlgeschlagen: " + err.Error())
 			}
-
 			privBytes, err := sk.MarshalBinary()
 			if err != nil {
-				return keypairErr("Private Key serialisierung fehlgeschlagen: " + err.Error())
+				return ErrorVal("Private Key serialisierung fehlgeschlagen: " + err.Error())
 			}
-
-			return keypairResult(
-				base64.StdEncoding.EncodeToString(pubBytes),
-				base64.StdEncoding.EncodeToString(privBytes),
-			)
+			return Value{Kind: KindArr, Arr: []Value{
+				StrVal(base64.StdEncoding.EncodeToString(pubBytes)),
+				StrVal(base64.StdEncoding.EncodeToString(privBytes)),
+			}}
 		})
 
 	// ---------------------------------------------------------------------------
 	// pqc.Encapsulate(pubKeyB64)  →  [bool, ciphertextB64, sharedSecretB64, err]
 	// ---------------------------------------------------------------------------
 	Register(ns+"Encapsulate", "pqc", "pubKeyB64",
-		"Erzeugt ein Shared Secret für einen ML-KEM Public Key.",
+		"Erzeugt ein Shared Secret für einen ML-KEM Public Key. Rückgabe: [ciphertextB64, sharedSecretB64].",
 		func(args []Value) Value {
 			if len(args) < 1 {
-				return keypairErr("Parameter fehlt: pgp.Encapsulate(pubKeyB64)")
+				return ErrorVal("Parameter fehlt: pqc.Encapsulate(pubKeyB64)")
 			}
-
 			pubBytes, err := decodeB64(args[0].Str, "Public Key")
 			if err != nil {
-				return keypairErr(err.Error())
+				return ErrorVal(err.Error())
 			}
-
 			scheme := circlkem.Scheme()
 			pubKey, err := scheme.UnmarshalBinaryPublicKey(pubBytes)
 			if err != nil {
-				return keypairErr("Public Key ungültig: " + err.Error())
+				return ErrorVal("Public Key ungültig: " + err.Error())
 			}
-
 			ciphertext, sharedSecret, err := scheme.Encapsulate(pubKey)
 			if err != nil {
-				return keypairErr("Encapsulate fehlgeschlagen: " + err.Error())
+				return ErrorVal("Encapsulate fehlgeschlagen: " + err.Error())
 			}
-
-			return keypairResult(
-				base64.StdEncoding.EncodeToString(ciphertext),
-				base64.StdEncoding.EncodeToString(sharedSecret),
-			)
+			return Value{Kind: KindArr, Arr: []Value{
+				StrVal(base64.StdEncoding.EncodeToString(ciphertext)),
+				StrVal(base64.StdEncoding.EncodeToString(sharedSecret)),
+			}}
 		})
 
 	// ---------------------------------------------------------------------------
@@ -366,31 +356,26 @@ func InitPQCFunctions() {
 		"Entkapselt ein Shared Secret mit einem ML-KEM Private Key.",
 		func(args []Value) Value {
 			if len(args) < 2 {
-				return errResult("Parameter fehlen: pqc.Decapsulate(ciphertextB64, privKeyB64)")
+				return ErrorVal("Parameter fehlen: pqc.Decapsulate(ciphertextB64, privKeyB64)")
 			}
-
 			ctBytes, err := decodeB64(args[0].Str, "Ciphertext")
 			if err != nil {
-				return errResult(err.Error())
+				return ErrorVal(err.Error())
 			}
-
 			skBytes, err := decodeB64(args[1].Str, "Private Key")
 			if err != nil {
-				return errResult(err.Error())
+				return ErrorVal(err.Error())
 			}
-
 			scheme := circlkem.Scheme()
 			sk, err := scheme.UnmarshalBinaryPrivateKey(skBytes)
 			if err != nil {
-				return errResult("Private Key ungültig: " + err.Error())
+				return ErrorVal("Private Key ungültig: " + err.Error())
 			}
-
 			ss, err := scheme.Decapsulate(sk, ctBytes)
 			if err != nil {
-				return errResult("Decapsulate fehlgeschlagen: " + err.Error())
+				return ErrorVal("Decapsulate fehlgeschlagen: " + err.Error())
 			}
-
-			return okResult(base64.StdEncoding.EncodeToString(ss))
+			return StrVal(base64.StdEncoding.EncodeToString(ss))
 		})
 
 	// ---------------------------------------------------------------------------
@@ -400,22 +385,19 @@ func InitPQCFunctions() {
 		"Signiert eine Nachricht mit ML-DSA-65.",
 		func(args []Value) Value {
 			if len(args) < 2 {
-				return errResult("Parameter fehlen: pqc.Sign(msg, privKeyB64)")
+				return ErrorVal("Parameter fehlen: pqc.Sign(msg, privKeyB64)")
 			}
-
 			skBytes, err := decodeB64(args[1].Str, "Private Key")
 			if err != nil {
-				return errResult(err.Error())
+				return ErrorVal(err.Error())
 			}
-
 			scheme := mldsa65.Scheme()
 			sk, err := scheme.UnmarshalBinaryPrivateKey(skBytes)
 			if err != nil {
-				return errResult("Private Key ungültig: " + err.Error())
+				return ErrorVal("Private Key ungültig: " + err.Error())
 			}
-
 			sig := scheme.Sign(sk, []byte(args[0].Str), nil)
-			return okResult(base64.StdEncoding.EncodeToString(sig))
+			return StrVal(base64.StdEncoding.EncodeToString(sig))
 		})
 
 	// ---------------------------------------------------------------------------
@@ -425,30 +407,25 @@ func InitPQCFunctions() {
 		"Prüft eine ML-DSA-65 Signatur gegen eine Nachricht.",
 		func(args []Value) Value {
 			if len(args) < 3 {
-				return errResult("Parameter fehlen: pqc.Verify(msg, sigB64, pubKeyB64)")
+				return ErrorVal("Parameter fehlen: pqc.Verify(msg, sigB64, pubKeyB64)")
 			}
-
 			sig, err := decodeB64(args[1].Str, "Signatur")
 			if err != nil {
-				return errResult(err.Error())
+				return ErrorVal(err.Error())
 			}
-
 			pubBytes, err := decodeB64(args[2].Str, "Public Key")
 			if err != nil {
-				return errResult(err.Error())
+				return ErrorVal(err.Error())
 			}
-
 			scheme := mldsa65.Scheme()
 			pk, err := scheme.UnmarshalBinaryPublicKey(pubBytes)
 			if err != nil {
-				return errResult("Public Key ungültig: " + err.Error())
+				return ErrorVal("Public Key ungültig: " + err.Error())
 			}
-
 			if !scheme.Verify(pk, []byte(args[0].Str), sig, nil) {
-				return errResult("Signatur ungültig")
+				return ErrorVal("Signatur ungültig")
 			}
-
-			return okResult("Gültig")
+			return BoolVal(true)
 		})
 
 	// ---------------------------------------------------------------------------
@@ -458,32 +435,27 @@ func InitPQCFunctions() {
 		"Signiert eine Datei (über ihren SHA-256-Hash) mit ML-DSA-65.",
 		func(args []Value) Value {
 			if len(args) < 2 {
-				return errResult("Parameter fehlen: pqc.SignFile(filePath, privKeyB64)")
+				return ErrorVal("Parameter fehlen: pqc.SignFile(filePath, privKeyB64)")
 			}
-
 			absPath, errVal := absPathVal(args[0].Str)
 			if errVal != nil {
-				return errResult(fmt.Sprintf("ungültiger Pfad '%s'", args[0].Str))
+				return ErrorVal(fmt.Sprintf("ungültiger Pfad '%s'", args[0].Str))
 			}
-
 			fileHash, err := hashFileSHA256(absPath)
 			if err != nil {
-				return errResult(err.Error())
+				return ErrorVal(err.Error())
 			}
-
 			skBytes, err := decodeB64(args[1].Str, "Private Key")
 			if err != nil {
-				return errResult(err.Error())
+				return ErrorVal(err.Error())
 			}
-
 			scheme := mldsa65.Scheme()
 			sk, err := scheme.UnmarshalBinaryPrivateKey(skBytes)
 			if err != nil {
-				return errResult("Private Key ungültig: " + err.Error())
+				return ErrorVal("Private Key ungültig: " + err.Error())
 			}
-
 			sig := scheme.Sign(sk, fileHash, nil)
-			return okResult(base64.StdEncoding.EncodeToString(sig))
+			return StrVal(base64.StdEncoding.EncodeToString(sig))
 		})
 
 	// ---------------------------------------------------------------------------
@@ -493,40 +465,33 @@ func InitPQCFunctions() {
 		"Verifiziert eine Datei gegen eine ML-DSA-65 Signatur.",
 		func(args []Value) Value {
 			if len(args) < 3 {
-				return errResult("Parameter fehlen: pqc.VerifyFile(filePath, sigB64, pubKeyB64)")
+				return ErrorVal("Parameter fehlen: pqc.VerifyFile(filePath, sigB64, pubKeyB64)")
 			}
-
 			absPath, errVal := absPathVal(args[0].Str)
 			if errVal != nil {
-				return errResult(fmt.Sprintf("ungültiger Pfad '%s'", args[0].Str))
+				return ErrorVal(fmt.Sprintf("ungültiger Pfad '%s'", args[0].Str))
 			}
-
 			fileHash, err := hashFileSHA256(absPath)
 			if err != nil {
-				return errResult(err.Error())
+				return ErrorVal(err.Error())
 			}
-
 			sigBytes, err := decodeB64(args[1].Str, "Signatur")
 			if err != nil {
-				return errResult(err.Error())
+				return ErrorVal(err.Error())
 			}
-
 			pkBytes, err := decodeB64(args[2].Str, "Public Key")
 			if err != nil {
-				return errResult(err.Error())
+				return ErrorVal(err.Error())
 			}
-
 			scheme := mldsa65.Scheme()
 			pk, err := scheme.UnmarshalBinaryPublicKey(pkBytes)
 			if err != nil {
-				return errResult("Public Key ungültig: " + err.Error())
+				return ErrorVal("Public Key ungültig: " + err.Error())
 			}
-
 			if !scheme.Verify(pk, fileHash, sigBytes, nil) {
-				return errResult("Signatur stimmt nicht mit Datei überein")
+				return ErrorVal("Signatur stimmt nicht mit Datei überein")
 			}
-
-			return okResult("Gültig")
+			return BoolVal(true)
 		})
 
 	// ---------------------------------------------------------------------------

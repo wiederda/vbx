@@ -65,7 +65,6 @@ const (
 	DIV_ASSIGN
 	ERROR
 	UNTIL
-	//USE
 )
 
 type Token struct {

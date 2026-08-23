@@ -20,6 +20,7 @@ var mandatoryModulesMap = map[string]func(*Environment){
 
 var optionalModulesMap = map[string]func(*Environment){
 	"debug":   InitDebugFunctions,
+	"7z":      func(e *Environment) { InitSevenZipFunctions() },
 	"ad":      func(e *Environment) { InitADFunctions() },
 	"db":      func(e *Environment) { InitDBFunctions() },
 	"env":     func(e *Environment) { InitEnvFunctions() },
