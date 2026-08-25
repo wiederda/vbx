@@ -8,15 +8,93 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html"
 	"io"
 	"net"
 	"net/http"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
+
+// ------------------------------------------------------------
+// net.Get / net.Post / net.Download
+//
+// Alle drei um Retry-with-Backoff erweitert:
+//   - Neue optionale Parameter: retries, baseDelayMs, maxDelayMs
+//   - Backoff: exponentiell (baseDelayMs, 2x, 4x, 8x, ... gedeckelt bei maxDelayMs)
+//   - Retry-Trigger: Netzwerkfehler, 5xx, 429 (Rate-Limit)
+//   - Andere 4xx-Fehler (400, 401, 403, 404, ...) werden NICHT wiederholt,
+//     da ein erneuter Versuch am Ergebnis nichts ändern würde.
+//
+// BREAKING CHANGE (bewusst gewollt): Rückgabe bei Fehler ist jetzt
+// durchgehend ErrorVal (per IsError()/ErrorText() prüfbar) statt:
+//   - Get:      vorher stiller Rückgabewert "" bei Fehler
+//   - Post:     vorher roher String "HTTP ERROR: ..." (kein ErrorVal)
+//   - Download: vorher [bool, msg]-Array
+// Bestehende Aufrufstellen müssen entsprechend angepasst werden.
+// ------------------------------------------------------------
+
+// Defaults für die neuen Parameter, falls nicht angegeben oder <= 0
+const (
+	defaultBaseDelayMs = 500
+	defaultMaxDelayMs  = 30000
+)
+
+func wolValidateMAC(mac string) bool {
+	regex := regexp.MustCompile(`^([0-9A-Fa-f]{2}([-:])?){5}[0-9A-Fa-f]{2}$`)
+	return regex.MatchString(mac)
+}
+
+func wolParseMAC(mac string) ([]byte, error) {
+	mac = strings.ReplaceAll(mac, ":", "")
+	mac = strings.ReplaceAll(mac, "-", "")
+
+	if len(mac) != 12 {
+		return nil, errors.New("ungültige MAC-Adresse")
+	}
+
+	macBytes := make([]byte, 6)
+	for i := 0; i < 6; i++ {
+		byteValue, err := strconv.ParseUint(mac[i*2:i*2+2], 16, 8)
+		if err != nil {
+			return nil, errors.New("fehler beim Parsen der MAC-Adresse")
+		}
+		macBytes[i] = byte(byteValue)
+	}
+	return macBytes, nil
+}
+
+func wolCreateMagicPacket(macBytes []byte) []byte {
+	// 6x 0xFF, gefolgt von 16 Wiederholungen der MAC-Adresse
+	magicPacket := make([]byte, 102)
+	for i := 0; i < 6; i++ {
+		magicPacket[i] = 0xFF
+	}
+	for i := 1; i <= 16; i++ {
+		copy(magicPacket[i*6:(i+1)*6], macBytes)
+	}
+	return magicPacket
+}
+
+func retryDelays(baseDelayMs, maxDelayMs int) (int, int) {
+	if baseDelayMs <= 0 {
+		baseDelayMs = defaultBaseDelayMs
+	}
+	if maxDelayMs <= 0 {
+		maxDelayMs = defaultMaxDelayMs
+	}
+	return baseDelayMs, maxDelayMs
+}
+
+// shouldRetryStatus: 5xx oder 429 -> Retry sinnvoll, alles andere nicht
+func shouldRetryStatus(code int) bool {
+	return code >= 500 || code == 429
+}
 
 var lastHttpStatus int = 0
 
@@ -212,79 +290,183 @@ func InitNetFunctions() {
 		return BoolVal(resp.StatusCode >= 200 && resp.StatusCode < 300)
 	})
 
-	// =============================
-	// Get(url, [token])
-	// =============================
-	Register(ns+"Get", "net", "url, [token]", "Führt eine GET-Anfrage aus (optional mit Auth-Präfix gl:, gh:, b:).", func(args []Value) Value {
-		if len(args) < 1 {
-			return StrVal("")
-		}
-		u := strings.TrimSpace(ToString(args[0]))
+	// ------------------------------------------------------------
+	// net.Get(url, [token], [retries], [baseDelayMs], [maxDelayMs])
+	// ------------------------------------------------------------
 
-		req, err := http.NewRequest("GET", u, nil)
-		if err != nil {
-			return StrVal("")
-		}
-		req.Header.Set("User-Agent", "VBX/1.0")
+	Register(ns+"Get", "net", "url, [token], [retries], [baseDelayMs], [maxDelayMs]",
+		"Führt eine GET-Anfrage aus (optional mit Auth-Präfix gl:, gh:, b:). Bei Netzwerkfehlern, 5xx oder 429 wird bis zu 'retries'-mal mit exponentiellem Backoff wiederholt. Gibt bei Erfolg den Body zurück, sonst ErrorVal.",
+		func(args []Value) Value {
+			if len(args) < 1 {
+				return ErrorVal("net.Get: URL fehlt")
+			}
+			u := strings.TrimSpace(ToString(args[0]))
 
-		if len(args) >= 2 {
-			setAuthHeader(req, ToString(args[1]))
-		}
+			var token string
+			if len(args) >= 2 {
+				token = ToString(args[1])
+			}
+			retries := 0
+			if len(args) >= 3 {
+				retries = int(toNumVal(args[2]))
+			}
+			baseDelayMs := 0
+			if len(args) >= 4 {
+				baseDelayMs = int(toNumVal(args[3]))
+			}
+			maxDelayMs := 0
+			if len(args) >= 5 {
+				maxDelayMs = int(toNumVal(args[4]))
+			}
+			baseDelayMs, maxDelayMs = retryDelays(baseDelayMs, maxDelayMs)
 
-		client := &http.Client{Timeout: 15 * time.Second}
-		resp, err := client.Do(req)
-		if err != nil {
-			lastHttpStatus = 0
-			return StrVal("")
-		}
-		defer resp.Body.Close()
+			client := &http.Client{Timeout: 15 * time.Second}
+			delay := baseDelayMs
 
-		lastHttpStatus = resp.StatusCode
-		body, _ := io.ReadAll(resp.Body)
-		return StrVal(string(body))
-	})
+			var lastErrMsg string
+			var lastStatusCode int
+			var lastBody []byte
 
-	// =============================
-	// Post(url, data, [token])
-	// =============================
-	Register(ns+"Post", "net", "url, data, [token]", "POST-Anfrage mit Auto-JSON-Erkennung und optionaler Auth.", func(args []Value) Value {
-		if len(args) < 2 {
-			return StrVal("")
-		}
-		u := strings.TrimSpace(ToString(args[0]))
-		rawBody := ToString(args[1])
+			for attempt := 0; attempt <= retries; attempt++ {
+				req, err := http.NewRequest("GET", u, nil)
+				if err != nil {
+					return ErrorVal("net.Get: ungültige Anfrage: " + err.Error())
+				}
+				req.Header.Set("User-Agent", "VBX/1.0")
+				if token != "" {
+					setAuthHeader(req, token)
+				}
 
-		req, err := http.NewRequest("POST", u, strings.NewReader(rawBody))
-		if err != nil {
-			return StrVal("")
-		}
+				resp, err := client.Do(req)
+				if err != nil {
+					lastHttpStatus = 0
+					lastErrMsg = err.Error()
+					lastStatusCode = 0
+				} else {
+					lastHttpStatus = resp.StatusCode
+					lastStatusCode = resp.StatusCode
+					b, _ := io.ReadAll(resp.Body)
+					resp.Body.Close()
 
-		// Content-Type Logik
-		trimmed := strings.TrimSpace(rawBody)
-		if strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
-			req.Header.Set("Content-Type", "application/json")
-		} else {
-			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		}
+					if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+						return StrVal(string(b))
+					}
 
-		req.Header.Set("User-Agent", "VBX/1.0")
+					lastBody = b
+					if !shouldRetryStatus(resp.StatusCode) {
+						// Kein Retry-würdiger Status (z.B. 404, 401) -> sofort abbrechen
+						return ErrorVal(fmt.Sprintf("net.Get: HTTP %d: %s", resp.StatusCode, string(b)))
+					}
+					lastErrMsg = fmt.Sprintf("HTTP %d", resp.StatusCode)
+				}
 
-		if len(args) >= 3 {
-			setAuthHeader(req, ToString(args[2]))
-		}
+				if attempt < retries {
+					time.Sleep(time.Duration(delay) * time.Millisecond)
+					delay *= 2
+					if delay > maxDelayMs {
+						delay = maxDelayMs
+					}
+				}
+			}
 
-		client := &http.Client{Timeout: 15 * time.Second}
-		resp, err := client.Do(req)
-		if err != nil {
-			lastHttpStatus = 0
-			return StrVal("HTTP ERROR: " + err.Error())
-		}
-		defer resp.Body.Close()
+			if lastStatusCode > 0 {
+				return ErrorVal(fmt.Sprintf("net.Get: nach %d Versuch(en) fehlgeschlagen, letzter Status %d: %s", retries+1, lastStatusCode, string(lastBody)))
+			}
+			return ErrorVal(fmt.Sprintf("net.Get: nach %d Versuch(en) fehlgeschlagen: %s", retries+1, lastErrMsg))
+		})
 
-		lastHttpStatus = resp.StatusCode
-		body, _ := io.ReadAll(resp.Body)
-		return StrVal(string(body))
-	})
+	// ------------------------------------------------------------
+	// net.Post(url, data, [token], [retries], [baseDelayMs], [maxDelayMs])
+	// ------------------------------------------------------------
+
+	Register(ns+"Post", "net", "url, data, [token], [retries], [baseDelayMs], [maxDelayMs]",
+		"POST-Anfrage mit Auto-JSON-Erkennung und optionaler Auth. Bei Netzwerkfehlern, 5xx oder 429 wird bis zu 'retries'-mal mit exponentiellem Backoff wiederholt. Gibt bei Erfolg den Body zurück, sonst ErrorVal.",
+		func(args []Value) Value {
+			if len(args) < 2 {
+				return ErrorVal("net.Post: url und data benötigt")
+			}
+			u := strings.TrimSpace(ToString(args[0]))
+			rawBody := ToString(args[1])
+
+			var token string
+			if len(args) >= 3 {
+				token = ToString(args[2])
+			}
+			retries := 0
+			if len(args) >= 4 {
+				retries = int(toNumVal(args[3]))
+			}
+			baseDelayMs := 0
+			if len(args) >= 5 {
+				baseDelayMs = int(toNumVal(args[4]))
+			}
+			maxDelayMs := 0
+			if len(args) >= 6 {
+				maxDelayMs = int(toNumVal(args[5]))
+			}
+			baseDelayMs, maxDelayMs = retryDelays(baseDelayMs, maxDelayMs)
+
+			contentType := "application/x-www-form-urlencoded"
+			trimmed := strings.TrimSpace(rawBody)
+			if strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
+				contentType = "application/json"
+			}
+
+			client := &http.Client{Timeout: 15 * time.Second}
+			delay := baseDelayMs
+
+			var lastErrMsg string
+			var lastStatusCode int
+			var lastBody []byte
+
+			for attempt := 0; attempt <= retries; attempt++ {
+				// Neuer Reader pro Versuch nötig, da der Body pro Request konsumiert wird
+				req, err := http.NewRequest("POST", u, strings.NewReader(rawBody))
+				if err != nil {
+					return ErrorVal("net.Post: ungültige Anfrage: " + err.Error())
+				}
+				req.Header.Set("Content-Type", contentType)
+				req.Header.Set("User-Agent", "VBX/1.0")
+				if token != "" {
+					setAuthHeader(req, token)
+				}
+
+				resp, err := client.Do(req)
+				if err != nil {
+					lastHttpStatus = 0
+					lastErrMsg = err.Error()
+					lastStatusCode = 0
+				} else {
+					lastHttpStatus = resp.StatusCode
+					lastStatusCode = resp.StatusCode
+					b, _ := io.ReadAll(resp.Body)
+					resp.Body.Close()
+
+					if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+						return StrVal(string(b))
+					}
+
+					lastBody = b
+					if !shouldRetryStatus(resp.StatusCode) {
+						return ErrorVal(fmt.Sprintf("net.Post: HTTP %d: %s", resp.StatusCode, string(b)))
+					}
+					lastErrMsg = fmt.Sprintf("HTTP %d", resp.StatusCode)
+				}
+
+				if attempt < retries {
+					time.Sleep(time.Duration(delay) * time.Millisecond)
+					delay *= 2
+					if delay > maxDelayMs {
+						delay = maxDelayMs
+					}
+				}
+			}
+
+			if lastStatusCode > 0 {
+				return ErrorVal(fmt.Sprintf("net.Post: nach %d Versuch(en) fehlgeschlagen, letzter Status %d: %s", retries+1, lastStatusCode, string(lastBody)))
+			}
+			return ErrorVal(fmt.Sprintf("net.Post: nach %d Versuch(en) fehlgeschlagen: %s", retries+1, lastErrMsg))
+		})
 
 	Register(ns+"Status", "[url]", "Gibt den HTTP-Status der letzten Anfrage zurück oder prüft eine neue URL (HEAD-Request).", "If net.Status(\"https://google.de\") = 200 Then Print \"Online\"", func(args []Value) Value {
 		// 1. FALL: Passiv (keine Argumente) -> Letzten gespeicherten Status liefern
@@ -419,94 +601,108 @@ func InitNetFunctions() {
 		return BoolVal(err == nil)
 	})
 
-	// =============================
-	// Download(url, [path], [token])
-	// =============================
-	Register(ns+"Download", "net", "url, [path], [token]",
-		"Lädt eine Datei herunter. Gibt [True/False, Fehlermeldung] zurück.",
+	// ------------------------------------------------------------
+	// net.Download(url, [path], [token], [retries], [baseDelayMs], [maxDelayMs])
+	// ------------------------------------------------------------
+
+	Register(ns+"Download", "net", "url, [path], [token], [retries], [baseDelayMs], [maxDelayMs]",
+		"Lädt eine Datei herunter. Bei Netzwerkfehlern, 5xx oder 429 wird bis zu 'retries'-mal mit exponentiellem Backoff wiederholt. Gibt bei Erfolg den Zielpfad zurück, sonst ErrorVal.",
 		func(args []Value) Value {
-
-			errorResult := func(msg string) Value {
-				return ArrVal([]Value{
-					BoolVal(false),
-					StrVal(msg),
-				})
-			}
-
-			successResult := func() Value {
-				return ArrVal([]Value{
-					BoolVal(true),
-					StrVal(""),
-				})
-			}
-
 			if len(args) < 1 {
-				return errorResult("URL fehlt")
+				return ErrorVal("net.Download: URL fehlt")
 			}
-
 			u := strings.TrimSpace(ToString(args[0]))
 			if u == "" {
-				return errorResult("URL ist leer")
+				return ErrorVal("net.Download: URL ist leer")
 			}
 
 			var p string
-
 			if len(args) >= 2 && strings.TrimSpace(ToString(args[1])) != "" {
 				absP, eVal := absPathVal(ToString(args[1]))
 				if eVal != nil {
-					return errorResult(ToString(*eVal))
+					return *eVal
 				}
 				p = absP
 			} else {
 				parts := strings.Split(u, "/")
 				p = parts[len(parts)-1]
-
 				if p == "" {
 					p = "downloaded_file"
 				}
 			}
 
-			req, err := http.NewRequest("GET", u, nil)
-			if err != nil {
-				return errorResult(err.Error())
-			}
-
-			req.Header.Set("User-Agent", "VBX/1.0")
-
+			var token string
 			if len(args) >= 3 {
-				setAuthHeader(req, ToString(args[2]))
+				token = ToString(args[2])
+			}
+			retries := 0
+			if len(args) >= 4 {
+				retries = int(toNumVal(args[3]))
+			}
+			baseDelayMs := 0
+			if len(args) >= 5 {
+				baseDelayMs = int(toNumVal(args[4]))
+			}
+			maxDelayMs := 0
+			if len(args) >= 6 {
+				maxDelayMs = int(toNumVal(args[5]))
+			}
+			baseDelayMs, maxDelayMs = retryDelays(baseDelayMs, maxDelayMs)
+
+			dlClient := &http.Client{Timeout: 0}
+			delay := baseDelayMs
+
+			var lastErrMsg string
+
+			for attempt := 0; attempt <= retries; attempt++ {
+				req, err := http.NewRequest("GET", u, nil)
+				if err != nil {
+					return ErrorVal("net.Download: ungültige Anfrage: " + err.Error())
+				}
+				req.Header.Set("User-Agent", "VBX/1.0")
+				if token != "" {
+					setAuthHeader(req, token)
+				}
+
+				resp, err := dlClient.Do(req)
+				if err != nil {
+					lastErrMsg = err.Error()
+				} else {
+					if resp.StatusCode == http.StatusOK {
+						file, ferr := os.Create(p)
+						if ferr != nil {
+							resp.Body.Close()
+							return ErrorVal("net.Download: " + ferr.Error())
+						}
+						_, cerr := io.Copy(file, resp.Body)
+						file.Close()
+						resp.Body.Close()
+
+						if cerr == nil {
+							return StrVal(p)
+						}
+						lastErrMsg = cerr.Error()
+					} else {
+						body, _ := io.ReadAll(resp.Body)
+						resp.Body.Close()
+
+						if !shouldRetryStatus(resp.StatusCode) {
+							return ErrorVal(fmt.Sprintf("net.Download: HTTP %d: %s", resp.StatusCode, string(body)))
+						}
+						lastErrMsg = fmt.Sprintf("HTTP %d: %s", resp.StatusCode, string(body))
+					}
+				}
+
+				if attempt < retries {
+					time.Sleep(time.Duration(delay) * time.Millisecond)
+					delay *= 2
+					if delay > maxDelayMs {
+						delay = maxDelayMs
+					}
+				}
 			}
 
-			dlClient := &http.Client{
-				Timeout: 0,
-			}
-
-			resp, err := dlClient.Do(req)
-			if err != nil {
-				return errorResult(err.Error())
-			}
-
-			defer resp.Body.Close()
-
-			if resp.StatusCode != http.StatusOK {
-				return errorResult(
-					fmt.Sprintf("HTTP %d: %s", resp.StatusCode, resp.Status),
-				)
-			}
-
-			file, err := os.Create(p)
-			if err != nil {
-				return errorResult(err.Error())
-			}
-
-			defer file.Close()
-
-			_, err = io.Copy(file, resp.Body)
-			if err != nil {
-				return errorResult(err.Error())
-			}
-
-			return successResult()
+			return ErrorVal(fmt.Sprintf("net.Download: nach %d Versuch(en) fehlgeschlagen: %s", retries+1, lastErrMsg))
 		})
 
 	Register(ns+"Html", "Encode", "text",
@@ -556,6 +752,51 @@ func InitNetFunctions() {
 	Register(ns+"PublicIP", "net", "-", "Ermittelt die externe IP-Adresse über globale Provider.", func(args []Value) Value {
 		return StrVal(PublicIP()) // Nutzt deine robuste Standalone-Funktion
 	})
+
+	Register(ns+"WakeOnLan", "net", "mac, [broadcastIP], [port]",
+		"Sendet ein Wake-on-LAN Magic Packet per UDP-Broadcast. mac akzeptiert die Formate XX:XX:XX:XX:XX:XX, XX-XX-XX-XX-XX-XX oder ohne Trennzeichen.",
+		func(args []Value) Value {
+			if len(args) < 1 {
+				return ErrorVal("net.WakeOnLan: MAC-Adresse fehlt")
+			}
+
+			mac := strings.TrimSpace(ToString(args[0]))
+			if !wolValidateMAC(mac) {
+				return ErrorVal("net.WakeOnLan: ungültige MAC-Adresse: " + mac)
+			}
+
+			broadcastIP := "255.255.255.255"
+			if len(args) >= 2 && strings.TrimSpace(ToString(args[1])) != "" {
+				broadcastIP = strings.TrimSpace(ToString(args[1]))
+			}
+
+			port := 9
+			if len(args) >= 3 {
+				p := int(toNumVal(args[2]))
+				if p > 0 {
+					port = p
+				}
+			}
+
+			macBytes, err := wolParseMAC(mac)
+			if err != nil {
+				return ErrorVal("net.WakeOnLan: " + err.Error())
+			}
+
+			magicPacket := wolCreateMagicPacket(macBytes)
+
+			conn, err := net.Dial("udp", fmt.Sprintf("%s:%d", broadcastIP, port))
+			if err != nil {
+				return ErrorVal("net.WakeOnLan: Verbindung fehlgeschlagen: " + err.Error())
+			}
+			defer conn.Close()
+
+			if _, err := conn.Write(magicPacket); err != nil {
+				return ErrorVal("net.WakeOnLan: Senden fehlgeschlagen: " + err.Error())
+			}
+
+			return BoolVal(true)
+		})
 }
 
 func CustomHtmlEscape(s string) string {

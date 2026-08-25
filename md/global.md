@@ -409,8 +409,8 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
 - **Parameter:**
   - `pid`: Prozess-ID als Zahl.
 - **Rückgabe:**
-  `NumVal`
-  `1` bei Erfolg, `-1` wenn Prozess nicht gefunden.
+  `BoolVal`
+  `true`, sobald der Prozess beendet ist oder nicht (mehr) existiert.
 
 ---
 
@@ -654,6 +654,51 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
 
 ---
 
+## WorkerPool(paths, maxParallel)
+- **Konkret:**
+  Startet mehrere `.vb`-/`.vbc`-Skripte über `Worker` mit einer Obergrenze an
+  gleichzeitig laufenden Prozessen. Sobald ein Skript fertig ist, wird
+  automatisch das nächste aus der Warteschlange gestartet. Kehrt erst zurück,
+  wenn alle Skripte durchgelaufen sind.
+- **Parameter:**
+  - `paths`: Array von Skript-Pfaden.
+  - `maxParallel`: Maximale Anzahl gleichzeitig laufender Worker. Werte < 1 werden auf 1 gesetzt.
+- **Rückgabe:**
+  `ArrVal`
+  Array von `BoolVal` (Erfolg pro Skript), in derselben Reihenfolge wie `paths`.
+  `false` an einer Position, wenn das jeweilige Skript nicht gestartet werden konnte.
+
+- **Beispiel:**
+```vbx
+DIM shares: shares = {"dedup_share1.vbx", "dedup_share2.vbx", "dedup_share3.vbx", "dedup_share4.vbx"}
+DIM results: results = WorkerPool(shares, 2)   ' nie mehr als 2 gleichzeitig
+
+FOR EACH i, ok IN results
+    IF ok THEN
+        PRINT shares(i) & ": OK"
+    ELSE
+        PRINT shares(i) & ": Fehler beim Start"
+    END IF
+NEXT
+```
+
+- **Hinweis:**
+  `WorkerPool` blockiert das Skript, in dem es aufgerufen wird, bis alle
+  übergebenen Skripte durchgelaufen sind — anders als `Worker` selbst, das
+  sofort zurückkehrt. Für den Fire-and-Forget-Effekt aus Nutzersicht das
+  aufrufende Skript wiederum selbst per `Worker` starten:
+```vbx
+' orchestrator.vbx
+DIM shares: shares = {"dedup_share1.vbx", "dedup_share2.vbx", "dedup_share3.vbx"}
+DIM results: results = WorkerPool(shares, 2)
+gotify.Send("NAS-Dedup über alle Shares abgeschlossen")
+```
+```
+Worker("orchestrator.vb")   ' Shell/aufrufendes Skript bekommt sofort die Kontrolle zurück
+```
+
+---
+
 ## Build(quelle)
 - **Konkret:**
   Verschlüsselt ein `.vb`-Skript mit Magic-Header (`VBC!`) und speichert es als `.vbc`-Datei.
@@ -663,6 +708,13 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
 - **Rückgabe:**
   `StrVal`
   Pfad der erzeugten `.vbc`-Datei.
+
+- **⚠️ Sicherheitshinweis:**
+  `.vbc` schützt vor beiläufigem Lesen, ist aber keine kryptographische
+  Geheimhaltung – der Interpreter muss selbst entschlüsseln können, wer
+  gezielt herankommen will, kann das umgehen. Keine Passwörter oder
+  Secrets im Klartext ins Skript schreiben; stattdessen zur Laufzeit
+  über Umgebungsvariablen, Docker Secrets oder config-File einbinden.
 
 ---
 

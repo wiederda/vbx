@@ -67,3 +67,18 @@ Print file.Dir("text.txt")
 file.Delete("text.txt")
 file.Delete("text1.txt")
 file.Delete("backup1.txt", true)
+
+DO
+    IF file.WatchLog(path, "ERROR", "", True, 5000) THEN   ' bis zu 5s auf 'ERROR' warten
+        gotify.Send("Fehler im Log gefunden!")
+    END IF
+LOOP
+
+DO
+    IF file.Tail(path, 10, "1s", True) THEN
+        DIM neu: neu = file.Tail(path, 5)   ' aktuelle letzte Zeilen separat holen
+        IF Contains(neu, "ERROR") THEN
+            gotify.Send("Fehler im Log gefunden")
+        END IF
+    END IF
+LOOP

@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func watchLogInternal(path, pattern, ansiSequence string) Value {
+func watchLogInternal(path, pattern, ansiSequence string, silent bool, timeoutMs int) Value {
 	// Wir nutzen hier kein defer file.Close(), da wir das Handle bei Rotation selbst schließen müssen
 	var file *os.File
 	var lastPos int64
@@ -42,9 +42,18 @@ func watchLogInternal(path, pattern, ansiSequence string) Value {
 	info, _ := file.Stat()
 	lastPos = info.Size()
 
-	fmt.Printf("\033[90m[WATCH] Aktiv: %s | Filter: '%s'\033[0m\n", path, pattern)
+	if !silent {
+		fmt.Printf("\033[90m[WATCH] Aktiv: %s | Filter: '%s'\033[0m\n", path, pattern)
+	}
+
+	start := time.Now()
 
 	for {
+		// --- NEU: Timeout-Check (nur im silent-Modus relevant) ---
+		if silent && timeoutMs > 0 && time.Since(start).Milliseconds() > int64(timeoutMs) {
+			return BoolVal(false)
+		}
+
 		currInfo, err := os.Stat(path)
 		if err != nil {
 			// Datei kurzzeitig weg (z.B. während Rotation)? Warten.
@@ -56,7 +65,9 @@ func watchLogInternal(path, pattern, ansiSequence string) Value {
 
 		// ROTATION CHECK
 		if currSize < lastPos {
-			fmt.Println("\033[90m[WATCH] Log-Rotation erkannt. Starte neu...\033[0m")
+			if !silent {
+				fmt.Println("\033[90m[WATCH] Log-Rotation erkannt. Starte neu...\033[0m")
+			}
 			file.Close()
 			f, err := openShared(path)
 			if err == nil {
@@ -75,6 +86,10 @@ func watchLogInternal(path, pattern, ansiSequence string) Value {
 				for _, line := range lines {
 					line = strings.TrimSpace(line)
 					if line != "" && strings.Contains(strings.ToLower(line), strings.ToLower(pattern)) {
+						if silent {
+							// --- NEU: sofort zurückgeben, kein Print ---
+							return BoolVal(true)
+						}
 						ts := time.Now().Format("15:04:05")
 						if ansiSequence != "" {
 							fmt.Printf("%s[%s] %s\033[0m\n", ansiSequence, ts, line)

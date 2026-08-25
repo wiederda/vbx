@@ -40,29 +40,40 @@ Dient zur Kommunikation über HTTP, TCP und DNS sowie zur Abfrage lokaler und ex
 
 ---
 
-## net.Get(url [, token])
+## net.Get(url [, token, retries, baseDelayMs, maxDelayMs])
 - **Konkret:**
   Führt eine HTTP-GET-Anfrage aus.
   Speichert den HTTP-Statuscode intern (abrufbar via `net.LastStatus`).
+  Bei Netzwerkfehlern, HTTP 5xx oder HTTP 429 (Rate-Limit) wird die Anfrage bis zu `retries`-mal wiederholt, mit exponentiellem Backoff zwischen den Versuchen. Andere 4xx-Statuscodes (401, 403, 404, ...) werden nicht wiederholt, da ein erneuter Versuch am Ergebnis nichts ändern würde.
 - **Parameter:**
   - `url`: Ziel-URL.
   - `token`: Optional. Auth-Token, siehe [Auth-Token-Präfixe](#auth-token-präfixe).
+  - `retries`: Optional. Anzahl zusätzlicher Versuche nach dem ersten (Standard: `0` – kein Retry, ein einziger Versuch).
+  - `baseDelayMs`: Optional. Basis-Wartezeit vor dem zweiten Versuch in Millisekunden (Standard: `500`). Verdoppelt sich mit jedem weiteren Versuch.
+  - `maxDelayMs`: Optional. Obergrenze für die Wartezeit zwischen Versuchen (Standard: `30000`).
 - **Rückgabe:**
-  `StrVal` (Response-Body), leerer String bei Fehler.
+  `StrVal` (Response-Body) bei Erfolg (HTTP 2xx).
+  `ErrorVal` nach Ausschöpfen aller Versuche bzw. bei nicht wiederholbarem Statuscode – Meldung enthält HTTP-Status und Body bzw. den 
 
 ---
 
-## net.Post(url, data [, token])
+## net.Post(url, data [, token, retries, baseDelayMs, maxDelayMs])
 - **Konkret:**
   Führt eine HTTP-POST-Anfrage aus.
   Erkennt JSON automatisch (`{` oder `[` am Anfang) und setzt `Content-Type: application/json`.
   Sonst: `application/x-www-form-urlencoded`.
+  Retry-Verhalten identisch zu `net.Get` (5xx/429/Netzwerkfehler mit exponentiellem Backoff, andere 4xx sofort final).
 - **Parameter:**
   - `url`: Ziel-URL.
   - `data`: Request-Body als String.
   - `token`: Optional. Auth-Token (gleiche Präfixe wie `net.Get`).
+  - `retries`: Optional. Siehe `net.Get` (Standard: `0`).
+  - `baseDelayMs`: Optional. Siehe `net.Get` (Standard: `500`).
+  - `maxDelayMs`: Optional. Siehe `net.Get` (Standard: `30000`).
 - **Rückgabe:**
-  `StrVal` (Response-Body), leerer String bei Fehler.
+  `StrVal` (Response-Body) bei Erfolg (HTTP 2xx).
+  `ErrorVal` nach Ausschöpfen aller Versuche bzw. bei nicht wiederholbarem Statuscode.
+
 
 ---
 
@@ -91,21 +102,24 @@ net.PostForm(url, token, "Titel", "Nachricht", "https://example.com")
 
 ---
 
-## net.Download(url [, path, token])
+## net.Download(url [, path, token, retries, baseDelayMs, maxDelayMs])
 - **Konkret:**
   Lädt eine Datei per HTTP-GET herunter und speichert sie lokal.
   Ohne Pfadangabe wird der Dateiname aus dem letzten Segment der URL abgeleitet (Fallback: `"downloaded_file"`).
-  Kein Timeout (`Timeout: 0`) – geeignet für große Dateien, ein hängender Download blockiert aber unbegrenzt.
-  Es wird kein Verzeichnis automatisch angelegt; das Zielverzeichnis muss existieren. Eine bereits vorhandene Datei am Zielpfad wird ohne Rückfrage überschrieben.
+  Kein Timeout auf den HTTP-Client selbst – geeignet für große Dateien.
+  Es wird kein Verzeichnis automatisch angelegt; das Zielverzeichnis muss existieren. Eine bereits vorhandene Datei am Zielpfad wird ohne Rückfrage überschrieben (auch zwischen Retry-Versuchen).
   Der `User-Agent`-Header ist fest auf `"VBX/1.0"` gesetzt.
+  Retry-Verhalten identisch zu `net.Get`/`net.Post`.
 - **Parameter:**
   - `url`: Download-URL.
   - `path`: Optional. Zielpfad inkl. Dateiname. Relative Pfade werden über `absPathVal` aufgelöst.
   - `token`: Optional. Auth-Token, siehe [Auth-Token-Präfixe](#auth-token-präfixe).
+  - `retries`: Optional. Siehe `net.Get` (Standard: `0`).
+  - `baseDelayMs`: Optional. Siehe `net.Get` (Standard: `500`).
+  - `maxDelayMs`: Optional. Siehe `net.Get` (Standard: `30000`).
 - **Rückgabe:**
-  `ArrVal` `[Bool, String]`
-  Erfolg: `[True, ""]`
-  Fehler: `[False, Fehlermeldung]` – u. a. bei fehlender/leerer URL, ungültigem Zielpfad, HTTP-Statuscode ≠ 200, oder Lese-/Schreibfehlern.
+  `StrVal` (der Zielpfad) bei Erfolg.
+  `ErrorVal` bei fehlender/leerer URL, ungültigem Zielpfad, nicht wiederholbarem HTTP-Statuscode, oder nach Ausschöpfen aller Versuche bei Netzwerkfehlern/5xx/429.
 
 ---
 
@@ -228,6 +242,31 @@ result = net.Download(url, path, "a:" & "Basic " & base64Cred)
 ```vb
 If net.IPIsValid("192.168.1.1") Then Print "OK"
 If net.IPIsValid(net.PublicIP()) Then Print "Externe IP ist gültig"
+```
+
+---
+
+## net.WakeOnLan(mac [, broadcastIP, port])
+- **Konkret:**
+  Sendet ein Wake-on-LAN Magic Packet per UDP-Broadcast, um ein Gerät im lokalen Netzwerk aus dem Standby/ausgeschalteten Zustand zu starten.
+  Löst das bisherige eigenständige `wol`-CLI-Tool ab.
+  Da WoL ein reines Fire-and-Forget-UDP-Paket ist, gibt es keine Bestätigung, ob das Zielgerät tatsächlich aufwacht (abhängig von BIOS/Netzwerkkarten-Einstellungen und Netzwerktopologie) – `True` bedeutet nur, dass das Paket erfolgreich gesendet wurde.
+- **Parameter:**
+  - `mac`: Ziel-MAC-Adresse. Akzeptierte Formate: `"XX:XX:XX:XX:XX:XX"`, `"XX-XX-XX-XX-XX-XX"` oder ohne Trennzeichen (`"XXXXXXXXXXXX"`).
+  - `broadcastIP`: Optional. Broadcast-Adresse des Zielnetzes (Standard: `"255.255.255.255"`).
+  - `port`: Optional. Ziel-Port (Standard: `9`, der klassische WoL-Port).
+- **Rückgabe:**
+  `BoolVal(true)` wenn das Magic Packet erfolgreich gesendet wurde.
+  `ErrorVal` bei ungültiger MAC-Adresse oder falls die UDP-Verbindung/das Senden fehlschlägt.
+
+```vb
+net.WakeOnLan("00:1A:2B:3C:4D:5E")
+
+' Mit eigenem Subnetz und Standard-Port
+result = net.WakeOnLan("00-1A-2B-3C-4D-5E", "192.168.0.255")
+If IsError(result) Then
+    Print "Fehler: " & ErrorText(result)
+End If
 ```
 
 ---

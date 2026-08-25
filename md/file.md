@@ -456,42 +456,53 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
 
 ---
 
-## file.Tail(path, [lines], [refresh])
+## file.Tail(path, [lines], [refresh], [silent])
 - **Konkret:**
   Gibt die letzten `n` Zeilen einer Datei zurück.
-  Bei Angabe eines Refresh-Intervalls wechselt die Funktion in einen blockierenden Live-Modus und gibt neue Zeilen kontinuierlich auf stdout aus.
+  Bei Angabe eines Refresh-Intervalls wechselt die Funktion in einen Live-Modus.
+  Ohne `silent` (Standard): blockierend, gibt neue Zeilen kontinuierlich auf stdout aus (Shell-Nutzung).
+  Mit `silent = True`: kein Print. Wartet einmalig die `refresh`-Dauer ab und gibt zurück, ob sich die Datei in dieser Zeit geändert hat (gewachsen oder rotiert/gekürzt) – gedacht zum Aufruf in einer eigenen Skript-Schleife.
 - **Parameter:**
   - `path`: Quelldatei.
   - `lines`: Anzahl der Zeilen (Standard: 10, Max: 5000).
-  - `refresh`: Aktualisierungsintervall (z. B. `"1s"`, `"500ms"` oder Zahl in ms).
+  - `refresh`: Aktualisierungsintervall (z. B. `"1s"`, `"500ms"` oder Zahl in ms). Ohne diesen Parameter kein Live-Modus.
+  - `silent`: Optional. `BoolVal`. Bei `true`: kein Print, einmalige Prüfung statt Endlosschleife (siehe Rückgabe).
 - **Rückgabe:**
-  `StrVal` (ohne Refresh) oder `NullVal` (mit Refresh, blockierend – kehrt nur zurück, wenn die Datei währenddessen verschwindet).
+  - Ohne `refresh`: `StrVal` (die letzten `n` Zeilen).
+  - Mit `refresh`, ohne `silent`: `NullVal` (blockierend, kehrt nur zurück, wenn die Datei währenddessen verschwindet).
+  - Mit `refresh` und `silent = True`: `BoolVal` – `true`, wenn sich die Datei innerhalb des einen `refresh`-Intervalls geändert hat, sonst `false`.
 
 ---
 
 ## file.Watch(path, [timeoutMs])
 - **Konkret:**
-  Wartet blockierend, bis sich eine Datei ändert (ModTime oder Größe).
-  Pollt in 100-ms-Intervallen.
+  Wartet, bis sich die Datei ändert (Änderungsdatum oder Größe). Pollt in 100-ms-Intervallen. Kein Print – schon von Anfang an skriptfähig.
 - **Parameter:**
   - `path`: Zu überwachende Datei.
-  - `timeoutMs`: Maximale Wartezeit in Millisekunden (optional, 0 = unbegrenzt).
+  - `timeoutMs`: Optional. Maximale Wartezeit in Millisekunden. Ohne Angabe: unbegrenzt.
 - **Rückgabe:**
   `BoolVal`
-  `true` = Datei hat sich geändert, `false` = Timeout abgelaufen.
+  `true` bei Änderung, `false` bei Timeout.
 
 ---
 
-## file.WatchLog(path, pattern, [style])
+## file.WatchLog(path, pattern, [style], [silent], [timeoutMs])
 - **Konkret:**
   Überwacht eine Logdatei live und hebt Zeilen, die `pattern` enthalten, farbig hervor.
-  Blockierend.
+  Ohne `silent` (Standard): blockierend, druckt Statuszeilen und Treffer direkt auf stdout (Shell-Nutzung).
+  Mit `silent = True`: kein Print. Wartet auf den ersten Treffer des Musters (oder bis `timeoutMs` abgelaufen ist) und gibt dann zurück, ob ein Treffer gefunden wurde – gedacht zum Aufruf in einer eigenen Skript-Schleife.
 - **Parameter:**
   - `path`: Zu überwachende Logdatei.
-  - `pattern`: Suchmuster.
-  - `style`: Optional. ANSI-Escape-Code (`StrVal`) oder numerischer Stilcode (`NumVal`).
+  - `pattern`: Suchmuster (Substring, case-insensitive).
+  - `style`: Optional. ANSI-Escape-Code (`StrVal`) oder numerischer Stilcode (`NumVal`). Wirkt nur ohne `silent`.
+  - `silent`: Optional. `BoolVal`. Bei `true`: kein Print, wartet auf Treffer statt fortlaufend auszugeben.
+  - `timeoutMs`: Optional. Nur relevant bei `silent = True`. Maximale Wartezeit in Millisekunden auf den ersten Treffer. Ohne Angabe (oder `0`): unbegrenzt.
 - **Rückgabe:**
-  `NullVal` (blockierend).
+  - Ohne `silent`: `NullVal` (blockierend, läuft dauerhaft).
+  - Mit `silent = True`: `BoolVal` – `true` bei Treffer, `false` bei Timeout.
+
+- **Hinweis:**
+  Anders als bei `file.Tail` (das im `silent`-Modus nur EIN Poll-Intervall abwartet) wartet `file.WatchLog` im `silent`-Modus fortlaufend, bis wirklich ein Treffer für `pattern` auftaucht oder `timeoutMs` abläuft – weil ein Muster nicht bei jedem Poll-Zyklus zwangsläufig erscheint.
 
 ---
 

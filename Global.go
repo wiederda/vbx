@@ -18,6 +18,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/shirou/gopsutil/v3/mem"
@@ -33,6 +34,11 @@ type RegInfo struct {
 	Kind        string
 	Description string
 }
+
+var workerJobs = struct {
+	sync.Mutex
+	m map[int]*exec.Cmd
+}{m: make(map[int]*exec.Cmd)}
 
 var idnaProfile = idna.New(
 	idna.MapForLookup(),          // UTS#46 Mapping aktivieren
@@ -50,25 +56,21 @@ func InitGlobal() {
 			return ErrorVal("Pfad fehlt")
 		}
 
-		// 1. Pfad absolut machen & Sicherheitscheck (Windows-Pfade auf Linux etc.)
 		absScriptPath, errVal := absPathVal(args[0].Str)
 		if errVal != nil {
 			return *errVal
 		}
 
-		// 2. EXPLIZITE ABSICHERUNG der Endung
 		lowPath := strings.ToLower(absScriptPath)
 		if !strings.HasSuffix(lowPath, ".vb") && !strings.HasSuffix(lowPath, ".vbc") {
 			return ErrorVal("Sicherheit: Worker darf nur .vb oder .vbc Dateien ausführen!")
 		}
 
-		// 3. Log-Datei vorbereiten
 		logFile, err := os.OpenFile(absScriptPath+".log", os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 		if err != nil {
 			return ErrorVal(err.Error())
 		}
 
-		// 4. Prozess starten (ruft sich selbst auf)
 		self, _ := os.Executable()
 		cmd := exec.Command(self, absScriptPath)
 		cmd.Stdout = logFile
@@ -80,11 +82,57 @@ func InitGlobal() {
 			return ErrorVal(err.Error())
 		}
 
+		// --- NEU: Handle merken, damit WorkerWait später cmd.Wait() aufrufen kann ---
+		workerJobs.Lock()
+		workerJobs.m[cmd.Process.Pid] = cmd
+		workerJobs.Unlock()
+
 		pidStr := strconv.Itoa(cmd.Process.Pid)
 		logFile.WriteString("\n--- Worker PID " + pidStr + " gestartet am " + time.Now().Format("15:04:05") + " ---\n")
 		logFile.Close()
 
 		return StrVal(pidStr)
+	})
+
+	// ------------------------------------------------------------
+	// 2. WorkerPool(paths[], maxParallel) -- kombiniert bestehendes
+	//    Worker() + (jetzt BoolVal-liefendes) Wait(), keine eigene
+	//    exec.Cmd-Verwaltung nötig.
+	// ------------------------------------------------------------
+
+	Register("WorkerPool", "global", "paths[], maxParallel", "Startet mehrere Skripte mit Obergrenze an Gleichzeitigkeit und wartet auf alle. Gibt Array mit true/false (Erfolg) pro Skript zurück, in Eingabe-Reihenfolge.", func(args []Value) Value {
+		if len(args) < 2 || args[0].Kind != KindArr {
+			return ErrorVal("WorkerPool(paths[], maxParallel) erwartet ein Array und eine Zahl")
+		}
+		paths := args[0].Arr
+		maxParallel := int(toNumVal(args[1]))
+		if maxParallel < 1 {
+			maxParallel = 1
+		}
+
+		sem := make(chan struct{}, maxParallel)
+		var wg sync.WaitGroup
+		results := make([]Value, len(paths))
+
+		for i, p := range paths {
+			wg.Add(1)
+			sem <- struct{}{}
+			go func(i int, path string) {
+				defer wg.Done()
+				defer func() { <-sem }()
+
+				pidVal := builtins["Worker"].Fn([]Value{StrVal(path)})
+				if pidVal.Kind == KindError {
+					results[i] = BoolVal(false)
+					return
+				}
+				pid := toNumVal(pidVal)
+				results[i] = builtins["Wait"].Fn([]Value{NumVal(pid)})
+			}(i, ToString(p))
+		}
+		wg.Wait()
+
+		return Value{Kind: KindArr, Arr: results}
 	})
 
 	Register("Inspect", "global", "value", "Zeigt die oberste Struktur eines Wertes (Typ und Schlüssel/Feldnamen), ohne rekursiv in Tiefe zu gehen. Bei Arrays wird das erste Element als Beispiel gezeigt.", func(args []Value) Value {
@@ -916,26 +964,30 @@ func InitGlobal() {
 		return args[0]
 	})
 
-	Register("Wait", "global", "pid", "Pausiert das Skript, bis der Prozess mit der angegebenen PID beendet wurde.", func(args []Value) Value {
+	// ------------------------------------------------------------
+	// 1. Wait(pid) -- Rückgabe von NumVal(1/-1) auf BoolVal umgestellt.
+	//    Passend zu true/false-Funktionen wie PidExists/Contains.
+	//    Unbedenklich, da Wait() aktuell nirgends im eigenen Code verwendet wird.
+	// ------------------------------------------------------------
+
+	Register("Wait", "global", "pid", "Pausiert das Skript, bis der Prozess mit der angegebenen PID beendet ist. Pollt in 250-ms-Intervallen.", func(args []Value) Value {
 		if len(args) < 1 {
-			return NumVal(-1)
+			return ErrorVal("PID fehlt")
 		}
+		pid := int32(toNumVal(args[0]))
 
-		pid := int32(args[0].Num)
-		p, err := process.NewProcess(pid)
-		if err != nil {
-			return NumVal(-1)
-		}
-
-		// Wartet, bis der Prozess nicht mehr existiert
 		for {
-			running, _ := p.IsRunning()
-			if !running {
-				break
+			p, err := process.NewProcess(pid)
+			if err != nil {
+				// Prozess existiert nicht (mehr) -- Skript ist fertig
+				return BoolVal(true)
+			}
+			running, err := p.IsRunning()
+			if err != nil || !running {
+				return BoolVal(true)
 			}
 			time.Sleep(250 * time.Millisecond)
 		}
-		return NumVal(1)
 	})
 
 	// --- Alert (Einfache Ausgabe mit Bestätigung) ---
@@ -1117,6 +1169,19 @@ func InitGlobal() {
 			return ErrorVal("Pfad fehlt")
 		}
 		source := args[0].Str
+
+		// --- NEU: Guard gegen erneutes Bauen einer bereits kompilierten Datei ---
+		if strings.EqualFold(filepath.Ext(source), ".vbc") {
+			return ErrorVal(fmt.Sprintf("'%s' ist bereits eine kompilierte .vbc-Datei", source))
+		}
+
+		raw, err := os.ReadFile(source)
+		if err != nil {
+			return ErrorVal("Datei nicht lesbar: " + err.Error())
+		}
+		if len(raw) >= 4 && string(raw[:4]) == "VBC!" {
+			return ErrorVal(fmt.Sprintf("'%s' enthält bereits den VBC-Magic-Header — vermutlich versehentlich eine kompilierte Datei", source))
+		}
 
 		// 1. Quelldatei lesen (Klartext .vb)
 		visited := make(map[string]bool)

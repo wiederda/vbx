@@ -1313,7 +1313,21 @@ func InitFileFunctions() {
 			return NullVal()
 		})
 
-	Register(ns+"Tail", "file", "path, [lines], [refresh]", "Zeigt die letzten Zeilen einer Datei an. Bei 'refresh' (z.B. '1s') wird die Datei live überwacht.", func(args []Value) Value {
+	// ------------------------------------------------------------
+	// file.Tail -- neuer 4. Parameter "silent" (BoolVal, Default false)
+	//
+	// silent=false (Standard): unverändertes bisheriges Verhalten,
+	// Endlos-Loop mit fmt.Print direkt auf die Konsole (Shell-Nutzung).
+	//
+	// silent=true: KEIN Print. Statt der Endlosschleife wird nur EIN
+	// Warteintervall (die "refresh"-Dauer) abgewartet und dann true
+	// zurückgegeben, falls sich die Dateigröße geändert hat (gewachsen
+	// oder rotiert/gekürzt), sonst false. Das Skript wickelt die
+	// Wiederholung selbst über eine eigene Do Loop ab -- analog zu
+	// file.Watch, nur mit derselben "refresh"-Parametersyntax wie Tail.
+	// ------------------------------------------------------------
+
+	Register(ns+"Tail", "file", "path, [lines], [refresh], [silent]", "Zeigt die letzten Zeilen einer Datei an. Bei 'refresh' (z.B. '1s') wird die Datei live überwacht. Mit silent=True: kein Print, gibt stattdessen einmalig true/false zurück (für Skript-Nutzung in einer eigenen Schleife).", func(args []Value) Value {
 		if len(args) < 1 {
 			return ErrorVal("Tail benötigt mindestens den Dateipfad")
 		}
@@ -1344,20 +1358,23 @@ func InitFileFunctions() {
 			isFollowMode = true
 			durationStr := args[2].Str
 
-			// Versuchen als Duration zu parsen (z.B. "1s")
 			parsed, err := time.ParseDuration(durationStr)
 			if err != nil {
-				// Fallback: Wenn es eine reine Zahl ist (z.B. "500"), als ms interpretieren
 				ms, numErr := strconv.Atoi(durationStr)
 				if numErr == nil {
 					d = time.Duration(ms) * time.Millisecond
 				} else {
-					// Letzter Versuch: Falls toNumVal eine Zahl liefert
 					d = time.Duration(toNumVal(args[2])) * time.Millisecond
 				}
 			} else {
 				d = parsed
 			}
+		}
+
+		// --- NEU: silent-Parameter (4. Argument) ---
+		silent := false
+		if len(args) >= 4 {
+			silent = isTruthy(args[3])
 		}
 
 		// --- Phase 1: Die letzten X Zeilen lesen ---
@@ -1404,12 +1421,29 @@ func InitFileFunctions() {
 			return StrVal(string(result))
 		}
 
-		// --- Phase 2: AutoRefresh-Modus (Blockierend) ---
+		// --- NEU: silent-Modus -- EIN Warteintervall, dann true/false ---
+		if silent {
+			time.Sleep(d)
+
+			newStat, err := os.Stat(path)
+			if err != nil {
+				return ErrorVal("Datei während der Überwachung verloren: " + err.Error())
+			}
+
+			currentSize := newStat.Size()
+			if currentSize != filesize {
+				// gewachsen ODER rotiert/gekürzt -> in beiden Fällen "Änderung"
+				return BoolVal(true)
+			}
+			return BoolVal(false)
+		}
+
+		// --- Phase 2: AutoRefresh-Modus (Blockierend, unverändert) ---
 		fmt.Print(string(result))
 		lastSize := filesize
 
 		for {
-			time.Sleep(d) // Nutzt die flexibel geparste Duration
+			time.Sleep(d)
 
 			newStat, err := os.Stat(path)
 			if err != nil {
@@ -1482,8 +1516,20 @@ func InitFileFunctions() {
 		}
 	})
 
-	// file.WatchLog(path, pattern [, style_value])
-	Register(ns+"WatchLog", "file", "path, pattern, [style]", "Überwacht ein Log live auf ein Suchmuster und hebt Zeilen farbig hervor.", func(args []Value) Value {
+	// ------------------------------------------------------------
+	// file.WatchLog -- neue Parameter "silent" (4.) und "timeoutMs" (5.)
+	//
+	// silent=false (Standard): unverändertes bisheriges Verhalten
+	// (Endlos-Loop, druckt Statuszeilen + Treffer farbig auf die Konsole).
+	//
+	// silent=true: keine Konsolenausgabe. Wartet auf den ERSTEN Treffer
+	// des Suchmusters (oder bis timeoutMs abgelaufen ist) und gibt dann
+	// true (Treffer) bzw. false (Timeout) zurück. Ohne timeoutMs (oder 0)
+	// wartet der Aufruf unbegrenzt, analog zu file.Watch.
+	// ------------------------------------------------------------
+
+	// file.WatchLog(path, pattern [, style, silent, timeoutMs])
+	Register(ns+"WatchLog", "file", "path, pattern, [style], [silent], [timeoutMs]", "Überwacht ein Log live auf ein Suchmuster und hebt Zeilen farbig hervor. Mit silent=True: kein Print, wartet auf ersten Treffer (oder Timeout) und gibt true/false zurück.", func(args []Value) Value {
 
 		if len(args) < 2 {
 			return ErrorVal("watchlog(path, pattern, [style]) benötigt mindestens Pfad und Suchmuster")
@@ -1497,18 +1543,26 @@ func InitFileFunctions() {
 		// --- STYLE HANDLING (UNIFIED) ---
 		if len(args) >= 3 {
 			switch args[2].Kind {
-
 			case KindNum:
-				// altes System (4102 etc.)
 				ansiSequence = getAnsiCode(args[2].Num)
-
 			case KindStr:
-				// neues System (direkte ANSI-Codes)
 				ansiSequence = args[2].Str
 			}
 		}
 
-		return watchLogInternal(path, pattern, ansiSequence)
+		// --- NEU: silent (4. Argument) ---
+		silent := false
+		if len(args) >= 4 {
+			silent = isTruthy(args[3])
+		}
+
+		// --- NEU: timeoutMs (5. Argument, nur relevant bei silent) ---
+		timeoutMs := 0
+		if len(args) >= 5 {
+			timeoutMs = int(toNumVal(args[4]))
+		}
+
+		return watchLogInternal(path, pattern, ansiSequence, silent, timeoutMs)
 	})
 
 	Register(ns+"UpdateValue", "file", "path, search, newValue",

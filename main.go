@@ -510,6 +510,7 @@ func getCLIShortcuts() map[string]Shortcut {
 		"remoteboot": {"ssh.RebootWithKey", "host, user, keyPath, [delay], [knownHostsPath], [port]", "Löst per SSH-Key-Auth einen Reboot aus."},
 		"remoteexec": {"ssh.ExecOnce", "host, user, keyPath, cmd, [printOutput], [knownHostsPath], [port]",
 			"Führt per SSH-Key-Auth einen einzelnen Befehl aus und schließt die Verbindung wieder."},
+		"wol": {"net.WakeOnLan", "mac, [broadcastIP], [port]", "Sendet ein Wake-on-LAN Magic Packet an die angegebene MAC-Adresse"},
 	}
 	return m
 }

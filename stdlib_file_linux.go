@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func watchLogInternal(path, pattern, ansiSequence string) Value {
+func watchLogInternal(path, pattern, ansiSequence string, silent bool, timeoutMs int) Value {
 	var lastPos int64
 
 	// Initiales Öffnen (Unix-Standard)
@@ -22,9 +22,18 @@ func watchLogInternal(path, pattern, ansiSequence string) Value {
 	info, _ := file.Stat()
 	lastPos = info.Size()
 
-	fmt.Printf("\033[90m[WATCH] Aktiv: %s | Filter: '%s' (Unix Mode)\033[0m\n", path, pattern)
+	if !silent {
+		fmt.Printf("\033[90m[WATCH] Aktiv: %s | Filter: '%s' (Unix Mode)\033[0m\n", path, pattern)
+	}
+
+	start := time.Now()
 
 	for {
+		// --- NEU: Timeout-Check (nur im silent-Modus relevant) ---
+		if silent && timeoutMs > 0 && time.Since(start).Milliseconds() > int64(timeoutMs) {
+			return BoolVal(false)
+		}
+
 		currInfo, err := os.Stat(path)
 		if err != nil {
 			// Datei wurde ggf. gerade verschoben/gelöscht (Rotation)
@@ -36,7 +45,9 @@ func watchLogInternal(path, pattern, ansiSequence string) Value {
 
 		// ROTATION CHECK (Datei wurde geleert oder ersetzt)
 		if currSize < lastPos {
-			fmt.Println("\033[90m[WATCH] Log-Rotation erkannt. Setze Stream zurück...\033[0m")
+			if !silent {
+				fmt.Println("\033[90m[WATCH] Log-Rotation erkannt. Setze Stream zurück...\033[0m")
+			}
 			file.Close()
 			f, err := os.Open(path)
 			if err == nil {
@@ -55,6 +66,10 @@ func watchLogInternal(path, pattern, ansiSequence string) Value {
 				for _, line := range lines {
 					line = strings.TrimSpace(line)
 					if line != "" && strings.Contains(strings.ToLower(line), strings.ToLower(pattern)) {
+						if silent {
+							// --- NEU: sofort zurückgeben, kein Print ---
+							return BoolVal(true)
+						}
 						ts := time.Now().Format("15:04:05")
 						if ansiSequence != "" {
 							fmt.Printf("%s[%s] %s\033[0m\n", ansiSequence, ts, line)
