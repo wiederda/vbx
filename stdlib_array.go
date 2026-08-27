@@ -175,28 +175,6 @@ func InitArrayFunctions() {
 		})
 	})
 
-	Register(ns+"Split", "string", "str, sep", "Teilt String in Array", func(args []Value) Value {
-		if len(args) < 2 {
-			return ErrorVal("usage: array.Split(str, sep)")
-		}
-
-		str := ToString(args[0])
-		sep := ToString(args[1])
-
-		if sep == "" {
-			return ErrorVal("separator cannot be empty")
-		}
-
-		parts := strings.Split(str, sep)
-
-		var res []Value
-		for _, p := range parts {
-			res = append(res, StrVal(p))
-		}
-
-		return ArrVal(res)
-	})
-
 	Register(ns+"CleanArray", "array", "array", "Bereinigt Strings in Arrays (Trim + Entfernen von Steuerzeichen < 32, außer Tab)", func(args []Value) Value {
 		if len(args) < 1 {
 			return Value{}

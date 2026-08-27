@@ -339,7 +339,7 @@ func InitSSHFunctions() {
 			return sshRebootExec(host, port, config, delay)
 		})
 
-	Register("GenerateSSHKey", "ssh", "[outFile, algo, bits, pass]",
+	Register(ns+"GenerateSSHKey", "ssh", "[outFile, algo, bits, pass]",
 		"Erstellt ein SSH-Paar (RSA/Ed25519). Schreibt physisch in .ssh oder Zielpfad.",
 		func(args []Value) Value {
 			// 1. DEFAULTS & DATEN-VORBEREITUNG

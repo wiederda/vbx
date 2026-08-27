@@ -395,6 +395,46 @@ func InitGlobal() {
 		return BoolVal(strings.Contains(strings.ToLower(s), strings.ToLower(sub)))
 	})
 
+	Register("InStr", "global", "s, search", "Gibt die 1-basierte Position eines Teilstrings zurück oder 0, wenn nicht gefunden.", func(args []Value) Value {
+		if len(args) < 2 {
+			return NumVal(0)
+		}
+
+		text := ToString(args[0])
+		search := ToString(args[1])
+
+		// Leerer Suchstring entspricht dem Verhalten von VB:
+		// Position 1.
+		if search == "" {
+			return NumVal(1)
+		}
+
+		// Runen-basiert suchen, damit Unicode korrekt behandelt wird.
+		textRunes := []rune(text)
+		searchRunes := []rune(search)
+
+		if len(searchRunes) > len(textRunes) {
+			return NumVal(0)
+		}
+
+		for i := 0; i <= len(textRunes)-len(searchRunes); i++ {
+			match := true
+
+			for j := range searchRunes {
+				if textRunes[i+j] != searchRunes[j] {
+					match = false
+					break
+				}
+			}
+
+			if match {
+				return NumVal(float64(i + 1))
+			}
+		}
+
+		return NumVal(0)
+	})
+
 	Register("IndexOf", "global", "s, sub", "Gibt den ersten Index eines Teilstrings zurück (-1 wenn nicht gefunden).", func(args []Value) Value {
 		s := ToString(MustValue(args, 0))
 		sub := ToString(MustValue(args, 1))
@@ -441,56 +481,26 @@ func InitGlobal() {
 		return StrVal(text)
 	})
 
-	Register("Split", "global", "s, [sep]", "Zerlegt einen String in ein Array (Standard-Separator: Leerzeichen oder Komma)", func(args []Value) Value {
+	Register("Split", "global", "s, sep", "Zerlegt einen String an einem Separator in ein Array", func(args []Value) Value {
 		if len(args) < 2 {
-			return Value{Kind: KindArr, Arr: []Value{}}
+			return ErrorVal("usage: Split(s, sep)")
 		}
 
 		text := ToString(args[0])
 		sep := ToString(args[1])
 
-		// Prüfe den 3. Parameter auf Boolean "unique"
-		unique := false
-		if len(args) > 2 {
-			switch args[2].Kind {
-			case KindBool:
-				unique = args[2].Bool
-			case KindNum:
-				unique = args[2].Num == 1
-			case KindStr:
-				ls := strings.ToLower(args[2].Str)
-				unique = (ls == "true" || ls == "1")
-			}
+		if sep == "" {
+			return ErrorVal("separator cannot be empty")
 		}
 
-		var parts []string
-		if sep == " " {
-			// Fields entfernt automatisch leere Strings
-			parts = strings.Fields(text)
-		} else {
-			parts = strings.Split(text, sep)
-		}
+		parts := strings.Split(text, sep)
 
 		var result []Value
-		seen := map[string]struct{}{}
-
 		for _, p := range parts {
-			p = strings.TrimSpace(p)
-			if p == "" {
-				continue
-			}
-
-			if unique {
-				if _, exists := seen[p]; exists {
-					continue
-				}
-				seen[p] = struct{}{}
-			}
-
 			result = append(result, StrVal(p))
 		}
 
-		return Value{Kind: KindArr, Arr: result}
+		return ArrVal(result)
 	})
 
 	Register("Trim", "global", "s, [cutset]", "Entfernt Leerzeichen oder Zeichen.", func(args []Value) Value {

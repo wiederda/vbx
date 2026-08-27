@@ -76,6 +76,14 @@ Timer und CPU-Samples sind pro Skript-Instanz stateful – mehrfache Aufrufe lie
 
 ---
 
+## debug.CPUCores()
+- **Konkret:**
+  Gibt die Anzahl der verfügbaren CPU-Kerne zurück.
+- **Rückgabe:**
+  `NumVal`
+
+---
+
 ## debug.MemUsage()
 - **Konkret:**
   Gibt den aktuell vom Prozess allokierten Arbeitsspeicher in Megabyte zurück.

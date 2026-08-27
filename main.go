@@ -28,7 +28,7 @@ var optionalModuleFunctions = map[string]int{
 	"crypt":    13,
 	"data":     15,
 	"db":       30,
-	"debug":    11,
+	"debug":    12,
 	"docker":   31,
 	"env":      3,
 	"fin":      7,
@@ -39,7 +39,7 @@ var optionalModuleFunctions = map[string]int{
 	"json":     25,
 	"kuma":     5,
 	"map":      11,
-	"net":      17,
+	"net":      18,
 	"pgp":      11,
 	"picture":  3,
 	"pqc":      14,
@@ -63,8 +63,9 @@ var optionalModuleFunctions = map[string]int{
 func main() {
 	enableWindowsANSI()
 	// --- 1. Vor-Analyse der Argumente ---
-	var positionalArgs []string // NEU: Sammelt alles ohne "-"
+	var positionalArgs []string
 	var filter string
+	var moduleFilter string
 	showShell, isHelp, showReg := false, false, false
 	regC()
 
@@ -75,13 +76,13 @@ func main() {
 			isHelp = true
 		case low == "-shell":
 			showShell = true
-		case low == "-reg":
+		case low == "-const":
 			showReg = true
 		case low == "-v" || low == "version":
 			fmt.Println(Version)
 			return
 		case strings.HasPrefix(low, "-modules="):
-			continue
+			moduleFilter = strings.TrimPrefix(low, "-modules=")
 		case strings.HasPrefix(low, "-"):
 			filter = strings.TrimPrefix(low, "-")
 		default:
@@ -118,9 +119,13 @@ func main() {
 			displayHelp()
 			return
 		}
-		if filter == "" && len(optionalModules) == 1 {
+
+		if moduleFilter != "" {
+			filter = moduleFilter
+		} else if filter == "" && len(optionalModules) == 1 {
 			filter = optionalModules[0]
 		}
+
 		printHelp(filter, cliShortcuts, showShell)
 		return
 	}
@@ -237,7 +242,7 @@ func printHelp(filter string, shortcuts map[string]Shortcut, showShell bool) {
 		fmt.Println("  vbx -h                           - Diese Übersicht")
 		fmt.Println("  vbx -v                           - Aktuelle Versionsnummer")
 		fmt.Println("  vbx -shell -h                    - Verfügbare Shell-Befehle")
-		fmt.Println("  vbx -reg -h                      - Verfügbare Konstanten")
+		fmt.Println("  vbx -const -h                    - Verfügbare Konstanten")
 		fmt.Println("  ' oder /' ... '/                 - Eine Zeile oder einen ganzen Block auskommentieren")
 
 		if cleanFilter != "" {
@@ -276,7 +281,7 @@ func printModulesHelp(filter string) {
 					isMatch = true
 				}
 
-			case "reg":
+			case "const":
 				// Nur Register/Konstanten: Kein Punkt UND "vb"-Präfix
 				if !hasDot && strings.HasPrefix(lowName, "vb") {
 					isMatch = true

@@ -26,8 +26,8 @@ vbx -modules=json,net <quelle.vb>
 
 vbx -h
 vbx -shell -h
-vbx -reg -h
-vbx -file -h
+vbx -const -h
+vbx -modules=file -h
 ```
 
 ---

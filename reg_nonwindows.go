@@ -25,4 +25,13 @@ func InitRegistryFunctions() {
 	Register(ns+"Delete", "", "", "", func(args []Value) Value {
 		return StrVal("error: registry not available on this OS")
 	})
+	Register(ns+"WriteProtectedValue", "", "", "", func(args []Value) Value {
+		return StrVal("error: registry not available on this OS")
+	})
+	Register(ns+"ReadProtectedValue", "", "", "", func(args []Value) Value {
+		return StrVal("error: registry not available on this OS")
+	})
+	Register(ns+"ReadProtectedValueBytes", "", "", "", func(args []Value) Value {
+		return StrVal("error: registry not available on this OS")
+	})
 }

@@ -149,6 +149,10 @@ func InitDebugFunctions(env *Environment) {
 		return NumVal(float64(getCurrentCPU()))
 	})
 
+	Register(ns+"CPUCores", "debug", "-", "Gibt die Anzahl der verfügbaren CPU-Kerne zurück.", func(args []Value) Value {
+		return NumVal(float64(runtime.NumCPU()))
+	})
+
 	Register(ns+"MemUsage", "debug", "-", "Gibt den aktuell vom Skript belegten Arbeitsspeicher in Megabyte (MB) zurück.", func(args []Value) Value {
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
