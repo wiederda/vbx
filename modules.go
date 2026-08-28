@@ -40,7 +40,6 @@ var optionalModulesMap = map[string]func(*Environment){
 	"computer": func(e *Environment) { InitComputerFunctions() },
 	"map":      func(e *Environment) { InitMapFunctions() },
 	"ini":      func(e *Environment) { InitIniFunctions() },
-	"hash":     func(e *Environment) { InitHashFunctions() },
 	"json":     func(e *Environment) { InitJsonFunctions() },
 	"kuma":     func(e *Environment) { InitKumaFunctions() },
 	"tar":      func(e *Environment) { InitTarFunctions() },

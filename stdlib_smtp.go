@@ -17,51 +17,65 @@ func InitSmtpFunctions() {
 
 	ns := "smtp."
 
-	registerSend := func(name, desc string, fn func(string, string, string, string, string, string, string, string, string, string, string) error) {
-		Register(ns+name, "smtp", "mailObject", desc, func(args []Value) Value {
+	Register(ns+"Send", "smtp", "mailObject", "SMTP (Port 25 / unverschlüsselt)", func(args []Value) Value {
+		return smtpSend("Send", args, sendMailPlain)
+	})
 
-			if len(args) < 1 || args[0].Kind != KindObj {
-				return ErrorVal(name + " erwartet ein Objekt")
-			}
+	Register(ns+"SendTLS", "smtp", "mailObject", "SMTP über TLS (Port 465)", func(args []Value) Value {
+		return smtpSend("SendTLS", args, sendMailTLS)
+	})
 
-			if args[0].Obj == nil {
-				return ErrorVal("Ungültiges Objekt")
-			}
+	Register(ns+"SendSTARTTLS", "smtp", "mailObject", "SMTP über STARTTLS (Port 587)", func(args []Value) Value {
+		return smtpSend("SendSTARTTLS", args, sendMailSTARTTLS)
+	})
+}
 
-			obj := args[0].Obj.Fields
+//
+// ---------------- SEND WRAPPER ----------------
+//
 
-			getStr := func(key string) string {
-				if v, ok := obj[key]; ok && v.Kind == KindStr {
-					return strings.TrimSpace(v.Str)
-				}
-				return ""
-			}
+func smtpSend(
+	name string,
+	args []Value,
+	fn func(string, string, string, string, string, string, string, string, string, string, string) error,
+) Value {
 
-			err := fn(
-				getStr("to"),
-				getStr("cc"),
-				getStr("bcc"),
-				getStr("subject"),
-				getStr("body"),
-				getStr("server"),
-				getStr("port"),
-				getStr("user"),
-				getStr("pass"),
-				getStr("from"),
-				getStr("html"),
-			)
-
-			if err != nil {
-				return ErrorVal(err.Error())
-			}
-
-			return BoolVal(true)
-		})
+	if len(args) < 1 || args[0].Kind != KindObj {
+		return ErrorVal(name + " erwartet ein Objekt")
 	}
 
-	registerSend("Send", "SMTP (Port 25 / unverschlüsselt)", sendMailPlain)
-	registerSend("SendTLS", "SMTP über TLS (Port 465)", sendMailTLS)
-	registerSend("SendSTARTTLS", "SMTP über STARTTLS (Port 587)", sendMailSTARTTLS)
+	if args[0].Obj == nil {
+		return ErrorVal("Ungültiges Objekt")
+	}
+
+	obj := args[0].Obj.Fields
+
+	getStr := func(key string) string {
+		if v, ok := obj[key]; ok && v.Kind == KindStr {
+			return strings.TrimSpace(v.Str)
+		}
+		return ""
+	}
+
+	err := fn(
+		getStr("to"),
+		getStr("cc"),
+		getStr("bcc"),
+		getStr("subject"),
+		getStr("body"),
+		getStr("server"),
+		getStr("port"),
+		getStr("user"),
+		getStr("pass"),
+		getStr("from"),
+		getStr("html"),
+	)
+
+	if err != nil {
+		return ErrorVal(err.Error())
+	}
+
+	return BoolVal(true)
 }
 
 //
@@ -72,9 +86,11 @@ func parsePort(portStr string, def int) int {
 	if portStr == "" {
 		return def
 	}
+
 	if p, err := strconv.Atoi(strings.TrimSpace(portStr)); err == nil {
 		return p
 	}
+
 	return def
 }
 
@@ -82,14 +98,18 @@ func splitList(s string) []string {
 	if s == "" {
 		return nil
 	}
+
 	parts := strings.Split(s, ",")
 	var result []string
+
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
+
 		if p != "" {
 			result = append(result, p)
 		}
 	}
+
 	return result
 }
 
@@ -127,9 +147,11 @@ func resolveFrom(from, user string) string {
 	if from != "" {
 		return from
 	}
+
 	if user != "" {
 		return user
 	}
+
 	return "noreply@localhost"
 }
 
@@ -137,6 +159,7 @@ func buildRecipients(toList, ccList, bccList []string) []string {
 	all := append([]string{}, toList...)
 	all = append(all, ccList...)
 	all = append(all, bccList...)
+
 	return all
 }
 
@@ -144,11 +167,24 @@ func buildRecipients(toList, ccList, bccList []string) []string {
 // ---------------- SEND IMPLEMENTATIONS ----------------
 //
 
-func sendMailPlain(to, cc, bcc, subject, body, server, portStr, user, pass, from, html string) error {
+func sendMailPlain(
+	to,
+	cc,
+	bcc,
+	subject,
+	body,
+	server,
+	portStr,
+	user,
+	pass,
+	from,
+	html string,
+) error {
 
 	if to == "" {
 		return fmt.Errorf("Empfänger fehlt")
 	}
+
 	if server == "" {
 		return fmt.Errorf("SMTP-Server fehlt")
 	}
@@ -156,25 +192,53 @@ func sendMailPlain(to, cc, bcc, subject, body, server, portStr, user, pass, from
 	port := parsePort(portStr, 25)
 	from = resolveFrom(from, user)
 
-	msg, toList, ccList := buildMessage(to, cc, subject, body, from, html)
+	msg, toList, ccList := buildMessage(
+		to,
+		cc,
+		subject,
+		body,
+		from,
+		html,
+	)
+
 	bccList := splitList(bcc)
 	recipients := buildRecipients(toList, ccList, bccList)
 
 	addr := fmt.Sprintf("%s:%d", server, port)
 
 	var auth smtp.Auth
+
 	if user != "" && pass != "" {
 		auth = smtp.PlainAuth("", user, pass, server)
 	}
 
-	return smtp.SendMail(addr, auth, from, recipients, []byte(msg))
+	return smtp.SendMail(
+		addr,
+		auth,
+		from,
+		recipients,
+		[]byte(msg),
+	)
 }
 
-func sendMailTLS(to, cc, bcc, subject, body, server, portStr, user, pass, from, html string) error {
+func sendMailTLS(
+	to,
+	cc,
+	bcc,
+	subject,
+	body,
+	server,
+	portStr,
+	user,
+	pass,
+	from,
+	html string,
+) error {
 
 	if to == "" {
 		return fmt.Errorf("Empfänger fehlt")
 	}
+
 	if server == "" {
 		return fmt.Errorf("SMTP-Server fehlt")
 	}
@@ -182,13 +246,28 @@ func sendMailTLS(to, cc, bcc, subject, body, server, portStr, user, pass, from, 
 	port := parsePort(portStr, 465)
 	from = resolveFrom(from, user)
 
-	msg, toList, ccList := buildMessage(to, cc, subject, body, from, html)
+	msg, toList, ccList := buildMessage(
+		to,
+		cc,
+		subject,
+		body,
+		from,
+		html,
+	)
+
 	bccList := splitList(bcc)
 	recipients := buildRecipients(toList, ccList, bccList)
 
-	addr := net.JoinHostPort(server, strconv.Itoa(port))
+	addr := net.JoinHostPort(
+		server,
+		strconv.Itoa(port),
+	)
 
-	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
+	conn, err := net.DialTimeout(
+		"tcp",
+		addr,
+		10*time.Second,
+	)
 	if err != nil {
 		return err
 	}
@@ -204,10 +283,17 @@ func sendMailTLS(to, cc, bcc, subject, body, server, portStr, user, pass, from, 
 	if err != nil {
 		return err
 	}
+
 	defer c.Quit()
 
 	if user != "" && pass != "" {
-		auth := smtp.PlainAuth("", user, pass, server)
+		auth := smtp.PlainAuth(
+			"",
+			user,
+			pass,
+			server,
+		)
+
 		if err = c.Auth(auth); err != nil {
 			return err
 		}
@@ -236,11 +322,24 @@ func sendMailTLS(to, cc, bcc, subject, body, server, portStr, user, pass, from, 
 	return w.Close()
 }
 
-func sendMailSTARTTLS(to, cc, bcc, subject, body, server, portStr, user, pass, from, html string) error {
+func sendMailSTARTTLS(
+	to,
+	cc,
+	bcc,
+	subject,
+	body,
+	server,
+	portStr,
+	user,
+	pass,
+	from,
+	html string,
+) error {
 
 	if to == "" {
 		return fmt.Errorf("Empfänger fehlt")
 	}
+
 	if server == "" {
 		return fmt.Errorf("SMTP-Server fehlt")
 	}
@@ -248,13 +347,28 @@ func sendMailSTARTTLS(to, cc, bcc, subject, body, server, portStr, user, pass, f
 	port := parsePort(portStr, 587)
 	from = resolveFrom(from, user)
 
-	msg, toList, ccList := buildMessage(to, cc, subject, body, from, html)
+	msg, toList, ccList := buildMessage(
+		to,
+		cc,
+		subject,
+		body,
+		from,
+		html,
+	)
+
 	bccList := splitList(bcc)
 	recipients := buildRecipients(toList, ccList, bccList)
 
-	addr := net.JoinHostPort(server, strconv.Itoa(port))
+	addr := net.JoinHostPort(
+		server,
+		strconv.Itoa(port),
+	)
 
-	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
+	conn, err := net.DialTimeout(
+		"tcp",
+		addr,
+		10*time.Second,
+	)
 	if err != nil {
 		return err
 	}
@@ -263,6 +377,7 @@ func sendMailSTARTTLS(to, cc, bcc, subject, body, server, portStr, user, pass, f
 	if err != nil {
 		return err
 	}
+
 	defer c.Quit()
 
 	if err = c.Hello("localhost"); err != nil {
@@ -288,7 +403,13 @@ func sendMailSTARTTLS(to, cc, bcc, subject, body, server, portStr, user, pass, f
 	}
 
 	if user != "" && pass != "" {
-		auth := smtp.PlainAuth("", user, pass, server)
+		auth := smtp.PlainAuth(
+			"",
+			user,
+			pass,
+			server,
+		)
+
 		if err = c.Auth(auth); err != nil {
 			return err
 		}

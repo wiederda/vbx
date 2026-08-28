@@ -177,6 +177,15 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
 
 ---
 
+## InStr(s, search)
+**Konkret:** Sucht den Teilstring `search` innerhalb von `s` und gibt dessen 1-basierte Startposition zurück. Die Suche erfolgt Runen-basiert, damit Unicode-Zeichen korrekt behandelt werden. Ist `search` leer, wird (wie in klassischem VB) Position 1 zurückgegeben. Wird der Teilstring nicht gefunden, ist das Ergebnis 0.
+**Parameter:**
+- `s` – Der zu durchsuchende Text.
+- `search` – Der gesuchte Teilstring.
+**Rückgabe:** Zahl – die 1-basierte Position des ersten Vorkommens von `search` in `s`, oder `0`, wenn nicht gefunden. Fehlt einer der Pflichtparameter, wird ein Fehlerwert zurückgegeben (siehe `IsError`/`ErrorText`).
+
+---
+
 ## IndexOf(s, sub)
 - **Konkret:**
   Gibt den Index des ersten Vorkommens von `sub` zurück.

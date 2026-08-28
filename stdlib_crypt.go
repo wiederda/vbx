@@ -7,15 +7,22 @@ package main
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/hmac"
+	"crypto/md5"
 	crand "crypto/rand"
+	"crypto/sha1"
 	"crypto/sha256"
+	"crypto/sha512"
 	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"math/big"
 	"os"
 	"unicode"
 	"unsafe"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 // ---------------- Crypt State ----------------
@@ -827,4 +834,77 @@ func InitCryptFunctions() {
 
 			return Value{Kind: KindMap, Map: result}
 		})
+
+	// hash.HMAC(s, key, [algo])
+	// algo: "sha256" (Standard), "sha512", "sha1", "md5"
+	Register(ns+"HMAC", "crypt", "s, key, [algo]", "Erzeugt einen HMAC. algo: sha256 (Standard), sha512, sha1, md5.", func(args []Value) Value {
+		if len(args) < 2 {
+			return ErrorVal("hash.HMAC: s und key benötigt")
+		}
+
+		data := []byte(ToString(args[0]))
+		key := []byte(ToString(args[1]))
+
+		algo := "sha256"
+		if len(args) >= 3 {
+			algo = ToString(args[2])
+		}
+
+		var mac []byte
+		switch algo {
+		case "sha256":
+			h := hmac.New(sha256.New, key)
+			h.Write(data)
+			mac = h.Sum(nil)
+		case "sha512":
+			h := hmac.New(sha512.New, key)
+			h.Write(data)
+			mac = h.Sum(nil)
+		case "sha1":
+			h := hmac.New(sha1.New, key)
+			h.Write(data)
+			mac = h.Sum(nil)
+		case "md5":
+			h := hmac.New(md5.New, key)
+			h.Write(data)
+			mac = h.Sum(nil)
+		default:
+			return ErrorVal("hash.HMAC: Unbekannter Algorithmus '" + algo + "'. Unterstützt: sha256, sha512, sha1, md5")
+		}
+
+		return StrVal(hex.EncodeToString(mac))
+	})
+
+	// hash.Bcrypt(pass, [cost])
+	// cost: 10 (Standard), 4-31
+	Register(ns+"Bcrypt", "crypt", "pass, [cost]", "Erzeugt einen sicheren Bcrypt-Hash eines Passworts. cost: 4-31, Standard 10.", func(args []Value) Value {
+		if len(args) < 1 {
+			return ErrorVal("hash.Bcrypt: Passwort fehlt")
+		}
+
+		cost := bcrypt.DefaultCost // 10
+		if len(args) >= 2 {
+			c := int(toNumVal(args[1]))
+			if c >= bcrypt.MinCost && c <= bcrypt.MaxCost {
+				cost = c
+			}
+		}
+
+		hashed, err := bcrypt.GenerateFromPassword([]byte(ToString(args[0])), cost)
+		if err != nil {
+			return ErrorVal("hash.Bcrypt: " + err.Error())
+		}
+
+		return StrVal(string(hashed))
+	})
+
+	// hash.BcryptVerify(pass, hash)
+	Register(ns+"BcryptVerify", "crypt", "pass, hash", "Prüft ob ein Passwort zu einem Bcrypt-Hash passt.", func(args []Value) Value {
+		if len(args) < 2 {
+			return ErrorVal("hash.BcryptVerify: pass und hash benötigt")
+		}
+
+		err := bcrypt.CompareHashAndPassword([]byte(ToString(args[1])), []byte(ToString(args[0])))
+		return BoolVal(err == nil)
+	})
 }

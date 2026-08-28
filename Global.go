@@ -397,7 +397,7 @@ func InitGlobal() {
 
 	Register("InStr", "global", "s, search", "Gibt die 1-basierte Position eines Teilstrings zurück oder 0, wenn nicht gefunden.", func(args []Value) Value {
 		if len(args) < 2 {
-			return NumVal(0)
+			return ErrorVal("InStr: benötigt 2 Parameter (s, search)")
 		}
 
 		text := ToString(args[0])

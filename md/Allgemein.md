@@ -82,7 +82,7 @@ Relative Pfade, einmaliges Laden, rekursive Includes werden erkannt und Include-
 
 **Permanent:** app.*, array.*, date.*, file.*, folder.*, global.*, math.*
 
-**Optional:** ad.*, cert.*, computer.*, convert.*, crypt.*, data.*, db.*, debug.*, docker.*, env.*, fin.*, geo.*, git.*, hash.*, ini.*, json.*, map.*, net.*, pgp.*, picture.*, pqc.*, proc.*, rand.*, reg.*, service.*, sftp.*, smtp.*, ssh.*, steg.*, string.*, tar.*, template.*, uptime-kuma.*, win.*, xml.*, yaml.*, zip.*
+**Optional:** ad.*, cert.*, computer.*, convert.*, crypt.*, data.*, db.*, debug.*, docker.*, env.*, fin.*, geo.*, git.*, ini.*, json.*, map.*, net.*, pgp.*, picture.*, pqc.*, proc.*, rand.*, reg.*, service.*, sftp.*, smtp.*, ssh.*, steg.*, string.*, tar.*, template.*, uptime-kuma.*, win.*, xml.*, yaml.*, zip.*
 
 ---
 
