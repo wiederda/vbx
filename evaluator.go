@@ -40,6 +40,7 @@ const (
 	SignalExitFunction
 	SignalReturn
 	SignalError
+	SignalContinueLoop
 )
 
 type ExecResult struct {
@@ -257,6 +258,12 @@ type ExitNode struct {
 	ExitType string
 }
 
+type ContinueNode struct {
+	ContinueType string
+}
+
+//func (n *ContinueNode) stmtNode() {}
+
 func evalFunctionCall(name string, args []Expr, env *Environment) Value {
 	// 1. Array-Zugriff prüfen
 	// ACHTUNG: Get liefert jetzt (Value, bool)
@@ -458,7 +465,7 @@ func evalFunctionCall(name string, args []Expr, env *Environment) Value {
 	return ErrorVal(fmt.Sprintf("Funktion oder Sub '%s' nicht gefunden", name))
 }
 
-func (n *ExitNode) stmtNode() {}
+//func (n *ExitNode) stmtNode() {}
 
 var subs = make(map[string]*SubNode)
 var funcs = make(map[string]*FuncNode)
@@ -596,6 +603,9 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 				if sig == SignalExitLoop {
 					break
 				}
+				if sig == SignalContinueLoop {
+					continue
+				}
 				return rv, sig
 			}
 		}
@@ -619,6 +629,11 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 				if sig == SignalExitLoop {
 					break
 				}
+				if sig == SignalContinueLoop {
+					// Bei Do ... Loop Continue direkt zum nächsten
+					// Schleifendurchlauf.
+					continue
+				}
 				return rv, sig
 			}
 
@@ -640,6 +655,7 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 		if iterVal.Kind == KindError {
 			return iterVal, SignalError
 		}
+
 		keyPtr := env.GetRef(n.KeyVar)
 		var valPtr *Value
 		if n.ValVar != "" {
@@ -654,25 +670,28 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 				} else {
 					*keyPtr = val
 				}
+
 				rv, sig := evalStatements(n.Body, env)
 				if sig != SignalNone {
 					if sig == SignalExitLoop {
 						break
 					}
+					if sig == SignalContinueLoop {
+						continue
+					}
 					return rv, sig
 				}
 			}
+
 		} else if iterVal.Kind == KindArr2D {
 			for i, row := range iterVal.Arr2D {
-				// Wir wandeln die [][]Value Zeile in ein normales KindArr um
+				// Wir wandeln die [][]Value-Zeile in ein normales Array um.
 				rowVal := Value{Kind: KindArr, Arr: row}
 
 				if valPtr != nil {
-					// Falls zwei Variablen genutzt werden: FOR EACH i, row IN csvData
 					*keyPtr = NumVal(float64(i))
 					*valPtr = rowVal
 				} else {
-					// Falls nur eine Variable genutzt wird: FOR EACH row IN csvData
 					*keyPtr = rowVal
 				}
 
@@ -681,9 +700,13 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 					if sig == SignalExitLoop {
 						break
 					}
+					if sig == SignalContinueLoop {
+						continue
+					}
 					return rv, sig
 				}
 			}
+
 		} else if iterVal.Kind == KindMap {
 			for k, val := range iterVal.Map {
 				if valPtr != nil {
@@ -692,14 +715,19 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 				} else {
 					*keyPtr = val
 				}
+
 				rv, sig := evalStatements(n.Body, env)
 				if sig != SignalNone {
 					if sig == SignalExitLoop {
 						break
 					}
+					if sig == SignalContinueLoop {
+						continue
+					}
 					return rv, sig
 				}
 			}
+
 		} else {
 			return ErrorVal("FOR EACH: Erwartet Array oder Map"), SignalError
 		}
@@ -731,6 +759,10 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 			if sig != SignalNone {
 				if sig == SignalExitLoop {
 					break
+				}
+				if sig == SignalContinueLoop {
+					v += step
+					continue
 				}
 				return rv, sig
 			}
@@ -987,6 +1019,9 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 		default:
 			return Value{}, SignalExitLoop
 		}
+
+	case *ContinueNode:
+		return Value{}, SignalContinueLoop
 
 	case *MultiStmtNode:
 		// HIER SPAREN WIR DEN SPEICHER:

@@ -13,7 +13,9 @@ type Parser struct {
 	pos       int
 	Errors    []string
 	loopDepth int
+	loopStack []TokenType
 	env       *Environment
+	procStack []TokenType // <-- neu hinzufügen
 }
 
 type MapIndexNode struct {
@@ -187,8 +189,6 @@ func (p *Parser) parseBlock(context string, stopTokens ...TokenType) []Stmt {
 			}
 		}
 
-		// ... (Punkt 3 Schutz)
-
 		if p.peek().Type == EOF {
 			break
 		}
@@ -199,7 +199,6 @@ func (p *Parser) parseBlock(context string, stopTokens ...TokenType) []Stmt {
 		}
 	}
 
-	// Wenn wir hier landen und am EOF sind, hat jemand vergessen zuzumachen!
 	if p.peek().Type == EOF {
 		p.error("Struktur-Fehler: Datei-Ende erreicht, aber der '%s'-Block ist noch offen.", context)
 	}
@@ -802,10 +801,11 @@ func (p *Parser) parseStmt() Stmt {
 
 		// --- WICHTIG: Loop-Tracking starten ---
 		p.loopDepth++
+		p.loopStack = append(p.loopStack, FOR)
 
 		body := p.parseBlock("For", NEXT)
 
-		// --- WICHTIG: Loop-Tracking beenden ---
+		p.loopStack = p.loopStack[:len(p.loopStack)-1]
 		p.loopDepth--
 
 		if p.peek().Type == EOF {
@@ -832,11 +832,17 @@ func (p *Parser) parseStmt() Stmt {
 			p.error("Erwartet Sub-Name nach SUB")
 		}
 
+		if len(p.procStack) > 0 {
+			p.error("Eine 'Sub'-Deklaration ist innerhalb einer anderen Sub/Function nicht erlaubt (umgebend: '%v').", p.procStack[len(p.procStack)-1])
+		}
+
 		// Parameterliste parsen (z.B. "(a, b)")
 		params := p.parseParams()
 
 		// Der "Staubsauger": Liest alle Statements bis zum Wort 'END'
+		p.procStack = append(p.procStack, SUB)
 		body := p.parseBlock("Sub", END)
+		p.procStack = p.procStack[:len(p.procStack)-1]
 
 		// Prüft, ob danach wirklich 'Sub' folgt (für 'End Sub')
 		p.expectEnd(SUB)
@@ -846,11 +852,16 @@ func (p *Parser) parseStmt() Stmt {
 			Params: params,
 			Body:   body,
 		}
+
 	case FUNCTION:
 		p.next() // FUNCTION überspringen
 		nameTok := p.next()
 		if nameTok.Type != IDENT {
 			p.error("Erwartet Funktionsname nach FUNCTION")
+		}
+
+		if len(p.procStack) > 0 {
+			p.error("Eine 'Function'-Deklaration ist innerhalb einer anderen Sub/Function nicht erlaubt (umgebend: '%v').", p.procStack[len(p.procStack)-1])
 		}
 
 		params := p.parseParams()
@@ -863,7 +874,9 @@ func (p *Parser) parseStmt() Stmt {
 
 		// Nutzt die neue parseBlock-Logik
 		// Wir lesen alles bis zum Token 'END'
+		p.procStack = append(p.procStack, FUNCTION)
 		body := p.parseBlock("Function", END)
+		p.procStack = p.procStack[:len(p.procStack)-1]
 
 		// Validiert das Zwei-Wort-Ende: 'End Function'
 		p.expectEnd(FUNCTION)
@@ -873,6 +886,7 @@ func (p *Parser) parseStmt() Stmt {
 			Params: params,
 			Body:   body,
 		}
+
 	case RETURN:
 		p.next()
 		val := p.parseExpr()
@@ -882,9 +896,13 @@ func (p *Parser) parseStmt() Stmt {
 		p.next() // WHILE
 		cond := p.parseExpr()
 
-		p.loopDepth++ // <--- HINZUGEFÜGT
+		p.loopDepth++
+		p.loopStack = append(p.loopStack, WHILE)
+
 		body := p.parseBlock("While", END)
-		p.loopDepth-- // <--- HINZUGEFÜGT
+
+		p.loopStack = p.loopStack[:len(p.loopStack)-1]
+		p.loopDepth--
 
 		p.expectEnd(WHILE)
 		return &WhileNode{Condition: cond, Body: body}
@@ -907,7 +925,11 @@ func (p *Parser) parseStmt() Stmt {
 		}
 
 		p.loopDepth++
+		p.loopStack = append(p.loopStack, DO)
+
 		body := p.parseBlock("Do", LOOP)
+
+		p.loopStack = p.loopStack[:len(p.loopStack)-1]
 		p.loopDepth--
 
 		p.next() // LOOP
@@ -946,6 +968,29 @@ func (p *Parser) parseStmt() Stmt {
 		}
 
 		return &ExitNode{ExitType: exitType}
+
+	case CONTINUE:
+		p.next() // CONTINUE
+
+		if p.loopDepth == 0 {
+			p.error("'Continue' darf nur innerhalb einer Schleife verwendet werden.")
+		}
+
+		continueType := ""
+
+		switch p.peek().Type {
+		case FOR, WHILE, DO:
+			continueType = p.peek().Value
+			current := p.loopStack[len(p.loopStack)-1]
+			if p.peek().Type != current {
+				p.error("'Continue %s' passt nicht zur umgebenden Schleife (aktuell: '%v').", continueType, current)
+			}
+			p.next()
+		}
+
+		return &ContinueNode{
+			ContinueType: continueType,
+		}
 
 	case INCLUDE:
 		p.next() // include konsumieren

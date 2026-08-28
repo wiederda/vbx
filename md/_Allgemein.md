@@ -59,8 +59,8 @@ Modul-Hilfe: `vbx -modules=json -h`
 Müssen am Anfang des Skripts stehen.
 
 ```vbx
-1. #use zip
-2. #requires 1.0.23
+#use zip
+#requires 1.0.23
 ```
 
 `#use` – lädt optionale Module. `#requires` – Mindestversion der Runtime.
@@ -75,6 +75,14 @@ include "lib/helpers.vb"
 ```
 
 Relative Pfade, einmaliges Laden, rekursive Includes werden erkannt und Include-Schleifen führen zu einem Fehler.
+
+---
+
+## Namespaces
+
+**Permanent:** app.*, array.*, date.*, file.*, folder.*, global.*, math.*
+
+**Optional:** ad.*, cert.*, computer.*, convert.*, crypt.*, data.*, db.*, debug.*, docker.*, env.*, fin.*, geo.*, git.*, hash.*, ini.*, json.*, map.*, net.*, pgp.*, picture.*, pqc.*, proc.*, rand.*, reg.*, service.*, sftp.*, smtp.*, ssh.*, steg.*, string.*, tar.*, template.*, uptime-kuma.*, win.*, xml.*, yaml.*, zip.*
 
 ---
 
@@ -187,8 +195,11 @@ Print vbRed() & "Fehler" & vbNormal()
 | For Each | `For Each [k,] v In array / map` | `Next` |
 | While | `While bed` | `End While` |
 | Do Loop | `Do [While/Until bed]` … `Loop [While/Until bed]` | `Loop` |
+| Continue | `Continue For` / `Continue While` | – |
 | Exit | `Exit For` / `Exit While` / `Exit Do` / `Exit Sub` / `Exit Function` | – |
 | Sub | `Sub Name(param1, param2 [, Optional param3 = wert])` | `End Sub` |
 | Function | `Function Name(...)` … `Return wert` oder `Name = wert` | `End Function` |
 | Cls | `Cls()` | – |
 | Print | `Print wert` | – |
+
+`Continue For`/`Continue While` überspringen nur den Rest des aktuellen Durchlaufs (Schleife läuft weiter) – im Unterschied zu `Exit For`/`Exit While`, die die Schleife komplett beenden.

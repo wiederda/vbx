@@ -43,11 +43,12 @@ var keywords = map[string]TokenType{
 	"or":    OR,
 	"not":   NOT,
 
-	"while": WHILE,
-	"do":    DO,
-	"loop":  LOOP,
-	"until": UNTIL,
-	"exit":  EXIT,
+	"while":    WHILE,
+	"do":       DO,
+	"loop":     LOOP,
+	"until":    UNTIL,
+	"exit":     EXIT,
+	"continue": CONTINUE,
 
 	"case":   CASE,
 	"select": SELECT,
