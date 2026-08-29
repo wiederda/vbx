@@ -37,13 +37,7 @@ func InitGitFunctions() {
 	// ---------------------------------------------------------------
 
 	Register(ns+"Clone", "git", "url [, path]",
-		"Klont ein Git-Repository ohne Authentifizierung.\n\n"+
-			"Das Zielverzeichnis darf noch nicht existieren. Wird path weggelassen, wird der\n"+
-			"Verzeichnisname wie bei 'git clone' aus dem letzten Pfadsegment der URL abgeleitet\n"+
-			"(ohne '.git'-Endung), relativ zum aktuellen Arbeitsverzeichnis. Der Pfad wird\n"+
-			"anschließend über pathutils absolut aufgelöst.\n"+
-			"Parameter: url (String) - Repository-URL; path (String, optional) - Zielverzeichnis\n"+
-			"Rückgabe: Bool - true bei Erfolg",
+		"Klont ein Git-Repository ohne Authentifizierung. Rückgabe: Bool - true bei Erfolg",
 		func(args []Value) Value {
 
 			if len(args) < 1 {
@@ -78,17 +72,7 @@ func InitGitFunctions() {
 		})
 
 	Register(ns+"CloneWithToken", "git", "url, token [, path] [, username]",
-		"Klont ein Git-Repository per HTTPS mit Token-Authentifizierung.\n\n"+
-			"Das Zielverzeichnis darf noch nicht existieren. Wird path weggelassen, wird der\n"+
-			"Verzeichnisname wie bei 'git clone' aus dem letzten Pfadsegment der URL abgeleitet\n"+
-			"(ohne '.git'-Endung), relativ zum aktuellen Arbeitsverzeichnis. Der Pfad wird\n"+
-			"anschließend über pathutils absolut aufgelöst.\n"+
-			"Der Username ist optional. Wenn kein Username angegeben wird, wird\n"+
-			"'x-access-token' verwendet.\n"+
-			"Parameter: url (String) - HTTPS-Repository-URL; token (String) - Zugriffstoken;\n"+
-			"path (String, optional) - Zielverzeichnis; username (String, optional) - Benutzername\n"+
-			"für Basic-Auth\n"+
-			"Rückgabe: Bool - true bei Erfolg",
+		"Klont ein Git-Repository per HTTPS mit Token-Authentifizierung. Rückgabe: Bool - true bei Erfolg",
 		func(args []Value) Value {
 
 			if len(args) < 2 {
@@ -142,20 +126,7 @@ func InitGitFunctions() {
 		})
 
 	Register(ns+"CloneWithKey", "git", "url, keyPath [, path] [, knownHostsPath]",
-		"Klont ein Git-Repository per SSH mit Schlüssel-Authentifizierung.\n\n"+
-			"Das Zielverzeichnis darf noch nicht existieren. Wird path weggelassen, wird der\n"+
-			"Verzeichnisname wie bei 'git clone' aus dem letzten Pfadsegment der URL abgeleitet\n"+
-			"(ohne '.git'-Endung), relativ zum aktuellen Arbeitsverzeichnis. Ziel- und\n"+
-			"Schlüsselpfad werden über pathutils absolut aufgelöst.\n"+
-			"Konkret: Nutzt einen privaten SSH-Key statt Passwort oder Agent. Der Host-Key wird\n"+
-			"wie bei sftp.ConnectWithKey / ssh.RebootWithKey behandelt: Mit knownHostsPath wird\n"+
-			"gegen eine known_hosts-Datei geprüft (TOFU - unbekannte Hosts werden beim ersten\n"+
-			"Kontakt automatisch eingetragen). Ohne knownHostsPath wird der Host-Key ungeprüft\n"+
-			"akzeptiert.\n"+
-			"Parameter: url (String) - SSH-URL (git@host:user/repo.git); keyPath (String) - Pfad\n"+
-			"zum privaten SSH-Schlüssel; path (String, optional) - Zielverzeichnis;\n"+
-			"knownHostsPath (String, optional) - Pfad zur known_hosts-Datei\n"+
-			"Rückgabe: Bool - true bei Erfolg",
+		"Klont ein Git-Repository per SSH mit Schlüssel-Authentifizierung. Rückgabe: Bool - true bei Erfolg",
 		func(args []Value) Value {
 
 			if len(args) < 2 {
@@ -218,20 +189,7 @@ func InitGitFunctions() {
 	// ---------------------------------------------------------------
 
 	Register(ns+"Pull", "git", "[path] [, keyPath] [, knownHostsPath] [, token] [, username]",
-		"Holt Änderungen vom Remote und führt sie in den aktuellen Branch zusammen.\n\n"+
-			"Konkret: Entspricht 'git pull' auf dem aktuell ausgecheckten Branch (Fast-Forward).\n"+
-			"Wird path weggelassen, wird das aktuelle Arbeitsverzeichnis verwendet. Für\n"+
-			"authentifizierte Remotes: entweder keyPath (SSH, optional mit knownHostsPath für\n"+
-			"TOFU-Host-Key-Prüfung wie bei git.CloneWithKey) oder token (HTTPS, optional mit\n"+
-			"username, Standard 'x-access-token') angeben. Ist keins von beiden gesetzt, läuft\n"+
-			"der Pull ohne Auth (nur für unauthentifizierte Remotes ausreichend). Um einen\n"+
-			"späteren Parameter zu setzen, ohne einen davorliegenden zu verwenden, einen leeren\n"+
-			"String übergeben.\n"+
-			"Parameter: path (String, optional) - Repository-Pfad; keyPath (String, optional) -\n"+
-			"Pfad zum privaten SSH-Schlüssel; knownHostsPath (String, optional) - Pfad zur\n"+
-			"known_hosts-Datei; token (String, optional) - HTTPS-Zugriffstoken; username\n"+
-			"(String, optional) - Benutzername für Basic-Auth\n"+
-			"Rückgabe: Bool - true bei Erfolg (auch wenn bereits aktuell)",
+		"Holt Änderungen vom Remote und führt sie in den aktuellen Branch zusammen. Rückgabe: Bool - true bei Erfolg (auch wenn bereits aktuell)",
 		func(args []Value) Value {
 			rawPath := ""
 			if len(args) >= 1 {
@@ -278,20 +236,7 @@ func InitGitFunctions() {
 		})
 
 	Register(ns+"Push", "git", "[path] [, keyPath] [, knownHostsPath] [, token] [, username]",
-		"Sendet lokale Commits an den Remote.\n\n"+
-			"Konkret: Entspricht 'git push' auf dem aktuellen Branch zum konfigurierten Remote\n"+
-			"'origin'. Wird path weggelassen, wird das aktuelle Arbeitsverzeichnis verwendet. Für\n"+
-			"authentifizierte Remotes: entweder keyPath (SSH, optional mit knownHostsPath für\n"+
-			"TOFU-Host-Key-Prüfung wie bei git.CloneWithKey) oder token (HTTPS, optional mit\n"+
-			"username, Standard 'x-access-token') angeben. Ist keins von beiden gesetzt, läuft\n"+
-			"der Push ohne Auth (nur für unauthentifizierte Remotes ausreichend). Um einen\n"+
-			"späteren Parameter zu setzen, ohne einen davorliegenden zu verwenden, einen leeren\n"+
-			"String übergeben.\n"+
-			"Parameter: path (String, optional) - Repository-Pfad; keyPath (String, optional) -\n"+
-			"Pfad zum privaten SSH-Schlüssel; knownHostsPath (String, optional) - Pfad zur\n"+
-			"known_hosts-Datei; token (String, optional) - HTTPS-Zugriffstoken; username\n"+
-			"(String, optional) - Benutzername für Basic-Auth\n"+
-			"Rückgabe: Bool - true bei Erfolg (auch wenn nichts zu pushen war)",
+		"Sendet lokale Commits an den Remote. Rückgabe: Bool - true bei Erfolg (auch wenn nichts zu pushen war)",
 		func(args []Value) Value {
 			rawPath := ""
 			if len(args) >= 1 {
@@ -331,20 +276,7 @@ func InitGitFunctions() {
 		})
 
 	Register(ns+"Fetch", "git", "[path] [, keyPath] [, knownHostsPath] [, token] [, username]",
-		"Holt Änderungen vom Remote, ohne sie zu übernehmen.\n\n"+
-			"Konkret: Entspricht 'git fetch'. Aktualisiert Remote-Tracking-Branches, ohne den\n"+
-			"Arbeitsbereich zu verändern. Wird path weggelassen, wird das aktuelle\n"+
-			"Arbeitsverzeichnis verwendet. Für authentifizierte Remotes: entweder keyPath (SSH,\n"+
-			"optional mit knownHostsPath für TOFU-Host-Key-Prüfung wie bei git.CloneWithKey)\n"+
-			"oder token (HTTPS, optional mit username, Standard 'x-access-token') angeben. Ist\n"+
-			"keins von beiden gesetzt, läuft der Fetch ohne Auth (nur für unauthentifizierte\n"+
-			"Remotes ausreichend). Um einen späteren Parameter zu setzen, ohne einen\n"+
-			"davorliegenden zu verwenden, einen leeren String übergeben.\n"+
-			"Parameter: path (String, optional) - Repository-Pfad; keyPath (String, optional) -\n"+
-			"Pfad zum privaten SSH-Schlüssel; knownHostsPath (String, optional) - Pfad zur\n"+
-			"known_hosts-Datei; token (String, optional) - HTTPS-Zugriffstoken; username\n"+
-			"(String, optional) - Benutzername für Basic-Auth\n"+
-			"Rückgabe: Bool - true bei Erfolg (auch wenn bereits aktuell)",
+		"Holt Änderungen vom Remote, ohne sie zu übernehmen. Rückgabe: Bool - true bei Erfolg (auch wenn bereits aktuell)",
 		func(args []Value) Value {
 			rawPath := ""
 			if len(args) >= 1 {
@@ -388,12 +320,7 @@ func InitGitFunctions() {
 	// ---------------------------------------------------------------
 
 	Register(ns+"Add", "git", "pattern [, path]",
-		"Fügt Dateien zum Git-Index hinzu (staging).\n\n"+
-			"Konkret: Entspricht 'git add'. Nimmt einen Dateipfad relativ zum Repo-Root.\n"+
-			"Wird path weggelassen, wird das aktuelle Arbeitsverzeichnis verwendet.\n"+
-			"Parameter: pattern (String) - Dateipfad relativ zum Repo-Root;\n"+
-			"path (String, optional) - Repository-Pfad\n"+
-			"Rückgabe: Bool - true bei Erfolg",
+		"Fügt Dateien zum Git-Index hinzu (staging). Rückgabe: Bool - true bei Erfolg",
 		func(args []Value) Value {
 			if len(args) < 1 {
 				return ErrorVal("git.Add: Erwartet mindestens pattern.")
@@ -438,11 +365,7 @@ func InitGitFunctions() {
 		})
 
 	Register(ns+"Commit", "git", "message [, path]",
-		"Erstellt einen Commit mit allen gestagten Änderungen.\n\n"+
-			"Konkret: Entspricht 'git commit -m'. Autor wird als 'VBX <vbx@localhost>' gesetzt.\n"+
-			"Wird path weggelassen, wird das aktuelle Arbeitsverzeichnis verwendet.\n"+
-			"Parameter: message (String) - Commit-Nachricht; path (String, optional) - Repository-Pfad\n"+
-			"Rückgabe: String - Hash des erzeugten Commits",
+		"Erstellt einen Commit mit allen gestagten Änderungen. Rückgabe: String - Hash des erzeugten Commits",
 		func(args []Value) Value {
 			if len(args) < 1 {
 				return ErrorVal("git.Commit: Erwartet mindestens message.")
@@ -493,12 +416,7 @@ func InitGitFunctions() {
 		})
 
 	Register(ns+"Remove", "git", "pattern [, path]",
-		"Entfernt eine Datei aus Git-Index und Arbeitsverzeichnis.\n\n"+
-			"Konkret: Entspricht 'git rm'. Löscht die Datei physisch und entfernt sie aus dem Index.\n"+
-			"Wird path weggelassen, wird das aktuelle Arbeitsverzeichnis verwendet.\n"+
-			"Parameter: pattern (String) - Dateipfad relativ zum Repo-Root;\n"+
-			"path (String, optional) - Repository-Pfad\n"+
-			"Rückgabe: Bool - true bei Erfolg",
+		"Entfernt eine Datei aus Git-Index und Arbeitsverzeichnis. Rückgabe: Bool - true bei Erfolg",
 		func(args []Value) Value {
 			if len(args) < 1 {
 				return ErrorVal("git.Remove: Erwartet mindestens pattern.")
@@ -543,24 +461,7 @@ func InitGitFunctions() {
 		})
 
 	Register(ns+"QuickPush", "git", "message [, pattern] [, path] [, keyPath] [, knownHostsPath] [, token] [, username]",
-		"Stagt alle Änderungen, erstellt einen Commit und pusht ihn - in einem Aufruf.\n\n"+
-			"Konkret: Entspricht dem Dreischritt 'git add' + 'git commit -m' + 'git push',\n"+
-			"wie es z.B. der 'Commit & Push'/'Sync'-Knopf in VSCode macht. KEIN Force-Push -\n"+
-			"schlägt der Push fehl (z.B. weil der Remote neuere Commits hat), wird ein Fehler\n"+
-			"zurückgegeben; der lokale Commit bleibt in diesem Fall bestehen. Autor wird wie bei\n"+
-			"git.Commit als 'VBX <vbx@localhost>' gesetzt. Wird path weggelassen, wird das\n"+
-			"aktuelle Arbeitsverzeichnis verwendet. Für authentifizierte Remotes: entweder\n"+
-			"keyPath (SSH, optional mit knownHostsPath für TOFU-Host-Key-Prüfung wie bei\n"+
-			"git.CloneWithKey) oder token (HTTPS, optional mit username, Standard\n"+
-			"'x-access-token') angeben. Um einen späteren Parameter zu setzen, ohne einen\n"+
-			"davorliegenden zu verwenden, einen leeren String übergeben.\n"+
-			"Parameter: message (String) - Commit-Nachricht; pattern (String, optional) -\n"+
-			"zu stagender Pfad relativ zum Repo-Root (Standard: '.', also alle Änderungen);\n"+
-			"path (String, optional) - Repository-Pfad; keyPath (String, optional) - Pfad zum\n"+
-			"privaten SSH-Schlüssel; knownHostsPath (String, optional) - Pfad zur\n"+
-			"known_hosts-Datei; token (String, optional) - HTTPS-Zugriffstoken; username\n"+
-			"(String, optional) - Benutzername für Basic-Auth\n"+
-			"Rückgabe: String - Hash des erzeugten Commits",
+		"Stagt alle Änderungen, erstellt einen Commit und pusht ihn – in einem Aufruf. Rückgabe: String - Hash des erzeugten Commits",
 		func(args []Value) Value {
 			if len(args) < 1 {
 				return ErrorVal("git.QuickPush: Erwartet mindestens message.")
@@ -641,12 +542,7 @@ func InitGitFunctions() {
 	// ---------------------------------------------------------------
 
 	Register(ns+"Status", "git", "[path]",
-		"Liefert den Status des Arbeitsverzeichnisses.\n\n"+
-			"Konkret: Entspricht 'git status'. Zeigt geänderte, neu hinzugefügte, gelöschte und\n"+
-			"unversionierte Dateien. Wird path weggelassen, wird das aktuelle Arbeitsverzeichnis\n"+
-			"verwendet.\n"+
-			"Parameter: path (String, optional) - Repository-Pfad\n"+
-			"Rückgabe: Map mit Arrays 'modified', 'added', 'deleted', 'untracked' (jeweils Dateipfade)",
+		"Liefert den Status des Arbeitsverzeichnisses. Rückgabe: Map mit Arrays 'modified', 'added', 'deleted', 'untracked' (jeweils Dateipfade)",
 		func(args []Value) Value {
 			rawPath := ""
 			if len(args) >= 1 {
@@ -728,12 +624,7 @@ func InitGitFunctions() {
 		})
 
 	Register(ns+"Log", "git", "[limit] [, path]",
-		"Liefert die Commit-Historie.\n\n"+
-			"Konkret: Entspricht 'git log --oneline' (erweitert um Autor und Datum), ausgehend von HEAD.\n"+
-			"Wird path weggelassen, wird das aktuelle Arbeitsverzeichnis verwendet.\n"+
-			"Parameter: limit (Zahl, optional) - maximale Anzahl Commits (0 oder weggelassen = alle);\n"+
-			"path (String, optional) - Repository-Pfad\n"+
-			"Rückgabe: Array von Maps mit 'hash', 'author', 'message', 'date'",
+		"Liefert die Commit-Historie. Rückgabe: Array von Maps mit 'hash', 'author', 'message', 'date'",
 		func(args []Value) Value {
 			limit := 0
 			if len(args) >= 1 {
@@ -819,14 +710,7 @@ func InitGitFunctions() {
 		})
 
 	Register(ns+"Diff", "git", "commitA [, commitB] [, path]",
-		"Zeigt den Diff zwischen zwei Commits.\n\n"+
-			"Konkret: Entspricht 'git diff <commitA> <commitB>'. Wird commitB weggelassen oder\n"+
-			"leer gelassen, bedeutet das: Vergleich gegen HEAD. Ein Diff gegen das unversionierte\n"+
-			"Arbeitsverzeichnis (wie 'git diff' ohne Argumente) wird nicht unterstützt. Wird path\n"+
-			"weggelassen, wird das aktuelle Arbeitsverzeichnis verwendet.\n"+
-			"Parameter: commitA (String) - älterer Commit-Hash; commitB (String, optional) -\n"+
-			"neuerer Commit-Hash, leer/weggelassen für HEAD; path (String, optional) - Repository-Pfad\n"+
-			"Rückgabe: String - unified Diff",
+		"Zeigt den Diff zwischen zwei Commits. Rückgabe: String - unified Diff",
 		func(args []Value) Value {
 			if len(args) < 1 {
 				return ErrorVal("git.Diff: Erwartet mindestens commitA.")
@@ -919,14 +803,7 @@ func InitGitFunctions() {
 	// ---------------------------------------------------------------
 
 	Register(ns+"ResetHard", "git", "commitHash [, path]",
-		"Setzt das Repository hart auf einen bestimmten Commit zurück.\n\n"+
-			"Konkret: Entspricht 'git reset --hard <hash>'. Alle lokalen Änderungen und Commits\n"+
-			"nach diesem Hash gehen unwiderruflich verloren. Typischer Anwendungsfall:\n"+
-			"'git log --oneline' -> letzten funktionierenden Commit finden -> hierher zurücksetzen.\n"+
-			"Wird path weggelassen, wird das aktuelle Arbeitsverzeichnis verwendet.\n"+
-			"Parameter: commitHash (String) - Ziel-Commit-Hash (voll oder gekürzt);\n"+
-			"path (String, optional) - Repository-Pfad\n"+
-			"Rückgabe: Bool - true bei Erfolg",
+		"Setzt das Repository hart auf einen bestimmten Commit zurück. Rückgabe: Bool - true bei Erfolg",
 		func(args []Value) Value {
 			if len(args) < 1 {
 				return ErrorVal("git.ResetHard: Erwartet mindestens commitHash.")
@@ -981,13 +858,7 @@ func InitGitFunctions() {
 		})
 
 	Register(ns+"Reset", "git", "[mode] [, path]",
-		"Hebt das Staging von Änderungen auf (unstage), ohne Dateien im Arbeitsverzeichnis\n"+
-			"zu verändern.\n\n"+
-			"Konkret: Entspricht 'git reset' (mixed, Standard) oder 'git reset --soft'. Wird path\n"+
-			"weggelassen, wird das aktuelle Arbeitsverzeichnis verwendet.\n"+
-			"Parameter: mode (String, optional) - 'mixed' (Standard) oder 'soft';\n"+
-			"path (String, optional) - Repository-Pfad\n"+
-			"Rückgabe: Bool - true bei Erfolg",
+		"Hebt das Staging von Änderungen auf, ohne Dateien im Arbeitsverzeichnis zu verändern. Rückgabe: Bool - true bei Erfolg",
 		func(args []Value) Value {
 			mode := "mixed"
 			if len(args) >= 1 && args[0].Str != "" {
@@ -1052,11 +923,7 @@ func InitGitFunctions() {
 	// ---------------------------------------------------------------
 
 	Register(ns+"CurrentBranch", "git", "[path]",
-		"Liefert den Namen des aktuell ausgecheckten Branches.\n\n"+
-			"Konkret: Liest den kurzen Branch-Namen aus HEAD. Wird path weggelassen, wird das\n"+
-			"aktuelle Arbeitsverzeichnis verwendet.\n"+
-			"Parameter: path (String, optional) - Repository-Pfad\n"+
-			"Rückgabe: String - Branch-Name (z.B. 'main')",
+		"Liefert den Namen des aktuell ausgecheckten Branches. Rückgabe: String - Branch-Name (z.B. 'main')",
 		func(args []Value) Value {
 			rawPath := ""
 			if len(args) >= 1 {
@@ -1089,12 +956,7 @@ func InitGitFunctions() {
 		})
 
 	Register(ns+"Checkout", "git", "branch [, create] [, path]",
-		"Wechselt den Branch oder erstellt einen neuen.\n\n"+
-			"Konkret: Entspricht 'git checkout <branch>' bzw. mit create=true 'git checkout -b <branch>'.\n"+
-			"Wird path weggelassen, wird das aktuelle Arbeitsverzeichnis verwendet.\n"+
-			"Parameter: branch (String) - Branch-Name; create (Bool, optional) - true, um den\n"+
-			"Branch neu anzulegen (Standard: false); path (String, optional) - Repository-Pfad\n"+
-			"Rückgabe: Bool - true bei Erfolg",
+		"Wechselt den Branch oder erstellt einen neuen. Rückgabe: Bool - true bei Erfolg",
 		func(args []Value) Value {
 			if len(args) < 1 {
 				return ErrorVal("git.Checkout: Erwartet mindestens branch.")
@@ -1147,11 +1009,7 @@ func InitGitFunctions() {
 		})
 
 	Register(ns+"IsRepo", "git", "[path]",
-		"Prüft, ob ein Verzeichnis ein gültiges Git-Repository ist.\n\n"+
-			"Konkret: Prüft auf Vorhandensein eines gültigen '.git'-Verzeichnisses. Wird path\n"+
-			"weggelassen, wird das aktuelle Arbeitsverzeichnis geprüft.\n"+
-			"Parameter: path (String, optional) - zu prüfender Pfad\n"+
-			"Rückgabe: Bool - true, wenn gültiges Repository",
+		"Prüft, ob ein Verzeichnis ein gültiges Git-Repository ist. Rückgabe: Bool - true, wenn gültiges Repository",
 		func(args []Value) Value {
 			rawPath := ""
 			if len(args) >= 1 {

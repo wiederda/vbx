@@ -767,7 +767,7 @@ func InitFileFunctions() {
 		})
 
 	// ---------------- Hash ----------------
-	Register(ns+"Hash", "file", "path [, algo]", "...", func(args []Value) Value {
+	Register(ns+"Hash", "file", "path [, algo]", "Berechnet den Hash-Wert einer Datei und gibt ihn als Hex-String zurück.", func(args []Value) Value {
 		if len(args) < 1 {
 			return ErrorVal("file.Hash(path [, algo]) benötigt mindestens einen Pfad")
 		}
