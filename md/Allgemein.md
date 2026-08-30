@@ -187,19 +187,21 @@ Print vbRed() & "Fehler" & vbNormal()
 
 ## Kontrollstrukturen
 
-| Struktur | Syntax-Skelett | Abschluss |
-|---|---|---|
-| If | `If bed Then` … `[ElseIf bed Then …]` `[Else …]` | `End If` |
-| Select Case | `Select Case ausdruck` `Case wert / wert1, wert2 / x To y / Is > x` `[Case Else]` | `End Select` |
-| For | `For i = start To end [Step n]` | `Next [i]` |
-| For Each | `For Each [k,] v In array / map` | `Next` |
-| While | `While bed` | `End While` |
-| Do Loop | `Do [While/Until bed]` … `Loop [While/Until bed]` | `Loop` |
-| Continue | `Continue For` / `Continue While` | – |
-| Exit | `Exit For` / `Exit While` / `Exit Do` / `Exit Sub` / `Exit Function` | – |
-| Sub | `Sub Name(param1, param2 [, Optional param3 = wert])` | `End Sub` |
-| Function | `Function Name(...)` … `Return wert` oder `Name = wert` | `End Function` |
-| Cls | `Cls()` | – |
-| Print | `Print wert` | – |
+| Struktur        | Syntax-Skelett                                                                        | Abschluss      |
+| --------------- | ------------------------------------------------------------------------------------- | -------------- |
+| **If**          | `If bed Then` … `[ElseIf bed Then …]` `[Else …]`                                      | `End If`       |
+| **Select Case** | `Select Case ausdruck` `Case wert / wert1, wert2 / x To y / Is > x` `[Case Else]`     | `End Select`   |
+| **For**         | `For i = start To end [Step n]`                                                       | `Next [i]`     |
+| **For Each**    | `For Each v In array / 2D-array / map` oder `For Each k, v In array / 2D-array / map` | `Next [v]`     |
+| **While**       | `While bed`                                                                           | `End While`    |
+| **Do Loop**     | `Do [While/Until bed]` … `Loop [While/Until bed]`                                     | `Loop`         |
+| **Continue**    | `Continue For` / `Continue While` / `Continue Do`                                     | –              |
+| **Exit**        | `Exit For` / `Exit While` / `Exit Do` / `Exit Sub` / `Exit Function`                  | –              |
+| **Sub**         | `Sub Name(param1, param2 [, Optional param3 = wert])`                                 | `End Sub`      |
+| **Function**    | `Function Name(...)` … `Return wert` oder `Name = wert`                               | `End Function` |
+| **Cls**         | `Cls()`                                                                               | –              |
+| **Print**       | `Print wert`                                                                          | –              |
 
-`Continue For`/`Continue While` überspringen nur den Rest des aktuellen Durchlaufs (Schleife läuft weiter) – im Unterschied zu `Exit For`/`Exit While`, die die Schleife komplett beenden.
+`For Each` unterstützt 1D-Arrays, 2D-Arrays und Maps. Bei einem 1D-Array wird über die einzelnen Elemente iteriert. Bei einem 2D-Array wird über die einzelnen Zeilen iteriert. Bei einer Map wird über die Schlüssel und Werte iteriert.
+
+`Continue For`, `Continue While` und `Continue Do` überspringen nur den Rest des aktuellen Schleifendurchlaufs und setzen die Schleife mit dem nächsten Durchlauf fort. Im Unterschied dazu beenden `Exit For`, `Exit While` und `Exit Do` die jeweilige Schleife vollständig.

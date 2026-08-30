@@ -236,6 +236,7 @@ func (p *Parser) parseForEach() Stmt {
 
 	keyVar := p.expectIdentifier()
 	var valVar string
+
 	if p.match(COMMA) {
 		valVar = p.expectIdentifier()
 	}
@@ -250,13 +251,15 @@ func (p *Parser) parseForEach() Stmt {
 		p.next()
 	}
 
-	// --- WICHTIG: LOOP DEPTH ERHÖHEN ---
+	// --- Loop-Tracking starten ---
+	// For Each ist für Continue/Exit vom Typ FOR.
 	p.loopDepth++
+	p.loopStack = append(p.loopStack, FOR)
 
-	// Body bis NEXT lesen
 	body := p.parseBlock("Next", NEXT)
 
-	// --- WICHTIG: LOOP DEPTH VERRINGERN ---
+	// --- Loop-Tracking beenden ---
+	p.loopStack = p.loopStack[:len(p.loopStack)-1]
 	p.loopDepth--
 
 	if p.peek().Type == EOF {
@@ -266,7 +269,7 @@ func (p *Parser) parseForEach() Stmt {
 	// NEXT konsumieren
 	p.next()
 
-	// Optional: NEXT i
+	// Optional: NEXT n
 	if p.peek().Type == IDENT && p.peek().Value == keyVar {
 		p.next()
 	}
@@ -276,8 +279,6 @@ func (p *Parser) parseForEach() Stmt {
 		ValVar:   valVar,
 		Iterable: iterable,
 		Body:     body,
-		// Falls ForEachNode auch ein InLoop-Feld braucht:
-		// InLoop: p.loopDepth > 0,
 	}
 }
 
@@ -972,7 +973,7 @@ func (p *Parser) parseStmt() Stmt {
 	case CONTINUE:
 		p.next() // CONTINUE
 
-		if p.loopDepth == 0 {
+		if p.loopDepth == 0 || len(p.loopStack) == 0 {
 			p.error("'Continue' darf nur innerhalb einer Schleife verwendet werden.")
 		}
 
@@ -982,9 +983,12 @@ func (p *Parser) parseStmt() Stmt {
 		case FOR, WHILE, DO:
 			continueType = p.peek().Value
 			current := p.loopStack[len(p.loopStack)-1]
+
 			if p.peek().Type != current {
-				p.error("'Continue %s' passt nicht zur umgebenden Schleife (aktuell: '%v').", continueType, current)
+				p.error("'Continue %s' passt nicht zur umgebenden Schleife (aktuell: '%v').",
+					continueType, current)
 			}
+
 			p.next()
 		}
 
