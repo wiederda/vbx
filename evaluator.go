@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
+	"sort"
 	"strings"
 	"time"
 )
@@ -389,14 +390,9 @@ func evalFunctionCall(name string, args []Expr, env *Environment) Value {
 	}
 
 	// --- 4. User-defined FUNCTION ---
-	// --- 4. User-defined FUNCTION ---
 	if fn, ok := funcs[name]; ok {
-		required := 0
-		for _, p := range fn.Params {
-			if !p.IsOptional {
-				required++
-			}
-		}
+		required := fn.RequiredParams
+
 		if len(evaluated) < required || len(evaluated) > len(fn.Params) {
 			return ErrorVal(fmt.Sprintf("Funktion '%s' erwartet %d bis %d Argumente, erhalten: %d",
 				name, required, len(fn.Params), len(evaluated)))
@@ -429,14 +425,9 @@ func evalFunctionCall(name string, args []Expr, env *Environment) Value {
 	}
 
 	// --- 5. User-defined SUB ---
-	// --- 5. User-defined SUB ---
 	if s, ok := subs[name]; ok {
-		required := 0
-		for _, p := range s.Params {
-			if !p.IsOptional {
-				required++
-			}
-		}
+		required := s.RequiredParams
+
 		if len(evaluated) < required || len(evaluated) > len(s.Params) {
 			return ErrorVal(fmt.Sprintf("Sub '%s' erwartet %d bis %d Argumente, erhalten: %d",
 				name, required, len(s.Params), len(evaluated)))
@@ -590,6 +581,18 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 		return NullVal(), SignalNone
 
 	case *WhileNode:
+		runBody := func() (Value, Signal, bool) {
+			rv, sig := evalStatements(n.Body, env)
+			switch sig {
+			case SignalNone, SignalContinueLoop:
+				return Value{}, SignalNone, false
+			case SignalExitLoop:
+				return Value{}, SignalNone, true
+			default:
+				return rv, sig, true
+			}
+		}
+
 		for {
 			cond := evalExpr(n.Condition, env)
 			if cond.Kind == KindError {
@@ -598,19 +601,30 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 			if !isTruthy(cond) {
 				break
 			}
-			rv, sig := evalStatements(n.Body, env)
-			if sig != SignalNone {
-				if sig == SignalExitLoop {
-					break
+			if rv, sig, stop := runBody(); stop {
+				if sig != SignalNone {
+					return rv, sig
 				}
-				if sig == SignalContinueLoop {
-					continue
-				}
-				return rv, sig
+				break
 			}
 		}
 
 	case *DoLoopNode:
+		runBody := func() (Value, Signal, bool) {
+			rv, sig := evalStatements(n.Body, env)
+			switch sig {
+			case SignalNone:
+				return Value{}, SignalNone, false
+			case SignalContinueLoop:
+				// Bei Do ... Loop: direkt zum nächsten Durchlauf, Fuß-Bedingung überspringen
+				return Value{}, SignalContinueLoop, false
+			case SignalExitLoop:
+				return Value{}, SignalNone, true
+			default:
+				return rv, sig, true
+			}
+		}
+
 		for {
 			// Kopf-Bedingung
 			if !n.CheckAtEnd && n.Condition != nil {
@@ -618,23 +632,20 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 				if cond.Kind == KindError {
 					return cond, SignalError
 				}
-				shouldBreak := n.IsUntil == isTruthy(cond)
-				if shouldBreak {
+				if n.IsUntil == isTruthy(cond) {
 					break
 				}
 			}
 
-			rv, sig := evalStatements(n.Body, env)
-			if sig != SignalNone {
-				if sig == SignalExitLoop {
-					break
+			rv, sig, stop := runBody()
+			if stop {
+				if sig != SignalNone {
+					return rv, sig
 				}
-				if sig == SignalContinueLoop {
-					// Bei Do ... Loop Continue direkt zum nächsten
-					// Schleifendurchlauf.
-					continue
-				}
-				return rv, sig
+				break
+			}
+			if sig == SignalContinueLoop {
+				continue
 			}
 
 			// Fuß-Bedingung
@@ -643,8 +654,7 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 				if cond.Kind == KindError {
 					return cond, SignalError
 				}
-				shouldBreak := n.IsUntil == isTruthy(cond)
-				if shouldBreak {
+				if n.IsUntil == isTruthy(cond) {
 					break
 				}
 			}
@@ -662,6 +672,22 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 			valPtr = env.GetRef(n.ValVar)
 		}
 
+		// runBody führt den Loop-Body aus und übersetzt das Signal in:
+		// - stop=false: weiter zur nächsten Iteration (None/Continue)
+		// - stop=true, sig==None: Schleife regulär beenden (ExitLoop)
+		// - stop=true, sig!=None: Signal nach außen durchreichen (z.B. Return)
+		runBody := func() (Value, Signal, bool) {
+			rv, sig := evalStatements(n.Body, env)
+			switch sig {
+			case SignalNone, SignalContinueLoop:
+				return Value{}, SignalNone, false
+			case SignalExitLoop:
+				return Value{}, SignalNone, true
+			default:
+				return rv, sig, true
+			}
+		}
+
 		if iterVal.Kind == KindArr {
 			for i, val := range iterVal.Arr {
 				if valPtr != nil {
@@ -671,15 +697,11 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 					*keyPtr = val
 				}
 
-				rv, sig := evalStatements(n.Body, env)
-				if sig != SignalNone {
-					if sig == SignalExitLoop {
-						break
+				if rv, sig, stop := runBody(); stop {
+					if sig != SignalNone {
+						return rv, sig
 					}
-					if sig == SignalContinueLoop {
-						continue
-					}
-					return rv, sig
+					break
 				}
 			}
 
@@ -695,20 +717,24 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 					*keyPtr = rowVal
 				}
 
-				rv, sig := evalStatements(n.Body, env)
-				if sig != SignalNone {
-					if sig == SignalExitLoop {
-						break
+				if rv, sig, stop := runBody(); stop {
+					if sig != SignalNone {
+						return rv, sig
 					}
-					if sig == SignalContinueLoop {
-						continue
-					}
-					return rv, sig
+					break
 				}
 			}
 
 		} else if iterVal.Kind == KindMap {
-			for k, val := range iterVal.Map {
+			keys := make([]string, 0, len(iterVal.Map))
+			for k := range iterVal.Map {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+
+			for _, k := range keys {
+				val := iterVal.Map[k]
+
 				if valPtr != nil {
 					*keyPtr = StrVal(k)
 					*valPtr = val
@@ -716,15 +742,11 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 					*keyPtr = val
 				}
 
-				rv, sig := evalStatements(n.Body, env)
-				if sig != SignalNone {
-					if sig == SignalExitLoop {
-						break
+				if rv, sig, stop := runBody(); stop {
+					if sig != SignalNone {
+						return rv, sig
 					}
-					if sig == SignalContinueLoop {
-						continue
-					}
-					return rv, sig
+					break
 				}
 			}
 
@@ -748,6 +770,19 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 			return ErrorVal("FOR mit STEP 0 ist nicht erlaubt"), SignalError
 		}
 		varPtr := env.GetRef(n.VarName)
+
+		runBody := func() (Value, Signal, bool) {
+			rv, sig := evalStatements(n.Body, env)
+			switch sig {
+			case SignalNone, SignalContinueLoop:
+				return Value{}, SignalNone, false
+			case SignalExitLoop:
+				return Value{}, SignalNone, true
+			default:
+				return rv, sig, true
+			}
+		}
+
 		v := startNum
 		for {
 			if (step > 0 && v > endNum) || (step < 0 && v < endNum) {
@@ -755,16 +790,12 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 			}
 			varPtr.Kind = KindNum
 			varPtr.Num = v
-			rv, sig := evalStatements(n.Body, env)
-			if sig != SignalNone {
-				if sig == SignalExitLoop {
-					break
+
+			if rv, sig, stop := runBody(); stop {
+				if sig != SignalNone {
+					return rv, sig
 				}
-				if sig == SignalContinueLoop {
-					v += step
-					continue
-				}
-				return rv, sig
+				break
 			}
 			v += step
 		}
@@ -1187,17 +1218,25 @@ func evalExpr(e Expr, env *Environment) Value {
 		return NilValue
 
 	case *VarNode:
-		// 1. Punkt-Notation (Objekte)
-		if strings.Contains(n.Name, ".") {
-			parts := strings.SplitN(n.Name, ".", 2)
-			objVal, found := env.Get(parts[0])
+		// 1. Punkt-Notation (Objekte) — einmalig prüfen und cachen
+		if !n.dotChecked {
+			if idx := strings.IndexByte(n.Name, '.'); idx >= 0 {
+				n.isDotted = true
+				n.objName = n.Name[:idx]
+				n.fieldName = n.Name[idx+1:]
+			}
+			n.dotChecked = true
+		}
+
+		if n.isDotted {
+			objVal, found := env.Get(n.objName)
 
 			if !found {
-				return ErrorVal(fmt.Sprintf("Objekt '%s' ist nicht definiert", parts[0]))
+				return ErrorVal(fmt.Sprintf("Objekt '%s' ist nicht definiert", n.objName))
 			}
 
 			if objVal.Kind != KindObj {
-				return ErrorVal(parts[0] + " ist kein Object")
+				return ErrorVal(n.objName + " ist kein Object")
 			}
 
 			if objVal.Obj == nil {
@@ -1205,7 +1244,7 @@ func evalExpr(e Expr, env *Environment) Value {
 			}
 
 			m := objVal.Obj.Fields
-			if val, ok := m[parts[1]]; ok {
+			if val, ok := m[n.fieldName]; ok {
 				return val
 			}
 			return NilValue
@@ -1277,10 +1316,6 @@ func evalExpr(e Expr, env *Environment) Value {
 
 		// 4. Einfache Variable (kein Index)
 		return v
-
-	//case *UseNode:
-	//	LoadModules(env, n.Modules)
-	//	return Value{}
 
 	case *BinOpNode:
 		l := evalExpr(n.Left, env)
@@ -1429,13 +1464,29 @@ func registerFuncsAndSubs(stmts []Stmt) {
 	for _, s := range stmts {
 		switch n := s.(type) {
 		case *FuncNode:
+			n.RequiredParams = countRequiredParams(n.Params)
 			funcs[n.Name] = n
+
 		case *SubNode:
+			n.RequiredParams = countRequiredParams(n.Params)
 			subs[n.Name] = n
+
 		case *MultiStmtNode:
 			registerFuncsAndSubs(n.Stmts)
 		}
 	}
+}
+
+func countRequiredParams(params []ParamDef) int {
+	required := 0
+
+	for _, p := range params {
+		if !p.IsOptional {
+			required++
+		}
+	}
+
+	return required
 }
 
 func valuesAreEqual(l, r Value) bool {

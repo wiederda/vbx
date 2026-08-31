@@ -100,6 +100,13 @@ type VarNode struct {
 	Name   string
 	Index1 Expr // nil, wenn keine Indizes
 	Index2 Expr // nil für 1D-Array
+
+	// Cache für die Punkt-Notation (z.B. "objekt.feld"), einmalig beim
+	// ersten Auswerten berechnet statt bei jedem Aufruf neu gesplittet.
+	dotChecked bool
+	isDotted   bool
+	objName    string
+	fieldName  string
 }
 type CallExprNode struct {
 	Name string
@@ -161,15 +168,17 @@ type ForNode struct {
 	Body    []Stmt
 }
 type SubNode struct {
-	Name   string
-	Params []ParamDef
-	Body   []Stmt
+	Name           string
+	Params         []ParamDef
+	Body           []Stmt
+	RequiredParams int
 }
 
 type FuncNode struct {
-	Name   string
-	Params []ParamDef
-	Body   []Stmt
+	Name           string
+	Params         []ParamDef
+	Body           []Stmt
+	RequiredParams int
 }
 type CallNode struct {
 	Name string
