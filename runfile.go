@@ -32,7 +32,11 @@ func CanExecuteFile(filename string) (int, error) {
 func runFileInternal(filename string, validateOnly bool) (finalVal Value, warnCount int, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("[SYNTAX ERROR] %v", r)
+			if validateOnly {
+				err = fmt.Errorf("%v", r)
+			} else {
+				err = fmt.Errorf("[SYNTAX ERROR] %v", r)
+			}
 		}
 	}()
 
@@ -78,7 +82,11 @@ func runFileInternal(filename string, validateOnly bool) (finalVal Value, warnCo
 func runContentInternal(content string, label string, validateOnly bool) (finalVal Value, warnCount int, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("[SYNTAX ERROR] %v", r)
+			if validateOnly {
+				err = fmt.Errorf("%v", r)
+			} else {
+				err = fmt.Errorf("[SYNTAX ERROR] %v", r)
+			}
 		}
 	}()
 

@@ -301,6 +301,72 @@ func (p *Parser) expectEnd(expected TokenType) {
 	p.next()
 }
 
+func (p *Parser) parseCallArguments(functionName string) []Expr {
+	var args []Expr
+
+	// Die öffnende Klammer '(' wurde bereits konsumiert.
+
+	// foo(
+	if p.peek().Type == EOF {
+		p.error(
+			"Syntaxfehler: Funktionsaufruf '%s' wurde nicht abgeschlossen. Erwartet wird ')'.",
+			functionName,
+		)
+	}
+
+	// foo()
+	if p.peek().Type == RPAREN {
+		p.next()
+		return args
+	}
+
+	for {
+		args = append(args, p.parseExpr())
+
+		switch p.peek().Type {
+
+		case COMMA:
+			p.next()
+
+			// foo(a,
+			if p.peek().Type == EOF {
+				p.error(
+					"Syntaxfehler: Nach ',' im Funktionsaufruf '%s' wird ein Argument erwartet.",
+					functionName,
+				)
+			}
+
+			// foo(a,)
+			if p.peek().Type == RPAREN {
+				p.error(
+					"Syntaxfehler: Nach ',' im Funktionsaufruf '%s' wird ein Argument erwartet.",
+					functionName,
+				)
+			}
+
+			continue
+
+		case RPAREN:
+			p.next()
+			return args
+
+		case EOF:
+			// foo(a
+			p.error(
+				"Syntaxfehler: Funktionsaufruf '%s' wurde nicht abgeschlossen. Erwartet wird ')'.",
+				functionName,
+			)
+
+		default:
+			p.error(
+				"Syntaxfehler im Funktionsaufruf '%s': Erwartet wird ',' oder ')', gefunden wurde '%s'.",
+				functionName,
+				p.peek().Value,
+			)
+		}
+	}
+}
+
 func (p *Parser) parseFactor() Expr {
 	tok := p.peek()
 
@@ -362,23 +428,16 @@ func (p *Parser) parseFactor() Expr {
 		var expr Expr
 
 		// Funktionsaufruf / Array-Zugriff via ()
+
 		if p.peek().Type == LPAREN {
-			p.next()
-			var args []Expr
-			if p.peek().Type != RPAREN {
-				for {
-					args = append(args, p.parseExpr())
-					if p.peek().Type == COMMA {
-						p.next()
-						continue
-					}
-					break
-				}
+			p.next() // '(' konsumieren
+
+			args := p.parseCallArguments(fullName)
+
+			expr = &CallExprNode{
+				Name: fullName,
+				Args: args,
 			}
-			if p.next().Type != RPAREN {
-				p.error("Erwartet ')' in Function-Call")
-			}
-			expr = &CallExprNode{Name: fullName, Args: args}
 		} else {
 			expr = &VarNode{Name: fullName}
 		}
@@ -404,6 +463,10 @@ func (p *Parser) parseFactor() Expr {
 		return expr
 
 	default:
+		if tok.Type == EOF {
+			p.error("Der Ausdruck ist unvollständig - das Dateiende wurde erreicht, bevor er abgeschlossen war.")
+			return nil
+		}
 		p.error("Unerwartetes Zeichen im Ausdruck: '%s' (Typ: %v).", tok.Value, tok.Type)
 		return nil
 	}
@@ -1080,55 +1143,42 @@ func (p *Parser) parseStmt() Stmt {
 		// 2. Funktionsaufruf oder Array-Zugriff?
 		if p.peek().Type == LPAREN {
 			p.next() // '('
-			var args []Expr
-			if p.peek().Type != RPAREN {
-				for {
-					args = append(args, p.parseExpr())
-					if p.peek().Type == COMMA {
-						p.next()
-						continue
-					}
-					break
-				}
-			}
-			if p.next().Type != RPAREN {
-				p.error("Erwartet ')' in Call/Index")
-			}
 
-			// NEU: grp(i)["path"] = ... ebenfalls abfangen, bevor die normale Array-Zuweisung geprüft wird
+			args := p.parseCallArguments(fullName)
+
+			// NEU: grp(i)["path"] = ...
 			if p.peek().Type == LBRACKET {
 				p.rejectBracketAssignTarget()
 				p.error("Ein Ausdruck mit '[...]' kann nicht als eigenständige Anweisung stehen.")
 			}
 
-			// Fall A: Zuweisung an Array-Index -> myArr(5) = "Wert"
+			// Fall A: Zuweisung an Array-Index
 			if p.peek().Type == EQ {
-				p.next() // '='
+				p.next()
+
 				if len(args) == 0 {
 					p.error("Array-Index erwartet")
 				}
 
-				// 1. Das Node-Objekt vorbereiten
 				node := &ArrayAssignNode{
 					Name:  fullName,
 					Index: args[0],
-					Value: p.parseExpr(), // Hier wird der Wert NACH dem '=' geparst
+					Value: p.parseExpr(),
 				}
 
-				// 2. WICHTIG: Das zweite Argument für 2D-Arrays mitschicken
 				if len(args) > 1 {
 					node.Index2 = args[1]
 				}
 
-				// 3. Das vorbereitete Objekt zurückgeben (NICHT neu erstellen!)
 				return node
 			}
 
-			// Fall B: Nackter Funktionsaufruf -> file.Write("...")
-			// Wir geben einen CallNode zurück, der als Statement fungiert
-			return &CallNode{Name: fullName, Args: args}
+			// Fall B: Funktionsaufruf
+			return &CallNode{
+				Name: fullName,
+				Args: args,
+			}
 		}
-
 		// 3. Einfache Variablen-Zuweisung -> x = 10
 		if p.peek().Type == EQ {
 			p.next() // '='
