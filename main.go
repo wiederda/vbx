@@ -55,7 +55,7 @@ var optionalModuleFunctions = map[string]int{
 	"template": 3,
 	"yaml":     5,
 	"xml":      9,
-	"zip":      5,
+	"zip":      6,
 	"win":      4,
 }
 
@@ -65,7 +65,7 @@ func main() {
 	var positionalArgs []string
 	var filter string
 	var moduleFilter string
-	showShell, isHelp, showReg := false, false, false
+	showShell, isHelp, showReg, dryRun := false, false, false, false
 	regC()
 
 	for _, arg := range os.Args[1:] {
@@ -77,6 +77,8 @@ func main() {
 			showShell = true
 		case low == "-const":
 			showReg = true
+		case low == "-dryrun":
+			dryRun = true
 		case low == "-v" || low == "version":
 			fmt.Println(Version)
 			return
@@ -152,6 +154,28 @@ func main() {
 
 	// FALL C: Normales Skript ausführen
 	if filename != "" {
+
+		// --dryrun: nur parsen/validieren (inkl. CheckUnknownCalls-Warnungen),
+		// keine Ausführung, keine Seiteneffekte.
+		if dryRun {
+			warnCount, err := CanExecuteFile(filename)
+
+			if err != nil {
+				fmt.Printf("\n\033[31m!---------------------------------------------------------!\033[0m")
+				fmt.Printf("\n  \033[1m[DRYRUN FEHLER]:\033[0m %v\n", err)
+				fmt.Printf("\033[31m!---------------------------------------------------------!\033[0m\n\n")
+				os.Exit(1)
+			}
+
+			if warnCount > 0 {
+				fmt.Printf("\033[33m[DRYRUN]\033[0m %d Warnung(en) gefunden (siehe oben) - Skript könnte zur Laufzeit fehlschlagen.\n", warnCount)
+				os.Exit(1)
+			}
+
+			fmt.Println("\033[32m[DRYRUN OK]\033[0m Skript ist syntaktisch gültig.")
+			os.Exit(0)
+		}
+
 		// HIER passiert jetzt die magische Prüfung (Version + Module + Decrypt)
 		if err := RunFile(filename); err != nil {
 			fmt.Printf("\n\033[31m!---------------------------------------------------------!\033[0m")
@@ -233,6 +257,7 @@ func printHelp(filter string, shortcuts map[string]Shortcut, showShell bool) {
 	if !showShell {
 		fmt.Println("\n" + bold + "Kurz-Übersicht:" + reset)
 		fmt.Println("  vbx <quelle.vb>                  - Skript ausführen")
+		fmt.Println("  vbx -dryrun <quelle.vb>          - Skript nur prüfen, ohne auszuführen")
 		fmt.Println("  vbx -modules=zip <quelle.vb>     - optionales Modul vor Skriptstart laden")
 		fmt.Println("  #use zip                         - optionales Modul im Skript laden")
 		fmt.Println("                                     (erste Zeile, auch in include-Dateien)")

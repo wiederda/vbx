@@ -41,6 +41,16 @@ func InitAppFunctions() {
 		return ""
 	}
 
+	// app.ScriptPath: Pfad der aktuell ausgeführten .vbx-Datei
+	Register(ns+"ScriptPath", "app", "", "Gibt den vollständigen Pfad des aktuell ausgeführten Skripts zurück.", func(args []Value) Value {
+		return Value{Kind: KindStr, Str: scriptPath}
+	})
+
+	// app.ScriptDir: Verzeichnis der aktuell ausgeführten .vbx-Datei
+	Register(ns+"ScriptDir", "app", "", "Gibt das Verzeichnis der aktuell ausgeführten Skript-Datei zurück.", func(args []Value) Value {
+		return Value{Kind: KindStr, Str: filepath.Dir(scriptPath)}
+	})
+
 	// app.StartupPath: Ordner der ausführbaren Datei
 	Register(ns+"StartupPath", "app", "", "Gibt das Verzeichnis der ausführbaren Datei zurück.", func(args []Value) Value {
 		exe, _ := os.Executable()

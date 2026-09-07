@@ -16,7 +16,7 @@ type Kind int
 
 const (
 	KindInvalid Kind = iota
-	KindUnknown
+	//KindUnknown
 	KindUndefined
 	KindNum
 	KindStr

@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
+	"math/rand"
 	"net/url"
 	"os"
 	"os/exec"
@@ -45,6 +46,8 @@ var idnaProfile = idna.New(
 	idna.ValidateLabels(true),    // Labels validieren
 	idna.StrictDomainName(false), // Kompatibel mit älteren IDNA2003 Domains
 )
+
+var randGen = rand.New(rand.NewSource(time.Now().UnixNano()))
 
 func InitGlobal() {
 	if builtins == nil {
@@ -1082,6 +1085,25 @@ func InitGlobal() {
 		return BoolVal(k == KindNull || k == KindNil || k == KindNone || k == KindUndefined)
 	})
 
+	Register("LoadModule", "global", "name",
+		"Lädt ein optionales Modul (nativ oder als WASM-Plugin) zur Laufzeit. Gibt True zurück bei Erfolg (auch wenn bereits geladen), sonst einen Error-Wert (prüfbar mit IsError/ErrorText).",
+		func(args []Value) Value {
+			if len(args) < 1 {
+				return ErrorVal("LoadModule: Modulname fehlt")
+			}
+
+			name := strings.ToLower(strings.TrimSpace(args[0].Str))
+			if name == "" {
+				return ErrorVal("LoadModule: Modulname ist leer")
+			}
+
+			if err := LoadOptionalModule(nil, name); err != nil {
+				return ErrorVal(err.Error())
+			}
+
+			return BoolVal(true)
+		})
+
 	// Global: IsInteger(v) -> True, wenn es eine ganze Zahl ohne Nachkommastellen ist
 	Register("IsInteger", "global", "v", "Prüft, ob der Wert eine Ganzzahl ist.", func(args []Value) Value {
 		if len(args) < 1 {
@@ -1172,6 +1194,57 @@ func InitGlobal() {
 
 		return BoolVal(true)
 	})
+
+	Register("CanRun", "global", "path",
+		"Prüft, ob ein Skript syntaktisch gültig ist und keine unbekannten Aufrufe enthält, OHNE es auszuführen. Gibt True zurück wenn sauber, sonst einen Error-Wert (prüfbar mit IsError/ErrorText) - entweder mit der Anzahl gefundener Warnungen oder dem Parse-/Sicherheitsfehler.",
+		func(args []Value) Value {
+			if len(args) < 1 {
+				return ErrorVal("CanRun: Pfad fehlt")
+			}
+
+			path := strings.TrimSpace(args[0].Str)
+			if path == "" {
+				return ErrorVal("CanRun: Pfad ist leer")
+			}
+
+			warnCount, err := CanExecuteFile(path)
+
+			if err != nil {
+				return ErrorVal(err.Error())
+			}
+
+			if warnCount > 0 {
+				return ErrorVal(fmt.Sprintf("%d Warnung(en) gefunden - siehe Konsolenausgabe", warnCount))
+			}
+
+			return BoolVal(true)
+		})
+
+	Register("CanRunString", "global", "content, [label]",
+		"Prüft VBX-Quelltext direkt aus einem String (z.B. gerade heruntergeladen, noch nicht gespeichert), OHNE ihn auszuführen oder zu speichern. label wird nur in Fehlermeldungen verwendet. Gibt True zurück wenn sauber, sonst einen Error-Wert (IsError/ErrorText).",
+		func(args []Value) Value {
+			if len(args) < 1 {
+				return ErrorVal("CanRunString: content fehlt")
+			}
+
+			content := args[0].Str
+			label := "downloaded-script"
+			if len(args) >= 2 && args[1].Str != "" {
+				label = args[1].Str
+			}
+
+			warnCount, err := CanExecuteString(content, label)
+
+			if err != nil {
+				return ErrorVal(err.Error())
+			}
+
+			if warnCount > 0 {
+				return ErrorVal(fmt.Sprintf("%d Warnung(en) gefunden - siehe Konsolenausgabe", warnCount))
+			}
+
+			return BoolVal(true)
+		})
 
 	// --- Die angepasste Build Funktion ---
 	Register("Build", "global", "quelle", "Verschlüsselt ein VB-Skript mit Magic Header.", func(args []Value) Value {

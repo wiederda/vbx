@@ -2,94 +2,115 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"strings"
+	"sync"
 )
 
 // ---------------- Modul-Loader ----------------
 
-var mandatoryModulesMap = map[string]func(*Environment){
-	"global": func(e *Environment) { InitGlobal() },
-	"math":   func(e *Environment) { InitMathFunctions() },
-	"app":    func(e *Environment) { InitAppFunctions() },
-	"array":  func(e *Environment) { InitArrayFunctions() },
-	"date":   func(e *Environment) { InitDateFunctions() },
-	"file":   func(e *Environment) { InitFileFunctions() },
-	"folder": func(e *Environment) { InitFolderFunctions() },
+var (
+	mandatoryModulesMapOnce sync.Once
+	mandatoryModulesMapVal  map[string]func(*Environment)
+)
+
+func getMandatoryModulesMap() map[string]func(*Environment) {
+	mandatoryModulesMapOnce.Do(func() {
+		mandatoryModulesMapVal = map[string]func(*Environment){
+			"global": func(e *Environment) { InitGlobal() },
+			"math":   func(e *Environment) { InitMathFunctions() },
+			"app":    func(e *Environment) { InitAppFunctions() },
+			"array":  func(e *Environment) { InitArrayFunctions() },
+			"date":   func(e *Environment) { InitDateFunctions() },
+			"file":   func(e *Environment) { InitFileFunctions() },
+			"folder": func(e *Environment) { InitFolderFunctions() },
+		}
+	})
+	return mandatoryModulesMapVal
 }
 
 var optionalModulesMap = map[string]func(*Environment){
-	"debug":   InitDebugFunctions,
-	"7z":      func(e *Environment) { InitSevenZipFunctions() },
-	"ad":      func(e *Environment) { InitADFunctions() },
-	"db":      func(e *Environment) { InitDBFunctions() },
-	"env":     func(e *Environment) { InitEnvFunctions() },
-	"cert":    func(e *Environment) { InitCertFunctions() },
-	"docker":  func(e *Environment) { InitDockerFunctions() },
+	"debug": InitDebugFunctions,
+	"7z":    func(e *Environment) { InitSevenZipFunctions() },
+	"ad":    func(e *Environment) { InitADFunctions() },
+	"db":    func(e *Environment) { InitDBFunctions() },
+	"env":   func(e *Environment) { InitEnvFunctions() },
+	"cert":  func(e *Environment) { InitCertFunctions() },
+	//"docker":  func(e *Environment) { InitDockerFunctions() },
 	"string":  func(e *Environment) { InitStringFunctions() },
 	"convert": func(e *Environment) { InitConvertFunctions() },
-	"crypt":   func(e *Environment) { InitCryptFunctions() },
-	"geo":     func(e *Environment) { InitGeoFunctions() },
-	"git":     func(e *Environment) { InitGitFunctions() },
-	"yaml":    func(e *Environment) { InitYamlFunctions() },
+	//"crypt":   func(e *Environment) { InitCryptFunctions() },
+	"export": func(e *Environment) { InitExportFunctions() },
+	"geo":    func(e *Environment) { InitGeoFunctions() },
+	"git":    func(e *Environment) { InitGitFunctions() },
+	//"yaml":    func(e *Environment) { InitYamlFunctions() },
 	"smtp":    func(e *Environment) { InitSmtpFunctions() },
 	"service": func(e *Environment) { InitServiceFunctions() },
 	//"gui":      func(e *Environment) { InitGUIFunctions() },
-	"data":     func(e *Environment) { InitDataFunctions() },
-	"fin":      func(e *Environment) { InitFinFunctions() },
+	//"data": func(e *Environment) { InitDataFunctions() },
+	//"fin":      func(e *Environment) { InitFinFunctions() },
 	"computer": func(e *Environment) { InitComputerFunctions() },
 	"map":      func(e *Environment) { InitMapFunctions() },
-	"ini":      func(e *Environment) { InitIniFunctions() },
-	"json":     func(e *Environment) { InitJsonFunctions() },
-	"kuma":     func(e *Environment) { InitKumaFunctions() },
-	"tar":      func(e *Environment) { InitTarFunctions() },
-	"zip":      func(e *Environment) { InitZipFunctions() },
-	"reg":      func(e *Environment) { InitRegistryFunctions() },
-	"picture":  func(e *Environment) { InitPictureFunctions() },
-	"pqc":      func(e *Environment) { InitPQCFunctions() },
-	"pgp":      func(e *Environment) { InitPGPFunctions() },
-	"xml":      func(e *Environment) { InitXmlFunctions() },
-	"net":      func(e *Environment) { InitNetFunctions() },
-	"rand":     func(e *Environment) { InitRandFunctions() },
-	"proc":     func(e *Environment) { InitProcFunctions() },
-	"sftp":     func(e *Environment) { InitSftpFunctions() },
-	"ssh":      func(e *Environment) { InitSSHFunctions() },
-	"steg":     func(e *Environment) { InitStegFunctions() },
+	//"ini":      func(e *Environment) { InitIniFunctions() },
+	"json": func(e *Environment) { InitJsonFunctions() },
+	"kuma": func(e *Environment) { InitKumaFunctions() },
+	//"tar":      func(e *Environment) { InitTarFunctions() },
+	//"zip":     func(e *Environment) { InitZipFunctions() },
+	"reg":     func(e *Environment) { InitRegistryFunctions() },
+	"picture": func(e *Environment) { InitPictureFunctions() },
+	//"pqc":     func(e *Environment) { InitPQCFunctions() },
+	//"pgp":     func(e *Environment) { InitPGPFunctions() },
+	//"xml":     func(e *Environment) { InitXmlFunctions() },
+	"net": func(e *Environment) { InitNetFunctions() },
+	//"rand":     func(e *Environment) { InitRandFunctions() },
+	"proc": func(e *Environment) { InitProcFunctions() },
+	"sftp": func(e *Environment) { InitSftpFunctions() },
+	"ssh":  func(e *Environment) { InitSSHFunctions() },
+	//"steg":     func(e *Environment) { InitStegFunctions() },
 	"template": func(e *Environment) { InitTemplateFunctions() },
 	"win":      func(e *Environment) { InitWinFunctions() },
 }
 
 // LoadModules lädt zuerst die Pflichtmodule und anschließend nur die optionalen Module, die angegeben wurden
-func LoadModules(e *Environment, optionals []string) {
-	// 1. Pflichtmodule IMMER laden
-	for mod, initFn := range mandatoryModulesMap {
-		// Wir reichen das Environment 'e' an die (ggf. gewrappte) Funktion weiter
+func LoadModules(e *Environment, optionals []string) error {
+	for mod, initFn := range getMandatoryModulesMap() {
 		initFn(e)
 		loadedModules[mod] = true
 	}
 
-	// 2. Optionale Module (aus -modules= oder #use)
 	for _, opt := range optionals {
 		opt = strings.TrimSpace(strings.ToLower(opt))
-		if opt != "" {
-			// Auch hier muss 'e' mit auf die Reise
-			LoadOptionalModule(e, opt)
+		if opt == "" {
+			continue
+		}
+		if err := LoadOptionalModule(e, opt); err != nil {
+			return err // <-- hier darf der Fehler nicht verlorengehen
 		}
 	}
+
+	return nil
 }
 
 // Hilfsfunktion: optionales Modul laden, wenn noch nicht geladen
-func LoadOptionalModule(e *Environment, ns string) {
-	// Falls schon geladen, nichts tun
+func LoadOptionalModule(e *Environment, ns string) error {
 	if loaded, ok := loadedModules[ns]; ok && loaded {
-		return
+		return nil
 	}
 
-	// In der Map nachschauen und mit 'e' ausführen
 	if initFn, ok := optionalModulesMap[ns]; ok {
 		initFn(e)
 		loadedModules[ns] = true
+		return nil
 	}
+
+	// Kein eingebautes Modul mit diesem Namen -> als Plugin versuchen
+	if err := LoadWasmPlugin(e, ns); err != nil {
+		return fmt.Errorf("Modul/Plugin %q konnte nicht geladen werden: %w", ns, err)
+	}
+
+	loadedModules[ns] = true
+	return nil
 }
 
 // ---------------- CLI Parsing ----------------

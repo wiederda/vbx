@@ -337,3 +337,52 @@ func InitSevenZipFunctions() {
 			return BoolVal(true)
 		})
 }
+
+// absPathStrict ist wie filepath.Abs, gibt aber einen expliziten Fehler zurück
+// statt ihn stillschweigend zu verwerfen.
+func absPathStrict(p string) (string, error) {
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		return "", fmt.Errorf("pfad '%s' konnte nicht aufgelöst werden: %w", p, err)
+	}
+	return abs, nil
+}
+
+// extractFilesAndPass trennt Dateipfade und optionales Passwort aus den Argumenten.
+// Unterstützt zwei Aufrufkonventionen:
+//   - (zipPath, []array, [pass])
+//   - (zipPath, file1, file2, ..., [pass])
+func extractFilesAndPass(args []Value) ([]string, string) {
+	var files []string
+	pass := ""
+
+	// Konvention A: zweites Argument ist ein Array
+	if len(args) >= 2 && args[1].Kind == KindArr {
+		for _, v := range args[1].Arr {
+			files = append(files, v.Str)
+		}
+		if len(args) >= 3 {
+			pass = args[2].Str
+		}
+		return files, pass
+	}
+
+	// Konvention B: variadische Dateipfade, letztes Argument optional Passwort
+	lastIdx := len(args) - 1
+	if lastIdx > 1 && !looksLikeFilePath(args[lastIdx].Str) {
+		pass = args[lastIdx].Str
+		lastIdx--
+	}
+
+	for i := 1; i <= lastIdx; i++ {
+		files = append(files, args[i].Str)
+	}
+	return files, pass
+}
+
+// looksLikeFilePath erkennt ob ein String ein Dateipfad ist.
+func looksLikeFilePath(s string) bool {
+	return strings.ContainsAny(s, "/\\") ||
+		strings.HasPrefix(s, ".") ||
+		filepath.IsAbs(s)
+}

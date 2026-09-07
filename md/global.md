@@ -258,6 +258,18 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
 
 ---
 
+## LoadModule(name)
+- **Konkret:**
+  Lädt ein optionales Modul (nativ oder als WASM-Plugin) zur Laufzeit,
+  unabhängig von `#use`. War das Modul bereits geladen, wird sofort
+  `True` zurückgegeben, ohne erneut zu laden.
+- **Parameter:**
+  - `name`: Modulname (z. B. `"zip"`, `"pgp"`, `"yaml"`).
+- **Rückgabe:**
+  `BoolVal` bei Erfolg, sonst `ErrorVal` (prüfbar mit `IsError`/`ErrorText`).
+
+---
+
 ## DecodeBase64(s)
 - **Konkret:**
   Dekodiert einen Base64-String zurück in Klartext.

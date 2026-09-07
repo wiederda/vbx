@@ -28,6 +28,22 @@ import (
 
 //var replaceAfterRunPath string
 
+// expectStr liefert args[i].Str als geprüften String-Parameter zurück,
+// oder einen *Value-Fehler, falls das Argument fehlt oder kein String ist.
+// fnSig ist die Funktionssignatur für die Fehlermeldung, z.B. "file.Delete(path)".
+func expectStr(args []Value, i int, fnSig string) (string, *Value) {
+	if len(args) <= i {
+		v := ErrorVal(fmt.Sprintf("%s: Argument %d fehlt", fnSig, i+1))
+		return "", &v
+	}
+	if args[i].Kind != KindStr {
+		v := ErrorVal(fmt.Sprintf("%s: erwarte einen String für Argument %d, habe %s bekommen",
+			fnSig, i+1, GetKindName(args[i].Kind)))
+		return "", &v
+	}
+	return args[i].Str, nil
+}
+
 // InitFileFunctions registriert File-Funktionen inkl. erweiterter Features
 func InitFileFunctions() {
 	if builtins == nil {
@@ -45,9 +61,14 @@ func InitFileFunctions() {
 			return ErrorVal("WriteAllText erwartet zwei Parameter: Pfad und Inhalt")
 		}
 
+		pathStr, errS := expectStr(args, 0, "file.WriteAllText(path, content)")
+		if errS != nil {
+			return *errS
+		}
+
 		// 2. Deine Sicherheitsfunktion nutzen!
 		// Sie liefert den absoluten Pfad und einen Zeiger auf einen Error-Value
-		path, errVal := absPathVal(args[0].Str)
+		path, errVal := absPathVal(pathStr)
 		if errVal != nil {
 			return *errVal // Fehler direkt an VB zurückgeben (z.B. Sicherheitsfehler)
 		}
@@ -66,11 +87,12 @@ func InitFileFunctions() {
 	// Create
 	// ------------------------
 	Register(ns+"Create", "file", "path", "Erstellt eine leere Datei, falls diese noch nicht existiert.", func(args []Value) Value {
-		if len(args) < 1 {
-			return ErrorVal("file.Create benötigt Pfad")
+		pathStr, errS := expectStr(args, 0, "file.Create(path)")
+		if errS != nil {
+			return *errS
 		}
 
-		path, errVal := absPathVal(args[0].Str)
+		path, errVal := absPathVal(pathStr)
 		if errVal != nil {
 			return *errVal
 		}
@@ -100,7 +122,12 @@ func InitFileFunctions() {
 			return ErrorVal("file.StreamWrite(path, content) benötigt 2 Argumente")
 		}
 
-		path, errVal := absPathVal(args[0].Str)
+		pathStr, errS := expectStr(args, 0, "file.StreamWrite(path, content)")
+		if errS != nil {
+			return *errS
+		}
+
+		path, errVal := absPathVal(pathStr)
 		if errVal != nil {
 			return *errVal
 		}
@@ -129,11 +156,21 @@ func InitFileFunctions() {
 	})
 
 	// ---------------- Exists ----------------
-	Register(ns+"Exists", "path", "bool",
+	Register(ns+"Exists", "file", "path",
 		"Prüft, ob eine Datei existiert.",
 		func(args []Value) Value {
 
-			if len(args) < 1 || args[0].Str == "" {
+			if len(args) < 1 {
+				return BoolVal(false)
+			}
+
+			if args[0].Kind != KindStr {
+				return ErrorVal(fmt.Sprintf(
+					"file.Exists: erwarte einen Dateipfad (String), habe %s bekommen",
+					GetKindName(args[0].Kind)))
+			}
+
+			if args[0].Str == "" {
 				return BoolVal(false)
 			}
 
@@ -156,12 +193,21 @@ func InitFileFunctions() {
 			return ErrorVal("file.CreateSymlink(target, linkPath, [replaceExisting]) benötigt mindestens 2 Pfade")
 		}
 
+		target, errS1 := expectStr(args, 0, "file.CreateSymlink(target, linkPath)")
+		if errS1 != nil {
+			return *errS1
+		}
+		linkPath, errS2 := expectStr(args, 1, "file.CreateSymlink(target, linkPath)")
+		if errS2 != nil {
+			return *errS2
+		}
+
 		replaceExisting := false
 		if len(args) >= 3 {
 			replaceExisting = args[2].Bool
 		}
 
-		return createSymlinkInternal(args[0].Str, args[1].Str, replaceExisting)
+		return createSymlinkInternal(target, linkPath, replaceExisting)
 	})
 
 	// ---------------- Base64Encode ----------------
@@ -169,8 +215,18 @@ func InitFileFunctions() {
 		if len(args) < 2 {
 			return ErrorVal("file.Base64Encode(in, out)")
 		}
-		inFile, e1 := absPathVal(args[0].Str)
-		outFile, e2 := absPathVal(args[1].Str)
+
+		inFileStr, errS1 := expectStr(args, 0, "file.Base64Encode(inFile, outFile)")
+		if errS1 != nil {
+			return *errS1
+		}
+		outFileStr, errS2 := expectStr(args, 1, "file.Base64Encode(inFile, outFile)")
+		if errS2 != nil {
+			return *errS2
+		}
+
+		inFile, e1 := absPathVal(inFileStr)
+		outFile, e2 := absPathVal(outFileStr)
 		if e1 != nil {
 			return *e1
 		}
@@ -206,12 +262,21 @@ func InitFileFunctions() {
 			return ErrorVal("file.Base64Decode(infile, outfile) benötigt 2 Argumente")
 		}
 
-		inFile, e1 := absPathVal(args[0].Str)
+		inFileStr, errS1 := expectStr(args, 0, "file.Base64Decode(inFile, outFile)")
+		if errS1 != nil {
+			return *errS1
+		}
+		outFileStr, errS2 := expectStr(args, 1, "file.Base64Decode(inFile, outFile)")
+		if errS2 != nil {
+			return *errS2
+		}
+
+		inFile, e1 := absPathVal(inFileStr)
 		if e1 != nil {
 			return *e1
 		}
 
-		outFile, e2 := absPathVal(args[1].Str)
+		outFile, e2 := absPathVal(outFileStr)
 		if e2 != nil {
 			return *e2
 		}
@@ -250,14 +315,18 @@ func InitFileFunctions() {
 			// -------------------------
 			// Parametercheck
 			// -------------------------
-			if len(args) < 1 || args[0].Str == "" {
+			pathStr, errS := expectStr(args, 0, "file.Delete(path)")
+			if errS != nil {
+				return fileResult(false, errS.Str)
+			}
+			if pathStr == "" {
 				return fileResult(false, "file.Delete: Pfad fehlt")
 			}
 
 			// -------------------------
 			// Pfad absichern
 			// -------------------------
-			path, errVal := absPathVal(args[0].Str)
+			path, errVal := absPathVal(pathStr)
 			if errVal != nil {
 				return fileResult(false, "file.Delete: ungültiger Pfad")
 			}
@@ -295,12 +364,21 @@ func InitFileFunctions() {
 				return fileResult(false, "file.Copy: benötigt src und dst")
 			}
 
-			src, e1 := absPathVal(args[0].Str)
+			srcStr, errS1 := expectStr(args, 0, "file.Copy(src, dst)")
+			if errS1 != nil {
+				return fileResult(false, errS1.Str)
+			}
+			dstStr, errS2 := expectStr(args, 1, "file.Copy(src, dst)")
+			if errS2 != nil {
+				return fileResult(false, errS2.Str)
+			}
+
+			src, e1 := absPathVal(srcStr)
 			if e1 != nil {
 				return fileResult(false, "file.Copy: ungültiger Quellpfad")
 			}
 
-			dst, e2 := absPathVal(args[1].Str)
+			dst, e2 := absPathVal(dstStr)
 			if e2 != nil {
 				return fileResult(false, "file.Copy: ungültiger Zielpfad")
 			}
@@ -337,15 +415,24 @@ func InitFileFunctions() {
 				return fileResult(false, "file.Move: benötigt src und dst")
 			}
 
+			srcStr, errS1 := expectStr(args, 0, "file.Move(src, dst)")
+			if errS1 != nil {
+				return fileResult(false, errS1.Str)
+			}
+			dstStr, errS2 := expectStr(args, 1, "file.Move(src, dst)")
+			if errS2 != nil {
+				return fileResult(false, errS2.Str)
+			}
+
 			// -------------------------
 			// Pfade absichern
 			// -------------------------
-			src, e1 := absPathVal(args[0].Str)
+			src, e1 := absPathVal(srcStr)
 			if e1 != nil {
 				return fileResult(false, "file.Move: ungültiger Quellpfad")
 			}
 
-			dst, e2 := absPathVal(args[1].Str)
+			dst, e2 := absPathVal(dstStr)
 			if e2 != nil {
 				return fileResult(false, "file.Move: ungültiger Zielpfad")
 			}
@@ -396,6 +483,8 @@ func InitFileFunctions() {
 	// ------------------------
 	// file.Compare (Optimiert)
 	// ------------------------
+	// Hinweis: Nutzt bewusst ToString() statt expectStr(), da hier auch
+	// Zahlen/Null als Pfad toleriert werden sollen (siehe Kommentar unten).
 	Register(ns+"Compare", "file", "pfad1, pfad2", "Vergleicht zwei Dateien auf Gleichheit.", func(args []Value) Value {
 		if len(args) < 2 {
 			return ErrorVal("file.Compare(path1, path2) benötigt 2 Pfade")
@@ -471,11 +560,14 @@ func InitFileFunctions() {
 	})
 
 	// ---------------- Size ----------------
-	Register(ns+"Size", "files", "pfad", "Gibt die Größe einer Datei in Bytes zurück.", func(args []Value) Value {
-		if len(args) < 1 {
-			return ErrorVal("file.Size benötigt Pfad")
+	// Gruppe korrigiert: "files" -> "file" (war Tippfehler, brach die
+	// einheitliche Gruppierung aller anderen file.*-Funktionen)
+	Register(ns+"Size", "file", "pfad", "Gibt die Größe einer Datei in Bytes zurück.", func(args []Value) Value {
+		pathStr, errS := expectStr(args, 0, "file.Size(pfad)")
+		if errS != nil {
+			return *errS
 		}
-		path, errVal := absPathVal(args[0].Str)
+		path, errVal := absPathVal(pathStr)
 		if errVal != nil {
 			return *errVal
 		}
@@ -494,10 +586,11 @@ func InitFileFunctions() {
 
 	// ---------------- ModTime ----------------
 	Register(ns+"ModTime", "file", "path", "Gibt den Zeitpunkt der letzten Änderung im ISO-Format (RFC3339) zurück.", func(args []Value) Value {
-		if len(args) < 1 {
-			return ErrorVal("file.ModTime benötigt Pfad")
+		pathStr, errS := expectStr(args, 0, "file.ModTime(path)")
+		if errS != nil {
+			return *errS
 		}
-		path, errVal := absPathVal(args[0].Str)
+		path, errVal := absPathVal(pathStr)
 		if errVal != nil {
 			return *errVal
 		}
@@ -510,10 +603,11 @@ func InitFileFunctions() {
 
 	// ---------------- CreateTime ----------------
 	Register(ns+"CreateTime", "file", "path", "Gibt den Zeitpunkt der Erstellung im ISO-Format (RFC3339) zurück.", func(args []Value) Value {
-		if len(args) < 1 {
-			return ErrorVal("file.CreateTime benötigt Pfad")
+		pathStr, errS := expectStr(args, 0, "file.CreateTime(path)")
+		if errS != nil {
+			return *errS
 		}
-		path, errVal := absPathVal(args[0].Str)
+		path, errVal := absPathVal(pathStr)
 		if errVal != nil {
 			return *errVal
 		}
@@ -526,10 +620,11 @@ func InitFileFunctions() {
 
 	// ---------------- AccessTime ----------------
 	Register(ns+"AccessTime", "file", "path", "Gibt den Zeitpunkt des letzten Zugriffs im ISO-Format (RFC3339) zurück.", func(args []Value) Value {
-		if len(args) < 1 {
-			return ErrorVal("file.AccessTime benötigt Pfad")
+		pathStr, errS := expectStr(args, 0, "file.AccessTime(path)")
+		if errS != nil {
+			return *errS
 		}
-		path, errVal := absPathVal(args[0].Str)
+		path, errVal := absPathVal(pathStr)
 		if errVal != nil {
 			return *errVal
 		}
@@ -546,8 +641,13 @@ func InitFileFunctions() {
 			return ErrorVal("file.Replace(path, pattern, newContent) benötigt 3 Argumente")
 		}
 
+		pathStr, errS := expectStr(args, 0, "file.Replace(path, alt, neu)")
+		if errS != nil {
+			return *errS
+		}
+
 		// 1. Pfad-Sicherheitscheck (Gibt (string, *Value) zurück)
-		path, errVal := absPathVal(args[0].Str)
+		path, errVal := absPathVal(pathStr)
 		if errVal != nil {
 			return *errVal
 		}
@@ -591,7 +691,12 @@ func InitFileFunctions() {
 			return ErrorVal("file.Search(path, pattern) benötigt Pfad und Suchmuster")
 		}
 
-		path, errVal := absPathVal(args[0].Str)
+		pathStr, errS := expectStr(args, 0, "file.Search(pfad, muster)")
+		if errS != nil {
+			return *errS
+		}
+
+		path, errVal := absPathVal(pathStr)
 		if errVal != nil {
 			return *errVal
 		}
@@ -632,7 +737,12 @@ func InitFileFunctions() {
 			return ErrorVal("SearchDateRange(path, start, end, [layout], [max]) fehlt Argument")
 		}
 
-		path, errVal := absPathVal(args[0].Str)
+		pathStr, errS := expectStr(args, 0, "file.SearchDateRange(pfad, von, bis)")
+		if errS != nil {
+			return *errS
+		}
+
+		path, errVal := absPathVal(pathStr)
 		if errVal != nil {
 			return *errVal
 		}
@@ -654,9 +764,9 @@ func InitFileFunctions() {
 		}
 
 		// Ab hier bleibt die Logik gleich...
-		startTime, errS := time.Parse(layout, startStr)
+		startTime, errS2 := time.Parse(layout, startStr)
 		endTime, errE := time.Parse(layout, endStr)
-		if errS != nil || errE != nil {
+		if errS2 != nil || errE != nil {
 			return ErrorVal("Zeit-Parsing Fehler: Passt das Datum zum Format " + userLayout + "?")
 		}
 
@@ -711,8 +821,13 @@ func InitFileFunctions() {
 			return ErrorVal("file.ReplaceAll(path, old, new) benötigt 3 Argumente")
 		}
 
+		pathStr, errS := expectStr(args, 0, "file.ReplaceAll(path, alt, neu)")
+		if errS != nil {
+			return *errS
+		}
+
 		// 1. Pfad validieren (Gibt path und *Value zurück)
-		path, errVal := absPathVal(args[0].Str)
+		path, errVal := absPathVal(pathStr)
 		if errVal != nil {
 			return *errVal // Sicherheits-Check
 		}
@@ -743,11 +858,12 @@ func InitFileFunctions() {
 		"Berechnet den Git-Blob-SHA1 einer Datei.",
 		func(args []Value) Value {
 
-			if len(args) < 1 {
-				return ErrorVal("file.GitBlobHash(path) benötigt einen Pfad")
+			pathStr, errS := expectStr(args, 0, "file.GitBlobHash(path)")
+			if errS != nil {
+				return *errS
 			}
 
-			path, errVal := absPathVal(args[0].Str)
+			path, errVal := absPathVal(pathStr)
 			if errVal != nil {
 				return *errVal
 			}
@@ -768,14 +884,15 @@ func InitFileFunctions() {
 
 	// ---------------- Hash ----------------
 	Register(ns+"Hash", "file", "path [, algo]", "Berechnet den Hash-Wert einer Datei und gibt ihn als Hex-String zurück.", func(args []Value) Value {
-		if len(args) < 1 {
-			return ErrorVal("file.Hash(path [, algo]) benötigt mindestens einen Pfad")
+		pathStr, errS := expectStr(args, 0, "file.Hash(path [, algo])")
+		if errS != nil {
+			return *errS
 		}
 		algo := "md5"
 		if len(args) >= 2 {
 			algo = strings.ToLower(strings.TrimSpace(args[1].Str))
 		}
-		h, err := hashSingleFile(args[0].Str, algo)
+		h, err := hashSingleFile(pathStr, algo)
 		if err != nil {
 			return ErrorVal("Hash-Fehler: " + err.Error())
 		}
@@ -895,11 +1012,15 @@ func InitFileFunctions() {
 			if len(args) < 2 {
 				return ErrorVal("file.VerifyHash(path, expectedHash [, algo]) benötigt Pfad und erwarteten Hash")
 			}
+			pathStr, errS := expectStr(args, 0, "file.VerifyHash(path, expectedHash [, algo])")
+			if errS != nil {
+				return *errS
+			}
 			algo := "sha256"
 			if len(args) >= 3 {
 				algo = strings.ToLower(strings.TrimSpace(args[2].Str))
 			}
-			h, err := hashSingleFile(args[0].Str, algo)
+			h, err := hashSingleFile(pathStr, algo)
 			if err != nil {
 				return ErrorVal("Hash-Fehler: " + err.Error())
 			}
@@ -912,14 +1033,23 @@ func InitFileFunctions() {
 			return ErrorVal("file.Rename(oldPath, newPath) benötigt 2 Argumente")
 		}
 
+		oldStr, errS1 := expectStr(args, 0, "file.Rename(alt, neu)")
+		if errS1 != nil {
+			return *errS1
+		}
+		newStr, errS2 := expectStr(args, 1, "file.Rename(alt, neu)")
+		if errS2 != nil {
+			return *errS2
+		}
+
 		// 1. Quellpfad validieren
-		oldPath, e1 := absPathVal(args[0].Str)
+		oldPath, e1 := absPathVal(oldStr)
 		if e1 != nil {
 			return *e1 // Abbruch, falls Quelle illegal (z.B. C:\ auf Linux)
 		}
 
 		// 2. Zielpfad validieren
-		newPath, e2 := absPathVal(args[1].Str)
+		newPath, e2 := absPathVal(newStr)
 		if e2 != nil {
 			return *e2 // Abbruch, falls Ziel illegal
 		}
@@ -981,7 +1111,12 @@ func InitFileFunctions() {
 			return ErrorVal("file.AppendLine(path, line) benötigt Pfad und Zeile")
 		}
 
-		path, errVal := absPathVal(args[0].Str)
+		pathStr, errS := expectStr(args, 0, "file.AppendLine(path, line)")
+		if errS != nil {
+			return *errS
+		}
+
+		path, errVal := absPathVal(pathStr)
 		if errVal != nil {
 			return *errVal
 		}
@@ -1031,8 +1166,16 @@ func InitFileFunctions() {
 		return BoolVal(true)
 	})
 
+	// ---------------- HasContent ----------------
+	// Fix: Vorher fehlte der len(args)-Check komplett -> Panic (index out
+	// of range) bei Aufruf ohne Argument. Jetzt wie alle anderen Funktionen
+	// mit expectStr abgesichert.
 	Register(ns+"HasContent", "file", "pfad", "Prüft, ob eine Datei existiert und mehr als 0 Byte Inhalt hat. Gibt bei nicht existierender Datei false zurück.", func(args []Value) Value {
-		path, errVal := absPathVal(args[0].Str)
+		pathStr, errS := expectStr(args, 0, "file.HasContent(pfad)")
+		if errS != nil {
+			return *errS
+		}
+		path, errVal := absPathVal(pathStr)
 		if errVal != nil {
 			return *errVal
 		}
@@ -1045,11 +1188,12 @@ func InitFileFunctions() {
 
 	// ---------------- ReadAllLines ----------------
 	Register(ns+"ReadAllLines", "file", "pfad", "Liest eine Textdatei zeilenweise in ein Array.", func(args []Value) Value {
-		if len(args) < 1 {
-			return ErrorVal("file.ReadAllLines benötigt einen Pfad")
+		pathStr, errS := expectStr(args, 0, "file.ReadAllLines(pfad)")
+		if errS != nil {
+			return *errS
 		}
 
-		path, errVal := absPathVal(args[0].Str)
+		path, errVal := absPathVal(pathStr)
 		if errVal != nil {
 			return *errVal
 		}
@@ -1080,11 +1224,12 @@ func InitFileFunctions() {
 
 	// ---------------- LineCount ----------------
 	Register(ns+"LineCount", "file", "path", "Gibt die Anzahl der Zeilen einer Textdatei zurück.", func(args []Value) Value {
-		if len(args) < 1 {
-			return ErrorVal("file.LineCount benötigt einen Pfad")
+		pathStr, errS := expectStr(args, 0, "file.LineCount(path)")
+		if errS != nil {
+			return *errS
 		}
 
-		path, errVal := absPathVal(args[0].Str)
+		path, errVal := absPathVal(pathStr)
 		if errVal != nil {
 			return *errVal
 		}
@@ -1117,7 +1262,12 @@ func InitFileFunctions() {
 			return ErrorVal("file.Head(path, n) benötigt Pfad und Zeilenanzahl")
 		}
 
-		path, errVal := absPathVal(args[0].Str)
+		pathStr, errS := expectStr(args, 0, "file.Head(path, n)")
+		if errS != nil {
+			return *errS
+		}
+
+		path, errVal := absPathVal(pathStr)
 		if errVal != nil {
 			return *errVal
 		}
@@ -1154,11 +1304,12 @@ func InitFileFunctions() {
 
 	// ---------------- ReadAllText ----------------
 	Register(ns+"ReadAllText", "file", "pfad", "Liest den gesamten Inhalt einer Datei als String.", func(args []Value) Value {
-		if len(args) < 1 {
-			return ErrorVal("ReadAllText erwartet einen Dateipfad")
+		pathStr, errS := expectStr(args, 0, "file.ReadAllText(pfad)")
+		if errS != nil {
+			return *errS
 		}
 
-		path, errVal := absPathVal(args[0].Str)
+		path, errVal := absPathVal(pathStr)
 		if errVal != nil {
 			return *errVal
 		}
@@ -1180,9 +1331,15 @@ func InitFileFunctions() {
 	})
 
 	// ---------------- Ext ----------------
+	// Hinweis: Fehlendes Argument liefert weiterhin "" (kein Fehler,
+	// bewusstes Verhalten). Falscher Typ (z.B. Array) liefert jetzt aber
+	// einen echten Fehler statt eines stillen "".
 	Register(ns+"Ext", "file", "pfad", "Gibt die Dateiendung zurück.", func(args []Value) Value {
 		if len(args) < 1 {
 			return StrVal("")
+		}
+		if args[0].Kind != KindStr {
+			return ErrorVal(fmt.Sprintf("file.Ext: erwarte einen Dateipfad (String), habe %s bekommen", GetKindName(args[0].Kind)))
 		}
 
 		// 1. Pfad validieren (Wichtig: absPathVal gibt 2 Werte zurück!)
@@ -1202,6 +1359,9 @@ func InitFileFunctions() {
 	Register(ns+"Name", "file", "pfad", "Gibt den Dateinamen ohne Verzeichnispfad zurück.", func(args []Value) Value {
 		if len(args) < 1 {
 			return StrVal("")
+		}
+		if args[0].Kind != KindStr {
+			return ErrorVal(fmt.Sprintf("file.Name: erwarte einen Dateipfad (String), habe %s bekommen", GetKindName(args[0].Kind)))
 		}
 
 		// 1. Pfad validieren und entpacken
@@ -1225,6 +1385,9 @@ func InitFileFunctions() {
 		if len(args) < 1 {
 			return StrVal("")
 		}
+		if args[0].Kind != KindStr {
+			return ErrorVal(fmt.Sprintf("file.Dir: erwarte einen Dateipfad (String), habe %s bekommen", GetKindName(args[0].Kind)))
+		}
 
 		// 1. Pfad validieren (Gibt (string, *Value) zurück)
 		path, errVal := absPathVal(args[0].Str)
@@ -1243,6 +1406,8 @@ func InitFileFunctions() {
 	// ------------------------
 	// Pfad zusammensetzen
 	// ------------------------
+	// Hinweis: Nutzt bewusst toStringSafe() für alle Segmente, da Join
+	// beliebige Werte (auch Zahlen etc.) tolerant in Pfadteile umwandeln soll.
 	Register(ns+"Join", "file", "pfad, teil, ...", "Verbindet beliebig viele Pfadsegmente sicher miteinander.", func(args []Value) Value {
 		if len(args) < 2 {
 			return Value{Kind: KindStr, Str: ""}
@@ -1260,11 +1425,12 @@ func InitFileFunctions() {
 	Register(ns+"ReadBytes", "file", "path",
 		"Liest eine Datei als Byte-Array ein und gibt ein Array von Zahlen (0–255) zurück.",
 		func(args []Value) Value {
-			if len(args) < 1 {
-				return ErrorVal("file.ReadBytes benötigt Pfad")
+			pathStr, errS := expectStr(args, 0, "file.ReadBytes(path)")
+			if errS != nil {
+				return *errS
 			}
 
-			path, errVal := absPathVal(args[0].Str)
+			path, errVal := absPathVal(pathStr)
 			if errVal != nil {
 				return *errVal
 			}
@@ -1291,7 +1457,12 @@ func InitFileFunctions() {
 				return ErrorVal("file.WriteBytes: zweites Argument muss ein Array sein")
 			}
 
-			path, errVal := absPathVal(args[0].Str)
+			pathStr, errS := expectStr(args, 0, "file.WriteBytes(path, byteArray)")
+			if errS != nil {
+				return *errS
+			}
+
+			path, errVal := absPathVal(pathStr)
 			if errVal != nil {
 				return *errVal
 			}
@@ -1328,12 +1499,13 @@ func InitFileFunctions() {
 	// ------------------------------------------------------------
 
 	Register(ns+"Tail", "file", "path, [lines], [refresh], [silent]", "Zeigt die letzten Zeilen einer Datei an. Bei 'refresh' (z.B. '1s') wird die Datei live überwacht. Mit silent=True: kein Print, gibt stattdessen einmalig true/false zurück (für Skript-Nutzung in einer eigenen Schleife).", func(args []Value) Value {
-		if len(args) < 1 {
-			return ErrorVal("Tail benötigt mindestens den Dateipfad")
+		pathStr, errS := expectStr(args, 0, "file.Tail(path, ...)")
+		if errS != nil {
+			return *errS
 		}
 
 		// 1. Pfad auflösen
-		path, eVal := absPathVal(args[0].Str)
+		path, eVal := absPathVal(pathStr)
 		if eVal != nil {
 			return *eVal
 		}
@@ -1470,11 +1642,12 @@ func InitFileFunctions() {
 
 	// file.Watch(path [, timeout_ms])
 	Register(ns+"Watch", "file", "path, [timeoutMs]", "Wartet, bis die Datei geändert wird. Gibt True bei Änderung, False bei Timeout zurück.", func(args []Value) Value {
-		if len(args) < 1 {
-			return ErrorVal("file.Watch(path) benötigt einen Pfad")
+		pathStr, errS := expectStr(args, 0, "file.Watch(path)")
+		if errS != nil {
+			return *errS
 		}
 
-		path, eVal := absPathVal(args[0].Str)
+		path, eVal := absPathVal(pathStr)
 		if eVal != nil {
 			return *eVal
 		}
@@ -1526,6 +1699,9 @@ func InitFileFunctions() {
 	// des Suchmusters (oder bis timeoutMs abgelaufen ist) und gibt dann
 	// true (Treffer) bzw. false (Timeout) zurück. Ohne timeoutMs (oder 0)
 	// wartet der Aufruf unbegrenzt, analog zu file.Watch.
+	//
+	// Hinweis: Nutzt bewusst ToString() für path/pattern (siehe Kommentar
+	// bei file.Compare), daher hier kein expectStr().
 	// ------------------------------------------------------------
 
 	// file.WatchLog(path, pattern [, style, silent, timeoutMs])
@@ -1667,7 +1843,12 @@ func InitFileFunctions() {
 			return ErrorVal("file.UniqueLines(path, caseSensitive) benötigt 2 Argumente")
 		}
 
-		path, errPtr := processTargetPath(args[0].Str)
+		pathStr, errS := expectStr(args, 0, "file.UniqueLines(path, caseSensitive)")
+		if errS != nil {
+			return *errS
+		}
+
+		path, errPtr := processTargetPath(pathStr)
 		if errPtr != nil {
 			return *errPtr
 		}
@@ -1718,7 +1899,12 @@ func InitFileFunctions() {
 			return ErrorVal("file.GetDuplicates(path, caseSensitive) benötigt 2 Argumente")
 		}
 
-		path, errPtr := processTargetPath(args[0].Str)
+		pathStr, errS := expectStr(args, 0, "file.GetDuplicates(path, caseSensitive)")
+		if errS != nil {
+			return *errS
+		}
+
+		path, errPtr := processTargetPath(pathStr)
 		if errPtr != nil {
 			return *errPtr
 		}
@@ -1769,11 +1955,12 @@ func InitFileFunctions() {
 	})
 
 	Register(ns+"SecureDelete", "file", "path", "Hochsicherheits-Löschung: In-Place AES-Verschlüsselung + Zufalls-Rename + Truncate.", func(args []Value) Value {
-		if len(args) < 1 {
-			return ErrorVal("file.SecureDelete(path)")
+		pathStr, errS := expectStr(args, 0, "file.SecureDelete(path)")
+		if errS != nil {
+			return *errS
 		}
 
-		path, errVal := absPathVal(args[0].Str)
+		path, errVal := absPathVal(pathStr)
 		if errVal != nil {
 			return *errVal
 		}

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+	"unsafe"
 )
 
 // InitStringFunctions registriert String-Funktionen
@@ -395,6 +396,56 @@ func InitStringFunctions() {
 
 		return NumVal(val)
 	})
+
+	// crypt.Wipe
+	Register(ns+"Wipe", "crypt", "byteArray",
+		"Überschreibt ein Byte-Array (z.B. von reg.ReadProtectedValueBytes) in-place mit Nullen. Sollte aufgerufen werden, sobald ein entschlüsselter Wert nicht mehr benötigt wird.", func(args []Value) Value {
+			if len(args) != 1 {
+				return ErrorVal("crypt.Wipe erwartet genau 1 Argument")
+			}
+			if args[0].Kind != KindArr {
+				return ErrorVal("crypt.Wipe erwartet ein Byte-Array (KindArr)")
+			}
+
+			// WICHTIG: args[0].Arr ist ein Slice-Header, der denselben
+			// Backing-Array wie die Original-Variable im Environment teilt
+			// (solange dort kein append() eine Neu-Allokation ausgelöst hat).
+			// Elementweises Überschreiben wirkt daher auch auf die Original-Variable.
+			for i := range args[0].Arr {
+				args[0].Arr[i] = NumVal(0)
+			}
+
+			return BoolVal(true)
+		})
+
+	// crypt.WipeString
+	// ACHTUNG: Nutzt "unsafe", um Go's String-Immutability bewusst zu brechen.
+	// Damit wird der tatsächliche Speicherinhalt eines Strings mit Nullbytes
+	// überschrieben - nicht nur die Variable auf einen neuen (leeren) String
+	// umgebogen, wie es "x = """ tun würde.
+	Register(ns+"WipeString", "crypt", "value",
+		"Überschreibt den Speicherinhalt eines Strings mit Nullbytes (0x00). Im Gegensatz zu 'x = \"\"' wird hier der tatsächliche RAM-Inhalt gelöscht, nicht nur die Variable umgebogen. Nach dem Aufruf enthält die Variable eine Zeichenkette gleicher Länge, aber nur aus Nullbytes.", func(args []Value) Value {
+			if len(args) != 1 {
+				return ErrorVal("crypt.WipeString erwartet genau 1 Argument")
+			}
+			if args[0].Kind != KindStr {
+				return ErrorVal("crypt.WipeString erwartet einen String")
+			}
+
+			s := args[0].Str
+			if len(s) == 0 {
+				return BoolVal(true) // nichts zu tun
+			}
+
+			// Mutable View auf den Backing-Speicher des Strings holen.
+			// Ab Go 1.20: unsafe.StringData + unsafe.Slice
+			data := unsafe.Slice(unsafe.StringData(s), len(s))
+			for i := range data {
+				data[i] = 0
+			}
+
+			return BoolVal(true)
+		})
 
 	Register(ns+"Like", "string", "text, pattern",
 		"Einfacher Mustervergleich: # (Ziffer), ? (ein Zeichen), * (viele Zeichen).",

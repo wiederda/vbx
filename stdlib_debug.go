@@ -14,6 +14,7 @@ import (
 
 var logFile *os.File
 var currentScriptName string = "unnamed_script"
+var scriptPath string
 var lastLogPath string
 var lastSampleTime time.Time
 var lastThreadTime float64

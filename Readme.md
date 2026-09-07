@@ -1,6 +1,7 @@
 # 📖 VBX – Kurzreferenz
 
 VBX ist eine modulare, in Go geschriebene Runtime für eine VB-Skriptsprache. Schlanker Kern, Komplexität wird in Module ausgelagert.
+Weitere Funktionen können über Plugins eingebunden werden.
 
 ---
 
@@ -82,8 +83,9 @@ Relative Pfade, einmaliges Laden, rekursive Includes werden erkannt und Include-
 
 **Permanent:** [app.*](md/app.md), [array.*](md/array.md), [date.*](md/date.md), [file.*](md/file.md), [folder.*](md/folder.md), [global.*](md/global.md), [math.*](md/math.md)
 
-**Optional:** [ad.*](md/ad.md), [cert.*](md/cert.md), [computer.*](md/computer.md), [convert.*](md/convert.md), [crypt.*](md/crypt.md), [data.*](md/data.md), [db.*](md/db.md), [debug.*](md/debug.md), [docker.*](md/docker.md), [env.*](md/env.md), [fin.*](md/fin.md), [geo.*](md/geo.md), [git.*](md/git.md), [ini.*](md/ini.md), [json.*](md/json.md), [uptime-kuma.*](md/kuma.md), [map.*](md/map.md), [net.*](md/net.md), [pgp.*](md/pgp.md), [picture.*](md/picture.md), [pqc.*](md/pqc.md), [proc.*](md/proc.md), [rand.*](md/rand.md), [reg.*](md/reg.md), [service.*](md/service.md), [sftp.*](md/sftp.md), [smtp.*](md/smtp.md), [ssh.*](md/ssh.md), [steg.*](md/steg.md), [string.*](md/string.md), [tar.*](md/tar.md), [template.*](md/template.md), [win.*](md/win.md), [xml.*](md/xml.md), [yaml.*](md/yaml.md), [zip.*](md/zip.md)
+**Optional:** [ad.*](md/ad.md), [cert.*](md/cert.md), [computer.*](md/computer.md), [convert.*](md/convert.md), [crypt.*](md/crypt.md), [db.*](md/db.md), [debug.*](md/debug.md),  [env.*](md/env.md), [geo.*](md/geo.md), [git.*](md/git.md), [json.*](md/json.md), [uptime-kuma.*](md/kuma.md), [map.*](md/map.md), [net.*](md/net.md), [picture.*](md/picture.md), [proc.*](md/proc.md),  [reg.*](md/reg.md), [service.*](md/service.md), [sftp.*](md/sftp.md), [smtp.*](md/smtp.md), [ssh.*](md/ssh.md), [string.*](md/string.md), [template.*](md/template.md), [win.*](md/win.md)
 
+**Plugins:** [data.*], [docker.*], [fin.*], [ini.*], [pgp.*], [pqc.*], [rand.*], [steg.*], [tar.*], [xml.*], [yaml.*], [zip.*]
 ---
 
 ## Kommentare

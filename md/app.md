@@ -21,6 +21,27 @@ Plattformübergreifend (Windows, Linux, macOS).
 
 ---
 
+## app.ScriptPath()
+- **Konkret:**
+  Gibt den vollständigen Pfad (inkl. Dateiname) der aktuell ausgeführten Skript-Datei zurück.
+  Anders als `app.CurrentDirectory()` bezieht sich dieser Pfad auf den Speicherort
+  des Skripts selbst, unabhängig davon, aus welchem Verzeichnis `vbx` gestartet wurde.
+- **Rückgabe:**
+  `StrVal`
+
+---
+
+## app.ScriptDir()
+- **Konkret:**
+  Gibt das Verzeichnis zurück, in dem die aktuell ausgeführte Skript-Datei liegt.
+  Entspricht dem Ordneranteil von `app.ScriptPath()`.
+  Nützlich, um Pfade relativ zum Skript aufzubauen, z. B. für Build- oder Release-Skripte,
+  die unabhängig vom aktuellen Arbeitsverzeichnis funktionieren sollen.
+- **Rückgabe:**
+  `StrVal`
+
+---
+
 ## app.CurrentDirectory()
 - **Konkret:**
   Gibt das aktuelle Arbeitsverzeichnis zurück (Working Directory).

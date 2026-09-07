@@ -1106,3 +1106,10 @@ func downloadFolderRecursiveP(conn *SftpConn, remotePath string, localTarget str
 
 	return count, nil
 }
+
+func splitPath(path string) []string {
+	if path == "" {
+		return []string{}
+	}
+	return strings.Split(path, ".")
+}
