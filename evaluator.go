@@ -124,6 +124,25 @@ func mapAssignOp(op TokenType) TokenType {
 	}
 }
 
+func findBuiltinByModuleAndName(module, name string) (BuiltinInfo, bool) {
+	// 1. Direkter qualifizierter Name:
+	//    z.B. "app.ExecutablePath"
+	if info, ok := builtins[module+"."+name]; ok {
+		return info, true
+	}
+
+	// 2. Unqualifizierter Name mit Module-Information:
+	//    z.B. "ExecutablePath" + Module == "app"
+	for builtinName, info := range builtins {
+		if strings.EqualFold(builtinName, name) &&
+			strings.EqualFold(info.Module, module) {
+			return info, true
+		}
+	}
+
+	return BuiltinInfo{}, false
+}
+
 // Normales Setzen einer Variable
 func (e *Environment) Set(name string, val Value) {
 	// 1. Schau, ob die Variable HIER existiert -> Dann Update
@@ -1232,7 +1251,18 @@ func evalExpr(e Expr, env *Environment) Value {
 			objVal, found := env.Get(n.objName)
 
 			if !found {
-				return ErrorVal(fmt.Sprintf("Objekt '%s' ist nicht definiert", n.objName))
+				if _, ok := findBuiltinByModuleAndName(n.objName, n.fieldName); ok {
+					return ErrorVal(fmt.Sprintf(
+						"Funktion '%s.%s' muss mit '()' aufgerufen werden",
+						n.objName,
+						n.fieldName,
+					))
+				}
+
+				return ErrorVal(fmt.Sprintf(
+					"Objekt '%s' ist nicht definiert",
+					n.objName,
+				))
 			}
 
 			if objVal.Kind != KindObj {
