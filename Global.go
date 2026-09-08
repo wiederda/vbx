@@ -462,23 +462,23 @@ func InitGlobal() {
 		return StrVal(strings.ReplaceAll(s, find, repl))
 	})
 
-	Register("ReplaceVars", "global", "text, key/value pairs", "Ersetzt mehrere Platzhalter in einem Text.", func(args []Value) Value {
-
-		if len(args) < 1 {
-			return StrVal("")
+	Register("ReplaceMany", "global", "text, find1, repl1, ...", "Ersetzt mehrere Teilstrings in einem Text.", func(args []Value) Value {
+		if len(args) < 3 {
+			return ErrorVal("ReplaceMany(text, find1, repl1, ...) benötigt mindestens 3 Argumente")
 		}
 
-		text := args[0].Str
+		text := ToString(args[0])
 
-		for i := 1; i+1 < len(args); i += 2 {
-			key := args[i].Str
-			value := args[i+1].Str
+		// Immer Suchtext + Ersatztext als Paar
+		if (len(args)-1)%2 != 0 {
+			return ErrorVal("ReplaceMany benötigt Such- und Ersatztexte als Paare")
+		}
 
-			text = strings.ReplaceAll(
-				text,
-				"{"+key+"}",
-				value,
-			)
+		for i := 1; i < len(args); i += 2 {
+			find := ToString(args[i])
+			repl := ToString(args[i+1])
+
+			text = strings.ReplaceAll(text, find, repl)
 		}
 
 		return StrVal(text)

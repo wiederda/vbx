@@ -222,14 +222,14 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
 
 ---
 
-## ReplaceVars(text, key1, val1, key2, val2, ...)
-- **Konkret:**
-  Ersetzt mehrere `{Platzhalter}` in einem Text in einem Aufruf.
-  Platzhalter werden im Format `{key}` erwartet.
-- **Parameter:**
-  - `text`: Quelltext mit Platzhaltern.
-  - `key, val`: Beliebig viele Schlüssel/Wert-Paare. Ungerade Anzahl ignoriert letzten Schlüssel.
-- **Rückgabe:**
+## ReplaceMany(text, find1, repl1, find2, repl2, ...)
+* **Konkret:**
+  Ersetzt mehrere Teilstrings in einem Text in einem Aufruf.
+* **Parameter:**
+  * `text`: Quelltext.
+  * `find, repl`: Beliebig viele Suchtext-/Ersetzungstext-Paare.
+  * Bei einer ungeraden Anzahl zusätzlicher Argumente wird das letzte Argument ignoriert.
+* **Rückgabe:**
   `StrVal`
 
 ---
