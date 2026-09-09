@@ -83,6 +83,101 @@ func InitFileFunctions() {
 		return NullVal()
 	})
 
+	Register(ns+"FindWords", "file", "words, inputFile, outputFile", "Sucht beliebige Wörter in einer Datei und schreibt alle Trefferzeilen mit Zeilennummer in eine Ausgabedatei.", func(args []Value) Value {
+		// 1. Parameter prüfen
+		if len(args) < 3 {
+			return ErrorVal("FindWords erwartet drei Parameter: Suchwörter, Eingabedatei und Ausgabedatei")
+		}
+
+		// 2. Suchwörter prüfen
+		if args[0].Kind != KindArr {
+			return ErrorVal("FindWords: Der erste Parameter muss ein Array mit Suchwörtern sein")
+		}
+
+		var words []string
+
+		for i, value := range args[0].Arr {
+			if value.Kind != KindStr {
+				return ErrorVal(fmt.Sprintf(
+					"FindWords: Suchwort an Position %d muss ein String sein",
+					i,
+				))
+			}
+
+			if value.Str != "" {
+				words = append(words, value.Str)
+			}
+		}
+
+		if len(words) == 0 {
+			return ErrorVal("FindWords: Das Suchwort-Array darf nicht leer sein")
+		}
+
+		// 3. Eingabedatei
+		inputStr, errS := expectStr(args, 1, "file.FindWords(words, inputFile, outputFile)")
+		if errS != nil {
+			return *errS
+		}
+
+		inputPath, errVal := absPathVal(inputStr)
+		if errVal != nil {
+			return *errVal
+		}
+
+		// 4. Ausgabedatei
+		outputStr, errS := expectStr(args, 2, "file.FindWords(words, inputFile, outputFile)")
+		if errS != nil {
+			return *errS
+		}
+
+		outputPath, errVal := absPathVal(outputStr)
+		if errVal != nil {
+			return *errVal
+		}
+
+		// 5. Eingabedatei öffnen
+		input, err := os.Open(inputPath)
+		if err != nil {
+			return ErrorVal("Lesefehler in FindWords: " + err.Error())
+		}
+		defer input.Close()
+
+		// 6. Ausgabedatei erzeugen/überschreiben
+		output, err := os.Create(outputPath)
+		if err != nil {
+			return ErrorVal("Schreibfehler in FindWords: " + err.Error())
+		}
+		defer output.Close()
+
+		// 7. Datei zeilenweise durchsuchen
+		scanner := bufio.NewScanner(input)
+
+		// Größere Zeilen erlauben als der Scanner-Standard von 64 KB
+		scanner.Buffer(make([]byte, 64*1024), 16*1024*1024)
+
+		lineNumber := 0
+		hitCount := 0
+
+		for scanner.Scan() {
+			lineNumber++
+			line := scanner.Text()
+
+			for _, word := range words {
+				if strings.Contains(line, word) {
+					fmt.Fprintf(output, "%d: %s\n", lineNumber, line)
+					hitCount++
+					break
+				}
+			}
+		}
+
+		if err := scanner.Err(); err != nil {
+			return ErrorVal("Lesefehler in FindWords: " + err.Error())
+		}
+
+		return NumVal(float64(hitCount))
+	})
+
 	// ------------------------
 	// Create
 	// ------------------------

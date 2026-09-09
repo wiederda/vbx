@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -75,6 +76,15 @@ type SelectNode struct {
 	Expression Expr
 	Cases      []CaseBranch
 	Default    []Stmt
+
+	// Dispatch-Cache: einmalig gebaut, nur aktiv, wenn ALLE Case-Werte
+	// reine Zahl- oder String-Literale sind. Getrennte Maps nach Typ,
+	// damit der Hot-Path (Zahl-zu-Zahl) OHNE jede String-Konvertierung
+	// auskommt - das war der Bug in der Vorversion.
+	dispatchNumCache map[float64]int
+	dispatchStrCache map[string]int
+	dispatchOK       bool
+	dispatchBuilt    bool
 }
 
 var NilValue = Value{Kind: KindNil}
@@ -85,7 +95,29 @@ type Environment struct {
 	parent          *Environment
 	currentLine     int
 	currentFile     string
-	currentFuncName string // NEU: ersetzt den "_currentFuncName"-Eintrag in vars
+	currentFuncName string
+	fnReturn        Value // NEU: ersetzt den "_fnReturn"-Map-Eintrag
+}
+
+func tryParseFloat(s string) (float64, bool) {
+	f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil {
+		return 0, false
+	}
+	return f, true
+}
+
+func literalValue(e Expr) (Value, bool) {
+	switch n := e.(type) {
+	case Value:
+		return n, true
+	case *NumberNode:
+		return NumVal(n.Value), true
+	case *StringNode:
+		return Value{Kind: KindStr, Str: n.Value}, true
+	default:
+		return Value{}, false
+	}
 }
 
 func calculateBinaryOp(op TokenType, l Value, r Value) Value {
@@ -204,7 +236,6 @@ func (e *Environment) GetRef(name string) *Value {
 }
 
 func (e *Environment) PutInternal(name string, val Value) {
-	// Einfach reinwerfen, ohne "exists"-Check und ohne Printf
 	e.vars[name] = &val
 }
 
@@ -271,6 +302,13 @@ func NewEnvironment(parent *Environment) *Environment {
 	return &Environment{
 		vars:   make(map[string]*Value),
 		parent: parent, // Wichtig für die Scope-Kette!
+	}
+}
+
+func NewEnvironmentWithCapacity(parent *Environment, capacity int) *Environment {
+	return &Environment{
+		vars:   make(map[string]*Value, capacity),
+		parent: parent,
 	}
 }
 
@@ -418,19 +456,22 @@ func evalFunctionCall(name string, args []Expr, env *Environment) Value {
 		required := fn.RequiredParams
 
 		if len(evaluated) < required || len(evaluated) > len(fn.Params) {
-			return ErrorVal(fmt.Sprintf("Funktion '%s' erwartet %d bis %d Argumente, erhalten: %d",
-				name, required, len(fn.Params), len(evaluated)))
+			return ErrorVal(fmt.Sprintf(
+				"Funktion '%s' erwartet %d bis %d Argumente, erhalten: %d",
+				name, required, len(fn.Params), len(evaluated),
+			))
 		}
 
-		local := NewEnvironment(env)
-		local.PutInternal("_fnReturn", NumVal(0))
-		local.currentFuncName = name // statt: local.PutInternal("_currentFuncName", Value{Kind: KindStr, Str: name})
+		// Anzahl der Parameter ist bekannt -> Map direkt passend anlegen
+		local := NewEnvironmentWithCapacity(env, len(fn.Params))
+
+		local.fnReturn = NumVal(0)
+		local.currentFuncName = name
 
 		for i, p := range fn.Params {
 			if i < len(evaluated) {
 				local.PutInternal(p.Name, evaluated[i])
 			} else {
-				// Fehlendes optionales Argument -> Default im Aufruf-Scope auswerten
 				defVal := evalExpr(p.Default, local)
 				if defVal.Kind == KindError {
 					return defVal
@@ -441,11 +482,13 @@ func evalFunctionCall(name string, args []Expr, env *Environment) Value {
 
 		retVal, sig := evalStatements(fn.Body, local)
 		if sig == SignalError {
-			return ErrorVal(fmt.Sprintf("Fehler in Funktion '%s': %s", name, retVal.Str))
+			return ErrorVal(fmt.Sprintf(
+				"Fehler in Funktion '%s': %s",
+				name, retVal.Str,
+			))
 		}
 
-		ret, _ := local.Get("_fnReturn")
-		return ret
+		return local.fnReturn
 	}
 
 	// --- 5. User-defined SUB ---
@@ -457,7 +500,7 @@ func evalFunctionCall(name string, args []Expr, env *Environment) Value {
 				name, required, len(s.Params), len(evaluated)))
 		}
 
-		local := NewEnvironment(env)
+		local := NewEnvironmentWithCapacity(env, len(s.Params))
 		for i, p := range s.Params {
 			if i < len(evaluated) {
 				local.PutInternal(p.Name, evaluated[i])
@@ -519,9 +562,8 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 	case *AssignNode:
 		val := evalExpr(n.Value, env)
 
-		// 1. VB-Spezifisch: Rückgabewert setzen
 		if env.currentFuncName != "" && n.Name == env.currentFuncName {
-			env.Update("_fnReturn", val)
+			env.fnReturn = val // statt: env.Update("_fnReturn", val)
 			return NullVal(), SignalNone
 		}
 
@@ -825,17 +867,85 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 			return valToTest, SignalError
 		}
 
+		if !n.dispatchBuilt {
+			n.dispatchBuilt = true
+			n.dispatchOK = true
+			n.dispatchNumCache = make(map[float64]int)
+			n.dispatchStrCache = make(map[string]int)
+
+		buildLoop:
+			for idx, branch := range n.Cases {
+				for _, cond := range branch.Conditions {
+					lit, isLiteral := literalValue(cond)
+					if !isLiteral {
+						n.dispatchOK = false
+						break buildLoop
+					}
+					switch lit.Kind {
+					case KindNum:
+						n.dispatchNumCache[lit.Num] = idx
+					case KindStr:
+						n.dispatchStrCache[strings.ToLower(lit.Str)] = idx
+					default:
+						// Bool/Null-Case-Werte (selten) -> Fastpath deaktivieren,
+						// linearer Scan uebernimmt komplett.
+						n.dispatchOK = false
+						break buildLoop
+					}
+				}
+			}
+			if !n.dispatchOK {
+				n.dispatchNumCache = nil
+				n.dispatchStrCache = nil
+			}
+		}
+
+		if n.dispatchOK {
+			var idx int
+			found := false
+
+			switch valToTest.Kind {
+			case KindNum:
+				idx, found = n.dispatchNumCache[valToTest.Num]
+				if !found && len(n.dispatchStrCache) > 0 {
+					// Cross-Type (z.B. Case "10"), nur pruefen wenn ueberhaupt
+					// String-Cases existieren - kostet sonst nichts extra.
+					idx, found = n.dispatchStrCache[strings.ToLower(ToString(valToTest))]
+				}
+			case KindStr:
+				idx, found = n.dispatchStrCache[strings.ToLower(valToTest.Str)]
+				if !found && len(n.dispatchNumCache) > 0 {
+					if numKey, ok := tryParseFloat(valToTest.Str); ok {
+						idx, found = n.dispatchNumCache[numKey]
+					}
+				}
+			}
+
+			if found {
+				rv, sig := evalStatements(n.Cases[idx].Body, env)
+				if sig != SignalNone {
+					return rv, sig
+				}
+				return Value{}, SignalNone
+			}
+			if len(n.Default) > 0 {
+				rv, sig := evalStatements(n.Default, env)
+				if sig != SignalNone {
+					return rv, sig
+				}
+			}
+			return Value{}, SignalNone
+		}
+
+		// Fallback: linearer Scan (unverändert, deckt Range/Is/dynamische Ausdrücke ab)
 		matched := false
 		for _, branch := range n.Cases {
 			for _, condExpr := range branch.Conditions {
 				isMatch := false
 
-				// --- NEU: Hier unterscheiden wir zwischen Normal, Range und Is ---
 				switch c := condExpr.(type) {
 				case *RangeNode:
-					// Nutze deine toFloat-Logik für " 25 "
 					target := toFloatSafe([]Value{valToTest}, 0)
-
 					lowVal := evalExpr(c.Low, env)
 					low := toFloatSafe([]Value{lowVal}, 0)
 					highVal := evalExpr(c.High, env)
@@ -845,20 +955,17 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 					}
 
 				case *IsNode:
-					// Nutze evalBinary für Vergleiche wie > 65
 					res := evalBinary(valToTest, c.Operator, evalExpr(c.Value, env))
 					if res.Kind == KindBool && res.Bool {
 						isMatch = true
 					}
 
 				default:
-					// Dein bisheriger Standard-Vergleich
 					condVal := evalExpr(condExpr, env)
 					if valuesAreEqual(valToTest, condVal) {
 						isMatch = true
 					}
 				}
-				// --- ENDE NEU ---
 
 				if isMatch {
 					matched = true
@@ -1028,7 +1135,7 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 		if val.Kind == KindError {
 			return val, SignalError
 		}
-		env.Set("_fnReturn", val)
+		env.fnReturn = val // statt: env.Set("_fnReturn", val)
 		return val, SignalReturn
 
 	case *IfNode:

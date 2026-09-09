@@ -76,6 +76,19 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
 
 ---
 
+## file.FindWords(words, inputFile, outputFile, [caseInsensitive])
+- **Konkret:**
+  Sucht beliebige Wörter aus einem Array in einer Datei und schreibt alle Trefferzeilen mit vorangestellter Zeilennummer in eine Ausgabedatei.
+  `words` muss ein Array aus Strings sein (leere Strings werden ignoriert, das Array darf nach dem Filtern nicht komplett leer sein).
+  Eine Zeile gilt als Treffer, sobald mindestens eines der Suchwörter darin vorkommt (Teilstring-Suche).
+  `caseInsensitive` (optional, Standard `false`) steuert, ob Groß-/Kleinschreibung beim Vergleich ignoriert wird. Die geschriebene Zeile bleibt dabei immer im Original, nur der Vergleich läuft case-insensitive.
+  Die Ausgabedatei wird erzeugt bzw. überschrieben, falls sie schon existiert.
+  Unterstützt auch sehr lange Zeilen (bis 16 MB pro Zeile).
+- **Rückgabe:**
+  `NumVal` (Anzahl der gefundenen Trefferzeilen)
+
+---  
+
 ## file.HasContent(path)
 - **Konkret:**
   Prüft, ob eine Datei existiert und mehr als 0 Byte Inhalt hat.

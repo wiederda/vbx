@@ -23,6 +23,9 @@ var lastThreadSample time.Time
 var lastCPUTime float64
 var lastCPUSample time.Time
 
+var allocStartBytes uint64
+var allocStartCount uint64
+
 // InitStringFunctions registriert String-Funktionen
 func InitDebugFunctions(env *Environment) {
 	if builtins == nil {
@@ -236,6 +239,30 @@ func InitDebugFunctions(env *Environment) {
 
 		// Wir geben die Anzahl der gelöschten Dateien zurück
 		return Value{Kind: KindNum, Num: float64(deletedCount)}
+	})
+
+	Register(ns+"AllocStart", "debug", "-", "Startet die Messung der Heap-Allokationen.", func(args []Value) Value {
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
+
+		allocStartBytes = m.TotalAlloc
+		allocStartCount = m.Mallocs
+
+		return BoolVal(true)
+	})
+
+	Register(ns+"AllocBytes", "debug", "-", "Gibt die seit AllocStart allokierten Bytes zurück.", func(args []Value) Value {
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
+
+		return NumVal(float64(m.TotalAlloc - allocStartBytes))
+	})
+
+	Register(ns+"AllocCount", "debug", "-", "Gibt die seit AllocStart durchgeführten Heap-Allokationen zurück.", func(args []Value) Value {
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
+
+		return NumVal(float64(m.Mallocs - allocStartCount))
 	})
 
 }

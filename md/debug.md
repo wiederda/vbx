@@ -105,6 +105,33 @@ Timer und CPU-Samples sind pro Skript-Instanz stateful – mehrfache Aufrufe lie
 
 ---
 
+## debug.AllocStart()
+- **Konkret:**
+  Startet die Messung der Heap-Allokationen.
+  Merkt sich den aktuellen Stand von `TotalAlloc` und `Mallocs` aus den Go-Runtime-Speicherstatistiken.
+  Überschreibt eine laufende Messung.
+- **Rückgabe:**
+  `BoolVal` (`true`)
+
+---  
+
+## debug.AllocBytes()
+- **Konkret:**
+  Gibt die seit `debug.AllocStart` allokierten Bytes zurück.
+  Bezieht sich auf Heap-Allokationen insgesamt, nicht auf aktuell belegten Speicher.
+- **Rückgabe:**
+  `NumVal` (Bytes als Zahl)
+
+---  
+
+## debug.AllocCount()
+- **Konkret:**
+  Gibt die Anzahl der seit `debug.AllocStart` durchgeführten Heap-Allokationen zurück.
+- **Rückgabe:**
+  `NumVal` (Anzahl als Zahl)
+
+---  
+
 ## debug.CloseLog()
 - **Konkret:**
   Schreibt einen Abschluss-Header in die Log-Datei, flusht und schließt sie.
