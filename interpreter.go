@@ -220,8 +220,6 @@ func (t TokenType) String() string {
 		return "DIM"
 	case PRINT:
 		return "PRINT"
-	//case USE:
-	//	return "USE"
 	case IF:
 		return "IF"
 	case THEN:
@@ -260,7 +258,6 @@ func (t TokenType) String() string {
 		return "NEWLINE"
 	case PUBLIC:
 		return "PUBLIC"
-	// Mathematische Operatoren
 	case ERROR:
 		return "ERROR"
 	case PLUS:
@@ -297,6 +294,42 @@ func (t TokenType) String() string {
 		return "&"
 	case COMMA:
 		return ","
+	case LPAREN:
+		return "("
+	case RPAREN:
+		return ")"
+	case LBRACE:
+		return "{"
+	case RBRACE:
+		return "}"
+	case LBRACKET:
+		return "["
+	case RBRACKET:
+		return "]"
+	case DOT:
+		return "."
+	case AND:
+		return "AND"
+	case OR:
+		return "OR"
+	case NOT:
+		return "NOT"
+	case BOOL:
+		return "BOOL"
+	case EACH:
+		return "EACH"
+	case IN:
+		return "IN"
+	case STEP:
+		return "STEP"
+	case EXIT:
+		return "EXIT"
+	case CONTINUE:
+		return "CONTINUE"
+	case UNTIL:
+		return "UNTIL"
+	case COMMENT:
+		return "COMMENT"
 	default:
 		return "TOKEN" // Fallback
 	}

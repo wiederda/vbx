@@ -81,10 +81,11 @@ var NilValue = Value{Kind: KindNil}
 
 // GetRef liefert einen Pointer auf den Wert in der Map
 type Environment struct {
-	vars        map[string]*Value
-	parent      *Environment
-	currentLine int
-	currentFile string
+	vars            map[string]*Value
+	parent          *Environment
+	currentLine     int
+	currentFile     string
+	currentFuncName string // NEU: ersetzt den "_currentFuncName"-Eintrag in vars
 }
 
 func calculateBinaryOp(op TokenType, l Value, r Value) Value {
@@ -143,36 +144,52 @@ func findBuiltinByModuleAndName(module, name string) (BuiltinInfo, bool) {
 	return BuiltinInfo{}, false
 }
 
-// Normales Setzen einer Variable
-func (e *Environment) Set(name string, val Value) {
-	// 1. Schau, ob die Variable HIER existiert -> Dann Update
-	if ptr, ok := e.vars[name]; ok {
-		*ptr = val
-		return
+func (e *Environment) Get(name string) (Value, bool) {
+	for env := e; env != nil; env = env.parent {
+		if ptr, ok := env.vars[name]; ok {
+			return *ptr, true
+		}
 	}
-
-	// 2. Schau, ob sie beim VATER existiert (Rekursion nach oben) -> Dann dort Update
-	if e.parent != nil {
-		e.parent.Set(name, val)
-		return
-	}
-
-	// 3. Wenn sie nirgendwo existiert -> Erstelle sie HIER (lokal)
-	copyVal := val
-	e.vars[name] = &copyVal
+	return NilValue, false
 }
 
-func (e *Environment) Get(name string) (Value, bool) {
-	// 1. Schau lokal nach
-	if ptr, ok := e.vars[name]; ok {
-		return *ptr, true
+func (e *Environment) Set(name string, val Value) {
+	env := e
+	for {
+		if ptr, ok := env.vars[name]; ok {
+			*ptr = val
+			return
+		}
+		if env.parent == nil {
+			break
+		}
+		env = env.parent
 	}
-	// 2. Wenn nicht lokal, frag den Parent (Global)
-	if e.parent != nil {
-		return e.parent.Get(name)
+	// nirgendwo gefunden -> wie vorher: im obersten (Root-)Scope neu anlegen
+	copyVal := val
+	env.vars[name] = &copyVal
+}
+
+func (e *Environment) Update(name string, val Value) error {
+	for env := e; env != nil; env = env.parent {
+		if ptr, ok := env.vars[name]; ok {
+			*ptr = val
+			return nil
+		}
 	}
-	// 3. Wenn nirgendwo gefunden
-	return NilValue, false
+	return fmt.Errorf("Variable '%s' nicht gefunden. Nutze DIM oder PUBLIC.", name)
+}
+
+// GetRefStrict liefert einen Pointer auf den Wert, OHNE ihn bei Fehlen anzulegen.
+// Für strikte Zugriffe wie Array-Zuweisungen (im Unterschied zu GetRef,
+// das für interne Schleifenvariablen automatisch neu anlegt).
+func (e *Environment) GetRefStrict(name string) (*Value, bool) {
+	for env := e; env != nil; env = env.parent {
+		if ptr, ok := env.vars[name]; ok {
+			return ptr, true
+		}
+	}
+	return nil, false
 }
 
 func (e *Environment) GetRef(name string) *Value {
@@ -248,18 +265,6 @@ func (e *Environment) SetGlobal(name string, val Value) {
 		curr = curr.parent
 	}
 	curr.vars[name] = &val
-}
-
-// Update sucht von innen nach außen und überschreibt (für x = 10)
-func (e *Environment) Update(name string, val Value) error {
-	if ptr, ok := e.vars[name]; ok {
-		*ptr = val
-		return nil
-	}
-	if e.parent != nil {
-		return e.parent.Update(name, val)
-	}
-	return fmt.Errorf("Variable '%s' nicht gefunden. Nutze DIM oder PUBLIC.", name)
 }
 
 func NewEnvironment(parent *Environment) *Environment {
@@ -419,7 +424,7 @@ func evalFunctionCall(name string, args []Expr, env *Environment) Value {
 
 		local := NewEnvironment(env)
 		local.PutInternal("_fnReturn", NumVal(0))
-		local.PutInternal("_currentFuncName", Value{Kind: KindStr, Str: name})
+		local.currentFuncName = name // statt: local.PutInternal("_currentFuncName", Value{Kind: KindStr, Str: name})
 
 		for i, p := range fn.Params {
 			if i < len(evaluated) {
@@ -513,14 +518,9 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 
 	case *AssignNode:
 		val := evalExpr(n.Value, env)
-		// Kein Abbruch mehr hier bei KindError – der Fehlerwert wird wie ein
-		// normaler Wert zugewiesen, damit er per IsError() geprüft werden kann.
-		// Wird der Fehlerwert danach in einer Bedingung/Berechnung verwendet,
-		// greift der Abbruch trotzdem ganz normal an der jeweiligen Stelle.
 
 		// 1. VB-Spezifisch: Rückgabewert setzen
-		currFunc, _ := env.Get("_currentFuncName")
-		if currFunc.Kind == KindStr && n.Name == currFunc.Str {
+		if env.currentFuncName != "" && n.Name == env.currentFuncName {
 			env.Update("_fnReturn", val)
 			return NullVal(), SignalNone
 		}
@@ -977,7 +977,7 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 		return NullVal(), SignalNone
 
 	case *ArrayAssignNode:
-		v, found := env.Get(n.Name)
+		vp, found := env.GetRefStrict(n.Name)
 		if !found {
 			return ErrorVal("Variable nicht deklariert: " + n.Name), SignalError
 		}
@@ -990,43 +990,37 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 		idx1Val := evalExpr(n.Index, env)
 		idx1 := int(toNumVal(idx1Val))
 
-		switch v.Kind {
+		switch vp.Kind {
 		case KindArr2D:
-			// --- 2D: STRENG (Kein Auto-Resize) ---
 			if n.Index2 == nil {
 				return ErrorVal("Zweiter Index fehlt"), SignalError
 			}
 			idx2Val := evalExpr(n.Index2, env)
 			idx2 := int(toNumVal(idx2Val))
 
-			// Harte Prüfung gegen die aktuellen Dimensionen
-			if idx1 < 0 || idx1 >= len(v.Arr2D) || idx2 < 0 || (len(v.Arr2D) > 0 && idx2 >= len(v.Arr2D[0])) {
+			if idx1 < 0 || idx1 >= len(vp.Arr2D) || idx2 < 0 || (len(vp.Arr2D) > 0 && idx2 >= len(vp.Arr2D[0])) {
 				return ErrorVal(fmt.Sprintf("Matrix-Index (%d,%d) außerhalb der Grenzen", idx1, idx2)), SignalError
 			}
-			v.Arr2D[idx1][idx2] = val
+			vp.Arr2D[idx1][idx2] = val
 
 		case KindArr:
-			// --- 1D: FLEXIBEL (Auto-Resize) ---
 			if idx1 < 0 {
 				return ErrorVal("Index negativ"), SignalError
 			}
-
-			if idx1 >= len(v.Arr) {
+			if idx1 >= len(vp.Arr) {
 				newArr := make([]Value, idx1+1)
-				copy(newArr, v.Arr)
-				for i := len(v.Arr); i < len(newArr); i++ {
+				copy(newArr, vp.Arr)
+				for i := len(vp.Arr); i < len(newArr); i++ {
 					newArr[i] = NumVal(0)
 				}
-				v.Arr = newArr
+				vp.Arr = newArr // direkt über den Pointer — landet sofort im gespeicherten Value
 			}
-			v.Arr[idx1] = val
+			vp.Arr[idx1] = val
 
 		default:
-			// Falls die Variable existiert, aber kein Array-Typ ist
 			return ErrorVal(fmt.Sprintf("Variable '%s' ist kein Array", n.Name)), SignalError
 		}
 
-		env.Update(n.Name, v)
 		return NullVal(), SignalNone
 
 	case *ReturnNode:
@@ -1359,17 +1353,18 @@ func evalExpr(e Expr, env *Environment) Value {
 
 		switch n.Op {
 		case PLUS:
-			// 1. Versuch: Beides als Zahlen behandeln (inkl. Auto-Konvertierung von Strings)
+			// Fast-Path: häufigster Fall, keine Konvertierungsversuche nötig
+			if l.Kind == KindNum && r.Kind == KindNum {
+				return NumVal(l.Num + r.Num)
+			}
+
 			ln, errL := requireNumber(l, "+")
 			rn, errR := requireNumber(r, "+")
 
 			if errL.Kind != KindError && errR.Kind != KindError {
-				// Erfolg! Beides sind Zahlen (oder Zahlen-Strings wie "10")
 				return NumVal(ln + rn)
 			}
 
-			// 2. Fallback: Wenn es keine reinen Zahlen sind, behandeln wir es als Text
-			// Das ist das "Haus" + 10 -> "Haus10" Szenario
 			return StrVal(ToString(l) + ToString(r))
 
 		case MINUS:

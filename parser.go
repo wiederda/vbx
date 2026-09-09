@@ -3,8 +3,10 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // ---------------- Parser ----------------
@@ -49,6 +51,16 @@ type ForEachNode struct {
 	Iterable Expr   // Ausdruck, der Array/Map liefert
 	Body     []Stmt // Anweisungen in der Schleife
 }
+
+type includeCacheEntry struct {
+	stmts   []Stmt
+	modules []string
+}
+
+var (
+	includeCache      = make(map[string]includeCacheEntry)
+	includeCacheMutex sync.Mutex
+)
 
 type ParamDef struct {
 	Name       string
@@ -1062,22 +1074,34 @@ func (p *Parser) parseStmt() Stmt {
 	case INCLUDE:
 		p.next() // include konsumieren
 
-		// Pfad parsen
 		pathExpr := p.parseExpr()
-
 		pathNode, ok := pathExpr.(*StringNode)
 		if !ok {
 			p.error("Nach 'include' wird ein Dateipfad als String erwartet.")
 		}
-
 		path := pathNode.Value
 
-		// Prüfen, ob Include-Datei existiert
 		if _, err := os.Stat(path); os.IsNotExist(err) {
 			// Optionales Include: Datei nicht vorhanden -> ignorieren
-			return &MultiStmtNode{
-				Stmts: []Stmt{},
+			return &MultiStmtNode{Stmts: []Stmt{}}
+		}
+
+		// Cache-Key: absoluter Pfad, damit "./lib.vb" und "lib.vb"
+		// (aus unterschiedlichen Include-Tiefen aufgerufen) denselben Eintrag treffen
+		absPath, absErr := filepath.Abs(path)
+		if absErr != nil {
+			absPath = path // Fallback, falls Abs() aus irgendeinem Grund scheitert
+		}
+
+		includeCacheMutex.Lock()
+		cached, found := includeCache[absPath]
+		includeCacheMutex.Unlock()
+
+		if found {
+			if len(cached.modules) > 0 {
+				LoadModules(p.env, cached.modules)
 			}
+			return &MultiStmtNode{Stmts: cached.stmts}
 		}
 
 		// Datei laden
@@ -1088,7 +1112,6 @@ func (p *Parser) parseStmt() Stmt {
 
 		// #use aus Include-Datei entfernen
 		contentLines := strings.Split(string(content), "\n")
-
 		contentLines, modules := ExtractUse(contentLines)
 
 		// Module in bestehender Umgebung laden
@@ -1115,9 +1138,12 @@ func (p *Parser) parseStmt() Stmt {
 			p.error("Fehler in inkludierter Datei '%s'", path)
 		}
 
-		return &MultiStmtNode{
-			Stmts: includedStmts,
-		}
+		// Nur erfolgreich geparste Includes cachen
+		includeCacheMutex.Lock()
+		includeCache[absPath] = includeCacheEntry{stmts: includedStmts, modules: modules}
+		includeCacheMutex.Unlock()
+
+		return &MultiStmtNode{Stmts: includedStmts}
 
 	case IDENT:
 		// 1. Namen zusammenbauen (deine bewährte Logik)

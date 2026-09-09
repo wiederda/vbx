@@ -6,17 +6,6 @@ import (
 	"unicode"
 )
 
-var doubleOperators = map[string]TokenType{
-	"+=": PLUS_ASSIGN,
-	"-=": MINUS_ASSIGN,
-	"*=": MUL_ASSIGN,
-	"/=": DIV_ASSIGN,
-
-	"<>": NEQ,
-	"<=": LE,
-	">=": GE,
-}
-
 var keywords = map[string]TokenType{
 	"dim":      DIM,
 	"public":   PUBLIC,
@@ -57,7 +46,8 @@ var keywords = map[string]TokenType{
 
 // ---------------- Lexer ----------------
 func tokenize(input string) []Token {
-	var tokens []Token
+	// Grobe Heuristik: ~1 Token pro 3 Zeichen, spart Reallocations bei größeren Skripten.
+	tokens := make([]Token, 0, len(input)/3+16)
 
 	runes := []rune(input)
 	i := 0
@@ -116,14 +106,51 @@ func tokenize(input string) []Token {
 			continue
 		}
 
+		// Doppel-Operatoren (+=, -=, *=, /=, <>, <=, >=)
+		// Nur für die relevanten Startzeichen prüfen, statt für jedes Zeichen
+		// im Skript eine []rune->string-Allokation + Map-Lookup zu machen.
 		if i+1 < len(runes) {
-			op := string([]rune{ch, runes[i+1]})
-
-			if tok, ok := doubleOperators[op]; ok {
-				emit(tok, op)
-				i += 2
-				continue
+			switch ch {
+			case '+', '-', '*', '/', '<', '>':
+				next := runes[i+1]
+				switch {
+				case ch == '+' && next == '=':
+					emit(PLUS_ASSIGN, "+=")
+					i += 2
+					continue
+				case ch == '-' && next == '=':
+					emit(MINUS_ASSIGN, "-=")
+					i += 2
+					continue
+				case ch == '*' && next == '=':
+					emit(MUL_ASSIGN, "*=")
+					i += 2
+					continue
+				case ch == '/' && next == '=':
+					emit(DIV_ASSIGN, "/=")
+					i += 2
+					continue
+				case ch == '<' && next == '>':
+					emit(NEQ, "<>")
+					i += 2
+					continue
+				case ch == '<' && next == '=':
+					emit(LE, "<=")
+					i += 2
+					continue
+				case ch == '>' && next == '=':
+					emit(GE, ">=")
+					i += 2
+					continue
+				}
 			}
+		}
+
+		// NEU: $"..." interpolierter String
+		if ch == '$' && i+1 < len(runes) && runes[i+1] == '"' {
+			i += 2 // $" konsumieren
+			tokenizeInterpolatedString(runes, &i, line, emit, emitError)
+			continue
 		}
 
 		switch {
@@ -299,7 +326,18 @@ func tokenize(input string) []Token {
 			}
 
 			word := string(runes[i:j])
-			lw := strings.ToLower(word)
+
+			// Fast-Path: strings.ToLower alloziert auch dann eine neue Kopie,
+			// wenn das Wort schon komplett klein geschrieben ist (Normalfall bei
+			// Keywords wie "if", "then", "end"). Erst prüfen, ob überhaupt ein
+			// Großbuchstabe drin ist, bevor wir die Kopie erzwingen.
+			lw := word
+			for _, r := range word {
+				if unicode.IsUpper(r) {
+					lw = strings.ToLower(word)
+					break
+				}
+			}
 
 			if tok, ok := keywords[lw]; ok {
 				emit(tok, word)
@@ -313,4 +351,130 @@ func tokenize(input string) []Token {
 
 	emit(EOF, "")
 	return tokens
+}
+
+// tokenizeInterpolatedString liest den Rest eines $"..."-Strings ab der Position
+// direkt nach dem öffnenden ", zerlegt ihn in Text- und {Ausdruck}-Segmente und
+// emittiert sie als Kette von STRING/AMP/LPAREN/.../RPAREN-Tokens - der Parser
+// sieht am Ende nichts anderes als eine normale &-Verkettung.
+func tokenizeInterpolatedString(runes []rune, i *int, line int, emit func(TokenType, string), emitError func(string, ...any)) {
+	var segments []string     // gesammelte Text-Segmente
+	var exprSegments []string // gesammelte {Ausdruck}-Segmente, parallel dazu
+	var sb strings.Builder
+	segType := make([]bool, 0) // false=Text, true=Ausdruck, in Reihenfolge
+
+	flushText := func() {
+		segments = append(segments, sb.String())
+		exprSegments = append(exprSegments, "")
+		segType = append(segType, false)
+		sb.Reset()
+	}
+
+	for *i < len(runes) {
+		ch := runes[*i]
+
+		if ch == '\n' || ch == '\r' {
+			emitError("Unterminierter interpolierter String")
+			return
+		}
+
+		if ch == '"' {
+			// Escaped ""?
+			if *i+1 < len(runes) && runes[*i+1] == '"' {
+				sb.WriteRune('"')
+				*i += 2
+				continue
+			}
+			break // Ende des Strings
+		}
+
+		if ch == '{' {
+			// Escaped {{?
+			if *i+1 < len(runes) && runes[*i+1] == '{' {
+				sb.WriteRune('{')
+				*i += 2
+				continue
+			}
+			flushText()
+			*i++ // '{' konsumieren
+
+			// Ausdruck bis zur passenden '}' einsammeln (Klammertiefe zählen,
+			// damit z.B. {foo(a, b)} nicht an der ersten inneren ')' abbricht)
+			var exprSb strings.Builder
+			depth := 0
+			for *i < len(runes) {
+				c := runes[*i]
+				if c == '}' && depth == 0 {
+					break
+				}
+				if c == '{' {
+					depth++
+				}
+				if c == '}' {
+					depth--
+				}
+				exprSb.WriteRune(c)
+				*i++
+			}
+			if *i >= len(runes) || runes[*i] != '}' {
+				emitError("Erwartet '}' nach interpoliertem Ausdruck")
+				return
+			}
+			*i++ // '}' konsumieren
+
+			segments = append(segments, "")
+			exprSegments = append(exprSegments, exprSb.String())
+			segType = append(segType, true)
+			continue
+		}
+
+		if ch == '}' {
+			// Escaped }}?
+			if *i+1 < len(runes) && runes[*i+1] == '}' {
+				sb.WriteRune('}')
+				*i += 2
+				continue
+			}
+			emitError("Unerwartete '}' im interpolierten String")
+			return
+		}
+
+		sb.WriteRune(ch)
+		*i++
+	}
+
+	if *i >= len(runes) || runes[*i] != '"' {
+		emitError("Unterminierter interpolierter String")
+		return
+	}
+	*i++ // schließendes '"' konsumieren
+	flushText()
+
+	// Jetzt als (Text & (Ausdruck) & Text & (Ausdruck) & ...) emittieren
+	emit(LPAREN, "(")
+	first := true
+	for idx, isExpr := range segType {
+		if !first {
+			emit(AMP, "&")
+		}
+		first = false
+		if isExpr {
+			emit(LPAREN, "(")
+			subTokens := tokenize(exprSegments[idx])
+			for _, t := range subTokens {
+				if t.Type == EOF {
+					continue
+				}
+				emit(t.Type, t.Value)
+			}
+			emit(RPAREN, ")")
+		} else {
+			emit(STRING, segments[idx])
+		}
+	}
+	if first {
+		// Leerer String $""
+		emit(STRING, "")
+	}
+	emit(RPAREN, ")")
 }
