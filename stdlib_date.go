@@ -292,7 +292,7 @@ func InitDateFunctions() {
 	})
 
 	// -------- date.Today() --------
-	Register(ns+"Today", "date", "-", "Gibt das heutige Datum um 00:00:00 zurück.", func(args []Value) Value {
+	Register(ns+"Today", "date", "", "Gibt das heutige Datum um 00:00:00 zurück.", func(args []Value) Value {
 		t := time.Now()
 		d := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.Local)
 		return StrVal(d.Format(defaultVBFormat))

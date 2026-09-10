@@ -484,6 +484,54 @@ func InitGlobal() {
 		return StrVal(text)
 	})
 
+	Register("Mid", "string", "text, start [, length]", "Gibt einen Teilstring ab der angegebenen Position zurück.", func(args []Value) Value {
+		if len(args) < 2 || len(args) > 3 {
+			return Value{Kind: KindUndefined}
+		}
+
+		text := ToString(args[0])
+
+		start, ok := ToInt(args[1])
+		if !ok {
+			return Value{Kind: KindUndefined}
+		}
+
+		// VB verwendet 1-basierte Positionen.
+		if start < 1 {
+			return Value{Kind: KindUndefined}
+		}
+
+		// Start liegt hinter dem String.
+		if start > len(text) {
+			return StrVal("")
+		}
+
+		// In Go auf 0-basierte Position umrechnen.
+		start--
+
+		// Ohne length: bis zum Ende.
+		if len(args) == 2 {
+			return StrVal(text[start:])
+		}
+
+		length, ok := ToInt(args[2])
+		if !ok {
+			return Value{Kind: KindUndefined}
+		}
+
+		// Keine Zeichen gewünscht.
+		if length <= 0 {
+			return StrVal("")
+		}
+
+		end := start + length
+		if end > len(text) {
+			end = len(text)
+		}
+
+		return StrVal(text[start:end])
+	})
+
 	Register("Split", "global", "s, sep", "Zerlegt einen String an einem Separator in ein Array", func(args []Value) Value {
 		if len(args) < 2 {
 			return ErrorVal("usage: Split(s, sep)")

@@ -384,6 +384,23 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
 
 ---
 
+## file.InsertAfter(pfad, ausgabepfad, suchtext, einfügen)
+- **Konkret:**
+  Fügt in jeder Zeile direkt nach der ersten Fundstelle des Suchtextes den angegebenen Text ein.
+  Nur das erste Vorkommen pro Zeile wird berücksichtigt, weitere Treffer in derselben Zeile bleiben unverändert.
+  Ist der Ausgabepfad leer (`""`), wird die Originaldatei überschrieben, andernfalls in den Ausgabepfad geschrieben (Zielverzeichnis muss vorhanden sein).
+- **Parameter:**
+  - `pfad`: Quelldatei.
+  - `ausgabepfad`: Zieldatei, oder `""` um die Quelldatei zu überschreiben.
+  - `suchtext`: Suchmuster (Substring). Darf nicht leer sein.
+  - `einfügen`: Text, der direkt nach dem Suchtext eingefügt wird.
+- **Rückgabe:**
+  `NullVal`, `ErrorVal` bei leerem Suchtext, fehlenden Parametern oder Lese-/Schreibfehler.
+- **Hinweis:**
+  Zeilenumbrüche werden beim Verarbeiten normalisiert: die Ausgabedatei hat immer `\n`-Zeilenenden (auch wenn das Original `\r\n` verwendet hat) und keine abschließende Leerzeile am Dateiende, selbst wenn das Original eine hatte.
+
+---
+
 ## file.Search(path, pattern)
 - **Konkret:**
   Durchsucht eine Datei zeilenweise nach einem Muster.

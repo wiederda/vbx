@@ -134,6 +134,54 @@ func InitStringFunctions() {
 		return args[index]
 	})
 
+	Register(ns+"InsertAfterText", "string", "text, suchtext, einfügen", "Fügt in jeder Zeile nach der ersten Fundstelle des Suchtextes den angegebenen Text ein und gibt den bearbeiteten Text zurück.", func(args []Value) Value {
+		if len(args) < 3 {
+			return ErrorVal("InsertAfterText erwartet drei Parameter: Text, Suchtext und Einfügetext")
+		}
+
+		// --- Text ---
+		text, errS := expectStr(args, 0, "file.InsertAfterText(text, suchtext, einfügen)")
+		if errS != nil {
+			return *errS
+		}
+
+		// --- Suchtext ---
+		searchText, errS := expectStr(args, 1, "file.InsertAfterText(text, suchtext, einfügen)")
+		if errS != nil {
+			return *errS
+		}
+
+		// --- Einfügetext ---
+		insertText, errS := expectStr(args, 2, "file.InsertAfterText(text, suchtext, einfügen)")
+		if errS != nil {
+			return *errS
+		}
+
+		if searchText == "" {
+			return ErrorVal("InsertAfterText: Der Suchtext darf nicht leer sein")
+		}
+
+		// --- Zeilenenden normalisieren ---
+		content := strings.ReplaceAll(text, "\r\n", "\n")
+		content = strings.ReplaceAll(content, "\r", "\n")
+
+		// --- Erste Fundstelle pro Zeile bearbeiten ---
+		lines := strings.Split(content, "\n")
+
+		for i, line := range lines {
+			pos := strings.Index(line, searchText)
+
+			if pos >= 0 {
+				insertPos := pos + len(searchText)
+				lines[i] = line[:insertPos] + insertText + line[insertPos:]
+			}
+		}
+
+		// --- Ergebnis zurückgeben ---
+		return StrVal(strings.Join(lines, "\n"))
+
+	})
+
 	Register(ns+"Switch", "string", "v...", "Gibt den Wert der ersten wahren Bedingung zurück", func(args []Value) Value {
 		// Switch braucht immer Paare (Bedingung + Ergebnis).
 		// Eine ungerade Anzahl an Argumenten oder weniger als 2 ist in VB ein Fehler/Undefined.

@@ -1317,6 +1317,95 @@ func InitFileFunctions() {
 		}
 	})
 
+	Register(ns+"InsertAfter", "file", "pfad, ausgabepfad, suchtext, einfügen", "Fügt in jeder Zeile nach der ersten Fundstelle des Suchtextes den angegebenen Text ein. Ist der Ausgabepfad leer, wird die Originaldatei überschrieben.", func(args []Value) Value {
+		if len(args) < 4 {
+			return ErrorVal("InsertAfter erwartet vier Parameter: Pfad, Ausgabepfad, Suchtext und Einfügetext")
+		}
+
+		// --- Eingabepfad ---
+		pathStr, errS := expectStr(args, 0, "file.InsertAfter(pfad, ausgabepfad, suchtext, einfügen)")
+		if errS != nil {
+			return *errS
+		}
+
+		path, errVal := absPathVal(pathStr)
+		if errVal != nil {
+			return *errVal
+		}
+
+		// --- Ausgabepfad ---
+		outputStr, errS := expectStr(args, 1, "file.InsertAfter(pfad, ausgabepfad, suchtext, einfügen)")
+		if errS != nil {
+			return *errS
+		}
+
+		outputPath := path
+
+		// Wenn ein Ausgabepfad angegeben wurde, diesen verwenden.
+		// Bei "" wird die Originaldatei überschrieben.
+		if outputStr != "" {
+			outputPath, errVal = absPathVal(outputStr)
+			if errVal != nil {
+				return *errVal
+			}
+		}
+
+		// --- Suchtext ---
+		searchText, errS := expectStr(args, 2, "file.InsertAfter(pfad, ausgabepfad, suchtext, einfügen)")
+		if errS != nil {
+			return *errS
+		}
+
+		// --- Einfügetext ---
+		insertText, errS := expectStr(args, 3, "file.InsertAfter(pfad, ausgabepfad, suchtext, einfügen)")
+		if errS != nil {
+			return *errS
+		}
+
+		if searchText == "" {
+			return ErrorVal("InsertAfter: Der Suchtext darf nicht leer sein")
+		}
+
+		// --- Datei öffnen ---
+		file, err := openFileShared(path)
+		if err != nil {
+			return ErrorVal("Fehler beim Öffnen der Datei: " + err.Error())
+		}
+		defer file.Close()
+
+		// --- Datei lesen ---
+		data, err := io.ReadAll(file)
+		if err != nil {
+			return ErrorVal("Fehler beim Lesen der Datei: " + err.Error())
+		}
+
+		// --- Zeilenenden normalisieren ---
+		content := strings.ReplaceAll(string(data), "\r\n", "\n")
+		content = strings.TrimRight(content, "\n")
+
+		lines := strings.Split(content, "\n")
+
+		// --- Erste Fundstelle pro Zeile bearbeiten ---
+		for i, line := range lines {
+			pos := strings.Index(line, searchText)
+
+			if pos >= 0 {
+				insertPos := pos + len(searchText)
+				lines[i] = line[:insertPos] + insertText + line[insertPos:]
+			}
+		}
+
+		// --- Ergebnis erzeugen ---
+		output := strings.Join(lines, "\n")
+
+		// --- Ergebnis schreiben ---
+		if err := os.WriteFile(outputPath, []byte(output), 0644); err != nil {
+			return ErrorVal("Fehler beim Schreiben der Datei: " + err.Error())
+		}
+
+		return NullVal()
+	})
+
 	// ---------------- LineCount ----------------
 	Register(ns+"LineCount", "file", "path", "Gibt die Anzahl der Zeilen einer Textdatei zurück.", func(args []Value) Value {
 		pathStr, errS := expectStr(args, 0, "file.LineCount(path)")

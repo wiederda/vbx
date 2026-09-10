@@ -88,7 +88,7 @@ func InitMathFunctions() {
 	reg2("Atan2", "y, x", "Berechnet den Arkustangens aus zwei Koordinaten.", math.Atan2)
 
 	// math.Pi() -> 3.14159...
-	Register(ns+"Pi", "math", "-", "Gibt die Konstante π zurück (ca. 3,14159).", func(args []Value) Value {
+	Register(ns+"Pi", "math", "", "Gibt die Konstante π zurück (ca. 3,14159).", func(args []Value) Value {
 		return NumVal(math.Pi)
 	})
 
@@ -119,7 +119,7 @@ func InitMathFunctions() {
 	})
 
 	// math.E() -> 2.71828...
-	Register(ns+"E", "math", "-", "Gibt die Eulersche Zahl zurück (ca. 2,71828).", func(args []Value) Value {
+	Register(ns+"E", "math", "", "Gibt die Eulersche Zahl zurück (ca. 2,71828).", func(args []Value) Value {
 		return NumVal(math.E)
 	})
 

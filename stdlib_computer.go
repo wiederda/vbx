@@ -73,9 +73,9 @@ func InitComputerFunctions() {
 
 	// Identität & OS
 
-	Register(ns+"IsAdmin", "computer", "-", "Prüft auf Administrator-Rechte.", func(args []Value) Value { return BoolVal(IsAdmin()) })
+	Register(ns+"IsAdmin", "computer", "", "Prüft auf Administrator-Rechte.", func(args []Value) Value { return BoolVal(IsAdmin()) })
 
-	Register(ns+"Disks", "computer", "-", "Gibt ein Array mit allen verfügbaren Laufwerken/Mountpoints zurück.", func(args []Value) Value {
+	Register(ns+"Disks", "computer", "", "Gibt ein Array mit allen verfügbaren Laufwerken/Mountpoints zurück.", func(args []Value) Value {
 		disks, err := Disks()
 		if err != nil {
 			return Value{Kind: KindStr, Str: "error: " + err.Error()}
@@ -88,12 +88,12 @@ func InitComputerFunctions() {
 	})
 
 	// -------- Logical CPUs (Threads) --------
-	Register(ns+"CPUCount", "computer", "-", "Gibt die Anzahl der logischen Prozessoren zurück (inkl. Hyper-Threading).", func(args []Value) Value {
+	Register(ns+"CPUCount", "computer", "", "Gibt die Anzahl der logischen Prozessoren zurück (inkl. Hyper-Threading).", func(args []Value) Value {
 		return NumVal(float64(runtime.NumCPU()))
 	})
 
 	// -------- Physical Cores (Echte Kerne) --------
-	Register(ns+"CPUCores", "computer", "-", "Gibt die Anzahl der echten physischen Rechenkerne zurück.", func(args []Value) Value {
+	Register(ns+"CPUCores", "computer", "", "Gibt die Anzahl der echten physischen Rechenkerne zurück.", func(args []Value) Value {
 		// gopsutil kann zwischen logisch und physisch unterscheiden
 		cores, err := cpu.Counts(false) // false = nur physische Kerne
 		if err != nil || cores == 0 {
@@ -105,7 +105,7 @@ func InitComputerFunctions() {
 	})
 
 	// Mount & USB
-	Register(ns+"USBReady", "computer", "-", "Sucht nach angeschlossenen USB-Sticks.", func(args []Value) Value {
+	Register(ns+"USBReady", "computer", "", "Sucht nach angeschlossenen USB-Sticks.", func(args []Value) Value {
 		found, path, name, fs := FindAvailableUSB()
 		return Value{Kind: KindArr, Arr: []Value{BoolVal(found), StrVal(path), StrVal(name), StrVal(fs)}}
 	})
@@ -188,7 +188,7 @@ func InitComputerFunctions() {
 			return Value{Kind: KindArr, Arr: arr}
 		})
 
-	Register(ns+"NextFreeLetter", "computer", "-",
+	Register(ns+"NextFreeLetter", "computer", "",
 		"Sucht den nächsten freien Laufwerksbuchstaben (Windows). Gibt [OK, Letter, Msg] zurück.",
 		func(args []Value) Value {
 			// Wir holen uns beide Infos aus der plattformspezifischen Funktion
@@ -213,7 +213,7 @@ func InitComputerFunctions() {
 	// ---------------- System-Befehle (Neu) ----------------
 
 	// REBOOT
-	Register(ns+"Reboot", "computer", "-", "Startet das System sofort neu. Gibt [OK, Msg] zurück.",
+	Register(ns+"Reboot", "computer", "", "Startet das System sofort neu. Gibt [OK, Msg] zurück.",
 		func(args []Value) Value {
 			err := Reboot()
 
@@ -254,7 +254,7 @@ func InitComputerFunctions() {
 	})
 
 	// SHUTDOWN
-	Register(ns+"Shutdown", "computer", "-", "Fährt das System sofort herunter. Gibt [OK, Msg] zurück.",
+	Register(ns+"Shutdown", "computer", "", "Fährt das System sofort herunter. Gibt [OK, Msg] zurück.",
 		func(args []Value) Value {
 			err := Shutdown()
 
@@ -269,12 +269,12 @@ func InitComputerFunctions() {
 			return Value{Kind: KindArr, Arr: res}
 		})
 
-	Register(ns+"Distro", "computer", "-", "Gibt die Distro oder das OS zurück.", func(args []Value) Value {
+	Register(ns+"Distro", "computer", "", "Gibt die Distro oder das OS zurück.", func(args []Value) Value {
 		// Diese Funktion kommt aus den OS-spezifischen Dateien
 		return StrVal(getOSID())
 	})
 
-	Register(ns+"NeedsReboot", "computer", "-", "Prüft, ob ein Neustart erforderlich ist.", func(args []Value) Value {
+	Register(ns+"NeedsReboot", "computer", "", "Prüft, ob ein Neustart erforderlich ist.", func(args []Value) Value {
 		return BoolVal(checkNeedsReboot())
 	})
 }

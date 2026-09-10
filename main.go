@@ -206,60 +206,67 @@ func printHelp(filter string, shortcuts map[string]Shortcut, showShell bool) {
 	// Filter bereinigen (aus "-tar" wird "tar")
 	cleanFilter := strings.TrimPrefix(strings.ToLower(filter), "-")
 
-	// --- Dynamische Zählung für den Header ---
-	mandatoryNames := map[string]bool{
-		"app": true, "array": true, "date": true, "file": true, "folder": true, "global": true, "math": true,
-	}
-
-	counts := make(map[string]int)
-	for k := range builtins {
-		parts := strings.Split(k, ".")
-		ns := "global"
-		if len(parts) > 1 {
-			ns = parts[0]
+	if cleanFilter == "" {
+		// --- Dynamische Zählung für den Header ---
+		mandatoryNames := map[string]bool{
+			"app": true, "array": true, "date": true, "file": true, "folder": true, "global": true, "math": true,
 		}
-		counts[ns]++
-	}
 
-	standardCount := 0
-	for ns, c := range counts {
-		if mandatoryNames[ns] {
-			standardCount += c
+		counts := make(map[string]int)
+		for k := range builtins {
+			parts := strings.Split(k, ".")
+			ns := "global"
+			if len(parts) > 1 {
+				ns = parts[0]
+			}
+			counts[ns]++
 		}
-	}
 
-	optionalCount := 0
-	for name, staticCount := range optionalModuleFunctions {
-		if realCount, loaded := counts[name]; loaded {
-			optionalCount += realCount
-		} else {
-			optionalCount += staticCount
+		standardCount := 0
+		for ns, c := range counts {
+			if mandatoryNames[ns] {
+				standardCount += c
+			}
 		}
-	}
 
-	totalCount := standardCount + optionalCount
-
-	fmt.Printf("Version: "+bold+"%s"+bold+" | Funktionen: "+reset+"Standard "+green+"%d"+reset+" / Optional "+cyan+"%d"+reset+" / Gesamt "+boldMagenta+"%d"+reset+"\n",
-		Version, standardCount, optionalCount, totalCount)
-
-	if !showShell {
-		fmt.Println("\n" + bold + "Kurz-Übersicht:" + reset)
-		fmt.Println("  vbx <quelle.vb>                  - Skript ausführen")
-		fmt.Println("  vbx -dryrun <quelle.vb>          - Skript nur prüfen, ohne auszuführen")
-		fmt.Println("  vbx -modules=zip <quelle.vb>     - optionales Modul vor Skriptstart laden")
-		fmt.Println("  #use zip                         - optionales Modul im Skript laden")
-		fmt.Println("                                     (erste Zeile, auch in include-Dateien)")
-		fmt.Println("  #requires 1.0.23                 - Benötigte Mindestversion")
-		fmt.Println("  include \"datei.vb\"               - Weitere VB-Datei einbinden")
-		fmt.Println("  vbx -h                           - Diese Übersicht")
-		fmt.Println("  vbx -v                           - Aktuelle Versionsnummer")
-		fmt.Println("  vbx -shell -h                    - Verfügbare Shell-Befehle")
-		fmt.Println("  vbx -const -h                    - Verfügbare Konstanten")
-		fmt.Println("  ' oder /' ... '/                 - Eine Zeile oder einen ganzen Block auskommentieren")
-
-		if cleanFilter != "" {
-			fmt.Printf("\n"+bold+"Aktivierter Filter: "+cyan+"%s"+reset+"\n", cleanFilter)
+		optionalCount := 0
+		for name, staticCount := range optionalModuleFunctions {
+			if realCount, loaded := counts[name]; loaded {
+				optionalCount += realCount
+			} else {
+				optionalCount += staticCount
+			}
 		}
+
+		totalCount := standardCount + optionalCount
+
+		fmt.Printf("Version: "+bold+"%s"+bold+" | Funktionen: "+reset+"Standard "+green+"%d"+reset+" / Optional "+cyan+"%d"+reset+" / Gesamt "+boldMagenta+"%d"+reset+"\n",
+			Version, standardCount, optionalCount, totalCount)
+
+		// Kurz-Übersicht: nur ohne aktiven Modul-Filter sinnvoll (bei
+		// z.B. "-modules=json -h" will man direkt die gefilterte
+		// Funktionsliste sehen, nicht nochmal die allgemeine
+		// CLI-Übersicht davor).
+		if !showShell {
+			fmt.Println("\n" + bold + "Kurz-Übersicht:" + reset)
+			fmt.Println("  vbx <quelle.vb>                  - Skript ausführen")
+			fmt.Println("  vbx -dryrun <quelle.vb>          - Skript nur prüfen, ohne auszuführen")
+			fmt.Println("  vbx -modules=zip <quelle.vb>     - optionales Modul vor Skriptstart laden")
+			fmt.Println("  #use zip                         - optionales Modul im Skript laden")
+			fmt.Println("                                     (erste Zeile, auch in include-Dateien)")
+			fmt.Println("  #requires 1.0.23                 - Benötigte Mindestversion")
+			fmt.Println("  include \"datei.vb\"               - Weitere VB-Datei einbinden")
+			fmt.Println("  vbx -h                           - Diese Übersicht")
+			fmt.Println("  vbx -v                           - Aktuelle Versionsnummer")
+			fmt.Println("  vbx -shell -h                    - Verfügbare Shell-Befehle")
+			fmt.Println("  vbx -const -h                    - Verfügbare Konstanten")
+			fmt.Println("  ' oder /' ... '/                 - Eine Zeile oder einen ganzen Block auskommentieren")
+		}
+	} else if !showShell {
+		// Gezielter Modul-Filter (z.B. "-modules=json"): kein Header,
+		// keine Kurz-Übersicht -- direkt der Filter-Hinweis, danach
+		// die gefilterte Liste über printModulesHelp().
+		fmt.Printf(bold+"Aktivierter Filter: "+cyan+"%s"+reset+"\n", cleanFilter)
 	}
 
 	printModulesHelp(cleanFilter)

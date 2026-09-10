@@ -24,7 +24,7 @@ func InitProcFunctions() {
 	ns := "proc."
 
 	// Prozesse auflisten
-	Register(ns+"Tasklist", "proc", "-", "Gibt eine Liste aller laufenden Prozesse als Text zurück.", func(args []Value) Value {
+	Register(ns+"Tasklist", "proc", "", "Gibt eine Liste aller laufenden Prozesse als Text zurück.", func(args []Value) Value {
 		procs, err := process.Processes()
 		if err != nil {
 			return Value{Str: "error: " + err.Error()}
@@ -150,7 +150,7 @@ func InitProcFunctions() {
 		return NumVal(float64(count))
 	})
 
-	Register(ns+"IsScriptRunning", "proc", "-",
+	Register(ns+"IsScriptRunning", "proc", "",
 		"Prüft automatisch, ob das aktuell ausgeführte Skript bereits in einer anderen Instanz läuft (Vergleich über den absoluten Skriptpfad in der Kommandozeile).",
 		func(args []Value) Value {
 			var scriptArg string
@@ -284,7 +284,7 @@ func InitProcFunctions() {
 		return Value{Kind: KindBool, Bool: true}
 	})
 
-	Register(ns+"GetPids", "proc", "-", "Gibt ein Array mit allen laufenden PIDs zurück.", func(args []Value) Value {
+	Register(ns+"GetPids", "proc", "", "Gibt ein Array mit allen laufenden PIDs zurück.", func(args []Value) Value {
 		pids, err := process.Pids()
 		if err != nil {
 			return Value{Kind: KindArr, Arr: []Value{}}
@@ -671,7 +671,7 @@ func InitProcFunctions() {
 		return NumVal(float64(priority))
 	})
 
-	Register(ns+"CurrentPid", "proc", "-", "Gibt die PID des aktuellen vbx-Interpreters zurück.", func(args []Value) Value {
+	Register(ns+"CurrentPid", "proc", "", "Gibt die PID des aktuellen vbx-Interpreters zurück.", func(args []Value) Value {
 		return Value{Kind: KindNum, Num: float64(os.Getpid())}
 	})
 
@@ -832,7 +832,7 @@ func InitProcFunctions() {
 		return Value{Kind: KindArr, Arr: result}
 	})
 
-	Register(ns+"GetPidsEx", "proc", "-", "Gibt ein Array von Arrays zurück: [[PID, Path], ...]", func(args []Value) Value {
+	Register(ns+"GetPidsEx", "proc", "", "Gibt ein Array von Arrays zurück: [[PID, Path], ...]", func(args []Value) Value {
 		procs, err := process.Processes()
 		if err != nil {
 			return Value{Kind: KindArr, Arr: []Value{}}

@@ -96,7 +96,7 @@ func InitConvertFunctions() {
 		return NumVal((val * fFactor) / tFactor)
 	})
 
-	Register(ns+"Categories", "convert", "-", "Gibt alle Unit-Kategorien zurück", func(args []Value) Value {
+	Register(ns+"Categories", "convert", "", "Gibt alle Unit-Kategorien zurück", func(args []Value) Value {
 		var res []Value
 		for k := range categoryRegistry {
 			res = append(res, StrVal(k))

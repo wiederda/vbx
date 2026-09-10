@@ -87,13 +87,13 @@ func InitDebugFunctions(env *Environment) {
 	})
 
 	// Timer Start
-	Register(ns+"TimerStart", "debug", "-", "Startet einen hochauflösenden Timer für Performance-Messungen.", func(args []Value) Value {
+	Register(ns+"TimerStart", "debug", "", "Startet einen hochauflösenden Timer für Performance-Messungen.", func(args []Value) Value {
 		globalTimerStart = time.Now()
 		return Value{Kind: KindBool, Bool: true} // Einfach True zurückgeben
 	})
 
 	// Timer MS
-	Register(ns+"TimerMs", "debug", "-", "Gibt die verstrichene Zeit seit TimerStart in Millisekunden (mit Nachkommastellen) zurück.", func(args []Value) Value {
+	Register(ns+"TimerMs", "debug", "", "Gibt die verstrichene Zeit seit TimerStart in Millisekunden (mit Nachkommastellen) zurück.", func(args []Value) Value {
 		if globalTimerStart.IsZero() {
 			return Value{Kind: KindNum, Num: 0}
 		}
@@ -153,17 +153,17 @@ func InitDebugFunctions(env *Environment) {
 		return NumVal(float64(getCurrentCPU()))
 	})
 
-	Register(ns+"CPUCores", "debug", "-", "Gibt die Anzahl der verfügbaren CPU-Kerne zurück.", func(args []Value) Value {
+	Register(ns+"CPUCores", "debug", "", "Gibt die Anzahl der verfügbaren CPU-Kerne zurück.", func(args []Value) Value {
 		return NumVal(float64(runtime.NumCPU()))
 	})
 
-	Register(ns+"MemUsage", "debug", "-", "Gibt den aktuell vom Skript belegten Arbeitsspeicher in Megabyte (MB) zurück.", func(args []Value) Value {
+	Register(ns+"MemUsage", "debug", "", "Gibt den aktuell vom Skript belegten Arbeitsspeicher in Megabyte (MB) zurück.", func(args []Value) Value {
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
 		return NumVal(float64(m.Alloc) / 1024 / 1024)
 	})
 
-	Register(ns+"CloseLog", "debug", "-", "Schließt die aktive Log-Datei und stellt die Ausgabe wieder auf die Konsole um.", func(args []Value) Value {
+	Register(ns+"CloseLog", "debug", "", "Schließt die aktive Log-Datei und stellt die Ausgabe wieder auf die Konsole um.", func(args []Value) Value {
 		if logFile != nil {
 			fmt.Fprintln(logFile, "--- LOG ENDE: "+time.Now().Format("15:04:05")+" ---")
 			logFile.Sync() // Erzwingt das Schreiben auf die Disk
@@ -174,7 +174,7 @@ func InitDebugFunctions(env *Environment) {
 		return Value{Kind: KindBool, Bool: true}
 	})
 
-	Register(ns+"OpenLog", "debug", "-", "Erstellt eine automatische Log-Datei im System-Log-Ordner und leitet 'Print' dorthin um.", func(args []Value) Value {
+	Register(ns+"OpenLog", "debug", "", "Erstellt eine automatische Log-Datei im System-Log-Ordner und leitet 'Print' dorthin um.", func(args []Value) Value {
 		logDir := getLogDir()
 
 		// Zeitstempel im Format: 20260319_1933
@@ -241,7 +241,7 @@ func InitDebugFunctions(env *Environment) {
 		return Value{Kind: KindNum, Num: float64(deletedCount)}
 	})
 
-	Register(ns+"AllocStart", "debug", "-", "Startet die Messung der Heap-Allokationen.", func(args []Value) Value {
+	Register(ns+"AllocStart", "debug", "", "Startet die Messung der Heap-Allokationen.", func(args []Value) Value {
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
 
@@ -251,14 +251,14 @@ func InitDebugFunctions(env *Environment) {
 		return BoolVal(true)
 	})
 
-	Register(ns+"AllocBytes", "debug", "-", "Gibt die seit AllocStart allokierten Bytes zurück.", func(args []Value) Value {
+	Register(ns+"AllocBytes", "debug", "", "Gibt die seit AllocStart allokierten Bytes zurück.", func(args []Value) Value {
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
 
 		return NumVal(float64(m.TotalAlloc - allocStartBytes))
 	})
 
-	Register(ns+"AllocCount", "debug", "-", "Gibt die seit AllocStart durchgeführten Heap-Allokationen zurück.", func(args []Value) Value {
+	Register(ns+"AllocCount", "debug", "", "Gibt die seit AllocStart durchgeführten Heap-Allokationen zurück.", func(args []Value) Value {
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
 

@@ -29,7 +29,7 @@ func InitEnvFunctions() {
 		return BoolVal(true)
 	})
 
-	Register(ns+"All", "env", "-", "Gibt alle verfügbaren Umgebungsvariablen als Array im Format 'KEY=VALUE' zurück.", func(args []Value) Value {
+	Register(ns+"All", "env", "", "Gibt alle verfügbaren Umgebungsvariablen als Array im Format 'KEY=VALUE' zurück.", func(args []Value) Value {
 		vars := os.Environ()
 		return Value{Kind: KindArr, Arr: stringSliceToValueSlice(vars)}
 	})

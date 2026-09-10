@@ -33,7 +33,7 @@ func InitWinFunctions() {
 	ns := "win."
 
 	// win.GetActiveTitle() -> Gibt den Titel des aktuell fokussierten Fensters zurück
-	Register(ns+"GetActiveTitle", "win", "-", "Gibt den Titel des aktuell im Vordergrund befindlichen Fensters zurück.", func(args []Value) Value {
+	Register(ns+"GetActiveTitle", "win", "", "Gibt den Titel des aktuell im Vordergrund befindlichen Fensters zurück.", func(args []Value) Value {
 		hwnd, _, _ := procGetForegroundWindow.Call()
 		if hwnd == 0 {
 			return ErrorVal("Kein Fenster im Vordergrund")

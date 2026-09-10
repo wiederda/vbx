@@ -713,13 +713,13 @@ func InitNetFunctions() {
 			return StrVal(CustomHtmlEscape(input))
 		})
 
-	Register(ns+"LastStatus", "net", "-", "Gibt den HTTP-Statuscode der letzten Anfrage zurück.", func(args []Value) Value {
+	Register(ns+"LastStatus", "net", "", "Gibt den HTTP-Statuscode der letzten Anfrage zurück.", func(args []Value) Value {
 		// Direkt als Zahl zurückgeben, nicht als formatierten String
 		return NumVal(float64(lastHttpStatus))
 	})
 
 	// --- Eigene IP-Konfiguration ---
-	Register(ns+"LocalIPs", "net", "-", "Gibt ein Array aller aktiven lokalen IPv4-Adressen zurück.", func(args []Value) Value {
+	Register(ns+"LocalIPs", "net", "", "Gibt ein Array aller aktiven lokalen IPv4-Adressen zurück.", func(args []Value) Value {
 		var arr []Value
 		for _, ip := range IPAddresses() { // Nutzt deine Logik aus der computer.go
 			arr = append(arr, StrVal(ip))
@@ -735,7 +735,7 @@ func InitNetFunctions() {
 		return BoolVal(net.ParseIP(ip) != nil)
 	})
 
-	Register(ns+"MACs", "net", "-", "Listet die Hardware-Adressen (MAC) aller aktiven Schnittstellen auf.", func(args []Value) Value {
+	Register(ns+"MACs", "net", "", "Listet die Hardware-Adressen (MAC) aller aktiven Schnittstellen auf.", func(args []Value) Value {
 		var arr []Value
 		ifaces, _ := net.Interfaces()
 		for _, iface := range ifaces {
@@ -749,7 +749,7 @@ func InitNetFunctions() {
 		return Value{Kind: KindArr, Arr: arr}
 	})
 
-	Register(ns+"PublicIP", "net", "-", "Ermittelt die externe IP-Adresse über globale Provider.", func(args []Value) Value {
+	Register(ns+"PublicIP", "net", "", "Ermittelt die externe IP-Adresse über globale Provider.", func(args []Value) Value {
 		return StrVal(PublicIP()) // Nutzt deine robuste Standalone-Funktion
 	})
 
