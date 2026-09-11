@@ -174,27 +174,6 @@ func main() {
 	}
 }
 
-func Register(name string, module string, params string, desc string, fn func([]Value) Value) {
-	pCount := 0
-
-	p := strings.TrimSpace(params)
-	if p != "" && p != "-" {
-		if strings.Contains(p, "[") || strings.Contains(p, "...") {
-			pCount = -1
-		} else {
-			pCount = len(strings.Split(p, ","))
-		}
-	}
-
-	builtins[name] = BuiltinInfo{
-		Fn:           fn,
-		Module:       module,
-		Params:       params,
-		Beschreibung: desc,
-		ParamCount:   pCount,
-	}
-}
-
 func printHelp(filter string, shortcuts map[string]Shortcut, showShell bool) {
 	// ANSI-Farben
 	bold := "\033[1m"
@@ -274,6 +253,48 @@ func printHelp(filter string, shortcuts map[string]Shortcut, showShell bool) {
 	if showShell {
 		printShellHelp(shortcuts, cleanFilter)
 	}
+}
+
+func Register(name string, module string, params string, desc string, fn func([]Value) Value) {
+	pCount := 0
+
+	p := strings.TrimSpace(params)
+	if p != "" && p != "-" {
+		if strings.Contains(p, "[") || strings.Contains(p, "...") {
+			pCount = -1
+		} else {
+			pCount = len(strings.Split(p, ","))
+		}
+	}
+
+	builtins[name] = BuiltinInfo{
+		Fn:           fn,
+		Module:       module,
+		Params:       params,
+		Beschreibung: desc,
+		ParamCount:   pCount,
+	}
+}
+
+// RegisterDeprecated registriert eine Funktion wie Register, markiert sie
+// zusätzlich aber als veraltet. "replacement" ist ein kurzer, an den
+// Nutzer gerichteter Text (z.B. "benutze stattdessen app.NewFunc"), der:
+//   - bei jedem echten Aufruf einmalig als Laufzeit-Warnung auf stderr
+//     erscheint (siehe evalFunctionCall) -- unabhängig davon, ob -dryrun
+//     jemals aufgerufen wird,
+//   - automatisch als Präfix in der -h-Ausgabe auftaucht (siehe
+//     printModulesHelp) und damit über die bestehenden Export-Skripte
+//     auch in vbx.json und den Editor-Tooltip einfließt, ohne dass
+//     Doku-Dateien oder Export-Skripte dafür angefasst werden müssen.
+//
+// Die einzige Quelle der Wahrheit ist dieser Aufruf selbst -- "veraltet"
+// wird nirgendwo sonst von Hand eingetragen.
+func RegisterDeprecated(name, module, params, desc, replacement string, fn func([]Value) Value) {
+	Register(name, module, params, desc, fn)
+
+	info := builtins[name]
+	info.Deprecated = replacement
+	builtins[name] = info
 }
 
 // ---------------- Module anzeigen ----------------

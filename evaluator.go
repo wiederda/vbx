@@ -447,6 +447,20 @@ func evalFunctionCall(name string, args []Expr, env *Environment) Value {
 
 	// 3. Builtins
 	if info, ok := builtins[name]; ok {
+		// Deprecation-Warnung: einmalig pro Funktionsname und Prozesslauf,
+		// unabhängig davon, ob -dryrun jemals aufgerufen wird -- die
+		// Warnung ist an den ECHTEN Aufruf gekoppelt, nicht an ein
+		// optionales Vorab-Flag, geht also nie verloren.
+		if info.Deprecated != "" && !deprecationWarned[name] {
+			deprecationWarned[name] = true
+			fmt.Fprintf(
+				os.Stderr,
+				"\033[33m[WARNUNG]\033[0m '%s' ist veraltet - benutze stattdessen %s\n",
+				name,
+				info.Deprecated,
+			)
+		}
+
 		// Nicht f(evaluated), sondern info.Fn(evaluated)
 		return info.Fn(evaluated)
 	}
@@ -536,7 +550,16 @@ type BuiltinInfo struct {
 	Params       string
 	Module       string
 	ParamCount   int
+
+	// Leer = nicht veraltet. Sonst z.B. "benutze stattdessen app.NewFunc" --
+	// wird bei jedem echten Aufruf einmalig als Laufzeit-Warnung ausgegeben
+	// (siehe evalFunctionCall) und fließt automatisch in die -h-Ausgabe und
+	// damit in vbx.json/den Editor-Tooltip ein (siehe printModulesHelp).
+	Deprecated string
 }
+
+// Verhindert Warnungs-Spam: pro Funktionsname nur einmal pro Prozesslauf.
+var deprecationWarned = make(map[string]bool)
 
 var builtins = make(map[string]BuiltinInfo)
 

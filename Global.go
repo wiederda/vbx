@@ -486,19 +486,22 @@ func InitGlobal() {
 
 	Register("Mid", "string", "text, start [, length]", "Gibt einen Teilstring ab der angegebenen Position zurück.", func(args []Value) Value {
 		if len(args) < 2 || len(args) > 3 {
-			return Value{Kind: KindUndefined}
+			return ErrorVal("Mid erwartet zwei oder drei Parameter: text, start [, length]")
 		}
 
-		text := ToString(args[0])
+		// Runen-basiert statt Byte-Slicing, konsistent zu Left/Right/Substring --
+		// sonst würde Mid bei Mehrbyte-UTF-8-Zeichen (Umlaute, Emojis, ...)
+		// mitten in ein Zeichen hineinschneiden können.
+		text := []rune(ToString(args[0]))
 
 		start, ok := ToInt(args[1])
 		if !ok {
-			return Value{Kind: KindUndefined}
+			return ErrorVal("Mid: start muss eine Zahl sein")
 		}
 
 		// VB verwendet 1-basierte Positionen.
 		if start < 1 {
-			return Value{Kind: KindUndefined}
+			return ErrorVal("Mid: start muss >= 1 sein")
 		}
 
 		// Start liegt hinter dem String.
@@ -511,12 +514,12 @@ func InitGlobal() {
 
 		// Ohne length: bis zum Ende.
 		if len(args) == 2 {
-			return StrVal(text[start:])
+			return StrVal(string(text[start:]))
 		}
 
 		length, ok := ToInt(args[2])
 		if !ok {
-			return Value{Kind: KindUndefined}
+			return ErrorVal("Mid: length muss eine Zahl sein")
 		}
 
 		// Keine Zeichen gewünscht.
@@ -529,7 +532,7 @@ func InitGlobal() {
 			end = len(text)
 		}
 
-		return StrVal(text[start:end])
+		return StrVal(string(text[start:end]))
 	})
 
 	Register("Split", "global", "s, sep", "Zerlegt einen String an einem Separator in ein Array", func(args []Value) Value {

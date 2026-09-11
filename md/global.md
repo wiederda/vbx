@@ -165,6 +165,19 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
 
 ---
 
+## Mid(text, start, [length])
+- **Konkret:**
+  Gibt einen Teilstring ab der angegebenen Position zurück (1-basiert, wie in klassischem VB, runen-basiert wie `Left`/`Right`/`Substring`).
+  Ohne `length`: alles ab `start` bis zum Ende. Liegt `start` hinter dem Stringende, wird ein leerer String zurückgegeben. Ist `length` `0` oder negativ, wird ebenfalls ein leerer String zurückgegeben; reicht `length` über das Stringende hinaus, wird bis zum Ende abgeschnitten.
+- **Parameter:**
+  - `text`: Quellstring.
+  - `start`: 1-basierte Startposition.
+  - `length`: Optional. Anzahl der Zeichen. Standard: bis Stringende.
+- **Rückgabe:**
+  `StrVal`. `ErrorVal` bei falscher Parameterzahl, ungültigem `start` (kein Zahlwert oder `< 1`) oder ungültigem `length` (kein Zahlwert) — prüfbar mit `IsError`/`ErrorText`.
+
+---
+
 ## Contains(s, sub)
 - **Konkret:**
   Prüft, ob ein Teilstring im Text enthalten ist.

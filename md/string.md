@@ -224,7 +224,7 @@ Alle Funktionen sind Runen-basiert und damit korrekt für Unicode/UTF-8.
 
 ---
 
-## crypt.WipeString(value)
+## string.WipeString(value)
 - **Konkret:**
   Überschreibt den tatsächlichen Speicherinhalt eines Strings mit Nullbytes (`0x00`). Im Unterschied zu `x = ""` wird hier nicht nur die Variable auf einen neuen String umgebogen, sondern der ursprüngliche Speicherbereich selbst gelöscht.
 - **Parameter:**
@@ -235,13 +235,13 @@ Alle Funktionen sind Runen-basiert und damit korrekt für Unicode/UTF-8.
   Nutzt intern `unsafe`, um Go's String-Immutability bewusst zu umgehen. Nach dem Aufruf hat die Variable weiterhin die ursprüngliche Länge, besteht aber nur noch aus Nullbytes (verifiziert: `Len()` bleibt bei Umlauten sogar größer als die sichtbare Zeichenzahl, weil einzelne Mehrbyte-UTF-8-Sequenzen durch mehrere Einzel-Nullbytes ersetzt werden).
 
   **Wichtige Einschränkungen:**
-  - Löscht nur den Speicherbereich, auf den *dieser eine* String zeigt. Wurde der Wert vorher verkettet (`&`), umgewandelt oder anderweitig zu einem neuen String verarbeitet, hat diese Kopie ein eigenes Backing-Array und bleibt von `crypt.WipeString` unberührt.
+  - Löscht nur den Speicherbereich, auf den *dieser eine* String zeigt. Wurde der Wert vorher verkettet (`&`), umgewandelt oder anderweitig zu einem neuen String verarbeitet, hat diese Kopie ein eigenes Backing-Array und bleibt von `string.WipeString` unberührt.
   - Sollte immer der *letzte* Umgang mit dem Wert sein – jede Nutzung danach liest nur noch Nullbytes.
-  - Nur für dynamisch zur Laufzeit erzeugte Strings (z. B. via `crypt.BytesToString`) sicher. **Niemals** auf String-Literale aus dem Quellcode anwenden (z. B. `Dim x = "MeinPasswort"` gefolgt von `crypt.WipeString(x)`) – Go kann identische String-Literale intern deduplizieren/teilen, wodurch ein Wipe unabsichtlich andere, unabhängige Stellen im Programm beschädigen könnte.
+  - Nur für dynamisch zur Laufzeit erzeugte Strings (z. B. via `crypt.BytesToString`) sicher. **Niemals** auf String-Literale aus dem Quellcode anwenden (z. B. `Dim x = "MeinPasswort"` gefolgt von `string.WipeString(x)`) – Go kann identische String-Literale intern deduplizieren/teilen, wodurch ein Wipe unabsichtlich andere, unabhängige Stellen im Programm beschädigen könnte.
 
 ---
 
-## crypt.Wipe(byteArray)
+## string.Wipe(byteArray)
 - **Konkret:**
   Überschreibt ein Byte-Array (z. B. von `reg.ReadProtectedValueBytes`) in-place mit Nullen.
 - **Parameter:**
@@ -249,8 +249,24 @@ Alle Funktionen sind Runen-basiert und damit korrekt für Unicode/UTF-8.
 - **Rückgabe:**
   `BoolVal` (`true`) bei Erfolg, `ErrorVal` bei falschem Argumenttyp.
 - **Hinweis:**
-  Arrays sind in VBX mutable (im Gegensatz zu Strings). `crypt.Wipe` nutzt das aus und überschreibt den tatsächlichen Speicherinhalt, nicht nur eine Kopie – verifiziert per Test: Nach dem Aufruf sind alle Elemente der Original-Variable `0`.
+  Arrays sind in VBX mutable (im Gegensatz zu Strings). `string.Wipe` nutzt das aus und überschreibt den tatsächlichen Speicherinhalt, nicht nur eine Kopie – verifiziert per Test: Nach dem Aufruf sind alle Elemente der Original-Variable `0`.
   Sollte aufgerufen werden, sobald ein per `reg.ReadProtectedValueBytes` gelesener Wert nicht mehr benötigt wird.
+
+---
+
+## string.InsertAfterText(text, suchtext, einfügen)
+- **Konkret:**
+  Fügt in jeder Zeile direkt nach der ersten Fundstelle des Suchtextes den angegebenen Text ein und gibt das Ergebnis als neuen String zurück.
+  Nur das erste Vorkommen pro Zeile wird berücksichtigt, weitere Treffer in derselben Zeile bleiben unverändert.
+  Arbeitet komplett im Speicher (keine Datei), Gegenstück zu `file.InsertAfter`.
+- **Parameter:**
+  - `text`: Quelltext.
+  - `suchtext`: Suchmuster (Substring). Darf nicht leer sein.
+  - `einfügen`: Text, der direkt nach dem Suchtext eingefügt wird.
+- **Rückgabe:**
+  `StrVal`, `ErrorVal` bei leerem Suchtext oder fehlenden Parametern.
+- **Hinweis:**
+  Zeilenumbrüche werden vor der Verarbeitung normalisiert (`\r\n`/`\r` → `\n`) — das Ergebnis hat daher immer `\n`-Zeilenenden, auch wenn `text` ursprünglich `\r\n` verwendet hat.
 
 ---
 
