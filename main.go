@@ -41,7 +41,7 @@ var optionalModuleFunctions = map[string]int{
 	"sftp":     9,
 	"smtp":     3,
 	"ssh":      6,
-	"string":   34,
+	"string":   35,
 	"template": 3,
 	"win":      4,
 }

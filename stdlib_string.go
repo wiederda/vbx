@@ -189,7 +189,20 @@ func InitStringFunctions() {
 
 		text := args[0].Str
 
-		// Zeilenenden vereinheitlichen
+		// -----------------------------------------------------------
+		// Ursprüngliches Zeilenende-Format merken (Windows/Unix/alt-Mac),
+		// damit die Rückgabe im selben Stil erfolgt wie der Input.
+		// -----------------------------------------------------------
+
+		lineEnding := "\n"
+
+		if strings.Contains(text, "\r\n") {
+			lineEnding = "\r\n"
+		} else if strings.Contains(text, "\r") {
+			lineEnding = "\r"
+		}
+
+		// Zeilenenden für die interne Verarbeitung vereinheitlichen
 		text = strings.ReplaceAll(text, "\r\n", "\n")
 		text = strings.ReplaceAll(text, "\r", "\n")
 
@@ -229,7 +242,7 @@ func InitStringFunctions() {
 				}
 			}
 
-			return StrVal(strings.Join(result, "\n"))
+			return StrVal(strings.Join(result, lineEnding))
 		}
 
 		// -----------------------------------------------------------
@@ -260,7 +273,7 @@ func InitStringFunctions() {
 				result = append(result, line)
 			}
 
-			return StrVal(strings.Join(result, "\n"))
+			return StrVal(strings.Join(result, lineEnding))
 		}
 
 		return ErrorVal("string.RemoveLine erwartet als zweiten Parameter String oder Zahl")

@@ -358,6 +358,33 @@ Alle Funktionen sind Runen-basiert und damit korrekt für Unicode/UTF-8.
 
 ---
 
+## string.RemoveLine(text, suchtext|zeile [, all])
+- **Konkret:**
+  Entfernt eine oder mehrere Zeilen aus einem mehrzeiligen Text. Der zweite
+  Parameter bestimmt den Modus: eine **Zahl** entfernt die Zeile an diesem
+  nullbasierten Index; ein **String** entfernt jede Zeile, die diesen Text
+  enthält. Das ursprüngliche Zeilenende-Format (`\r\n` unter Windows, `\n`
+  unter Linux/macOS, `\r` bei sehr alten Mac-Dateien) wird intern erkannt und
+  für die Rückgabe beibehalten. Bei Dateien mit **gemischten** Zeilenenden
+  gewinnt der zuerst im Text gefundene Stil für die gesamte Ausgabe.
+  Bei Textsuche wird standardmäßig nur die **erste** Treffer-Zeile entfernt;
+  mit `all = True` werden alle passenden Zeilen entfernt. Bei Zeilennummer
+  spielt `all` keine Rolle (es gibt nur eine Zeile mit diesem Index).
+  Existiert die Zeilennummer nicht (außerhalb des gültigen Bereichs) oder ist
+  der Suchtext leer, wird der Text unverändert zurückgegeben.
+- **Parameter:**
+  - `text`: Mehrzeiliger String.
+  - `suchtext|zeile`: String (Text, der in der zu entfernenden Zeile enthalten
+    sein muss) oder Zahl (nullbasierter Zeilenindex).
+  - `all` *(optional)*: Boolean – bei Textsuche `True`, um alle Treffer zu
+    entfernen statt nur den ersten (Default: `False`). Bei Zeilennummer ohne
+    Wirkung.
+- **Rückgabe:**
+  `StrVal` – der Text ohne die entfernte(n) Zeile(n), mit demselben
+  Zeilenende-Format wie der ursprüngliche `text`.
+
+---
+
 ## string.TxtToSqlInsert(data, table, dialect [, extras, columns, batchSize])
 - **Konkret:**
   Generiert SQL-INSERT-Statements aus einem Array.

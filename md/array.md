@@ -35,6 +35,21 @@ werden, reine Aufrufe ohne Zuweisung haben keine Wirkung auf die Variable.
 
 ---
 
+## array.Push(arr, val)
+- **Konkret:**
+  Fügt einen Wert am Ende eines 1D-Arrays ein und gibt das erweiterte Array zurück.
+  **Wichtig:** Trotz der internen In-Place-Modifikation muss der Rückgabewert der
+  Variable erneut zugewiesen werden (`arr = array.Push(arr, val)`), da je nach
+  interner Speicherverwaltung sonst nicht sichergestellt ist, dass die Variable
+  selbst die neue Länge sieht. Funktional identisch zu `array.Add`.
+- **Parameter:**
+  - `arr`: 1D-Array.
+  - `val`: Einzufügender Wert.
+- **Rückgabe:**
+  `ArrVal` (das erweiterte Array – muss der Variable neu zugewiesen werden)
+
+---
+
 ## array.Append(arr, value)
 - **Konkret:**
   Alias für `array.Add`. Gleicher Hinweis zur Neuzuweisung gilt hier ebenso.
