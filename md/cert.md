@@ -17,7 +17,7 @@ Erzeugt einen privaten Schlüssel im PKCS#8-Format.
 **Rückgabe:** `Bool` – `true` bei Erfolg.
 
 **Hinweise:**
-- RSA-Schlüssel unter 4096 Bit werden automatisch auf 4096 angehoben.
+- RSA-Schlüssel unter 4096 Bit werden automatisch auf 4096 angehoben. Mit einem Konsolenhinweis.
 - Die Datei wird mit Berechtigung `0600` gespeichert.
 
 ---
@@ -31,15 +31,20 @@ Erstellt eine Certificate Signing Request (CSR).
 | `subject` | String | Common Name (CN) |
 | `keyPath` | String | Pfad zum privaten Schlüssel |
 | `outFile` | String | Ausgabedatei (PEM) |
-| `SANs` | String (optional) | Kommagetrennte DNS-Namen oder IP-Adressen |
+| `SANs` | String (optional) | Kommagetrennte DNS-Namen oder IP-Adressen. Unterstützt Wildcards (`*.example.com`) und Umlaute/IDN (werden automatisch nach Punycode konvertiert) |
 
 **Rückgabe:** `Bool`
+
+**Hinweise:**
+- Der `subject` (CN) wird automatisch als erster SAN-Eintrag übernommen, da moderne Clients nur SANs zur Hostname-Validierung heranziehen, nicht mehr den CN.
+- Internationalisierte Domainnamen (z. B. `müller.de`) werden automatisch nach Punycode/ACE konvertiert (`xn--mller-kva.de`), da SAN-Einträge laut Standard ASCII sein müssen. Der CN im Zertifikat selbst bleibt unverändert in der Original-Schreibweise.
+- Wildcard-Domains (`*.example.com`) werden unterstützt – der `*.`-Teil bleibt erhalten, nur der Domainteil wird ggf. nach Punycode konvertiert.
 
 ---
 
 ### `cert.CreateCSRConf(confPath, keyPath, outCSR)`
 
-Erstellt eine CSR auf Basis einer OpenSSL-Konfigurationsdatei. Liest `CN` und `DNS.*`-Einträge aus der Datei.
+Erstellt eine CSR auf Basis einer OpenSSL-Konfigurationsdatei. Liest `CN`, `DNS.*` und `IP.*`-Einträge aus der Datei.
 
 | Parameter | Typ | Beschreibung |
 |-----------|-----|--------------|
@@ -48,6 +53,10 @@ Erstellt eine CSR auf Basis einer OpenSSL-Konfigurationsdatei. Liest `CN` und `D
 | `outCSR` | String | Ausgabedatei (PEM) |
 
 **Rückgabe:** `Bool`
+
+**Hinweise:**
+- `DNS.*`-Einträge werden automatisch nach Punycode/ACE konvertiert und unterstützen Wildcards (`*.example.com`); ungültige Domainnamen in der Konfigurationsdatei werden stillschweigend übersprungen statt den Aufruf abzubrechen.
+- Fehlt der `CN`-Eintrag in der Konfigurationsdatei, schlägt der Aufruf fehl.
 
 ---
 
@@ -61,13 +70,13 @@ Erstellt in einem Schritt einen neuen Private Key und eine CSR auf Basis einer O
 | `outKey` | String | Zieldatei für den neuen Key (PEM, PKCS#8) |
 | `outCSR` | String | Zieldatei für die CSR (PEM) |
 | `algo` | String (optional) | Algorithmus: `rsa` oder `ecdsa` (Standard: `ecdsa`) |
-| `bits` | String/Int (optional) | RSA: Mindestens 4096. ECDSA: 256, 384, 521 (Standard: 384) |
+| `bits` | String/Int (optional) | RSA: Mindestens 4096 (kleinere Werte werden automatisch angehoben, mit Konsolenhinweis). ECDSA: 256, 384, 521 (Standard: 384) |
 
 **Rückgabe:** `Bool`
 
 **Hinweise:**
 - Kombiniert `cert.GenerateKey` und `cert.CreateCSRConf` in einem Aufruf – nützlich, wenn kein bereits vorhandener Key wiederverwendet werden soll.
-- Anders als `cert.CreateCSRConf` wertet dieser Parser zusätzlich `IP.*`-Einträge als IP-SANs aus.
+- `DNS.*`-Einträge in der Konfigurationsdatei werden automatisch nach Punycode/ACE konvertiert und unterstützen Wildcards (`*.example.com`).
 - Fehlt der `CN`-Eintrag in der Konfigurationsdatei, schlägt der Aufruf fehl.
 - Der Key wird mit Berechtigung `0600` gespeichert.
 
@@ -83,7 +92,7 @@ Erstellt ein selbstsigniertes Zertifikat.
 | `keyPath` | String | Pfad zum privaten Schlüssel |
 | `outCert` | String | Ausgabedatei (PEM) |
 | `days` | Int (optional) | Gültigkeitsdauer in Tagen (Standard: 365) |
-| `SANs` | String (optional) | Kommagetrennte DNS-Namen oder IPs |
+| `SANs` | String (optional) | Kommagetrennte DNS-Namen oder IPs. Unterstützt Wildcards (`*.example.com`) und Umlaute/IDN (werden automatisch nach Punycode konvertiert) |
 | `isCA` | String (optional) | `"true"` für CA-Zertifikat |
 
 **Rückgabe:** `Null` bei Erfolg, `Error` bei Fehler.
@@ -91,26 +100,8 @@ Erstellt ein selbstsigniertes Zertifikat.
 **Hinweise:**
 - Unterstützte Key-Typen: RSA (`RSA PRIVATE KEY`), ECDSA (`EC PRIVATE KEY`).
 - PKCS#8-Keys (`PRIVATE KEY`) werden **nicht** unterstützt – dafür `cert.GenerateKey` verwenden und den erzeugten Key direkt nutzen.
-
----
-
-### `cert.SignCSR(csrPath, caCert, caKey, outCert [, days])`
-
-Signiert eine CSR mit einer CA und stellt ein gültiges Zertifikat aus.
-
-| Parameter | Typ | Beschreibung |
-|-----------|-----|--------------|
-| `csrPath` | String | Pfad zur CSR-Datei |
-| `caCert` | String | Pfad zum CA-Zertifikat |
-| `caKey` | String | Pfad zum CA-Schlüssel |
-| `outCert` | String | Ausgabedatei (PEM) |
-| `days` | Int (optional) | Gültigkeitsdauer in Tagen (Standard: 365) |
-
-**Rückgabe:** `Bool`
-
-**Hinweise:**
-- Die CSR-Signatur wird vor der Verarbeitung validiert.
-- Das ausgestellte Zertifikat erhält `ExtKeyUsageServerAuth`.
+- Der `subject` (CN) wird automatisch als erster SAN-Eintrag übernommen, analog zu `cert.CreateCSR`.
+- Internationalisierte Domainnamen und Wildcards (`*.example.com`) werden wie bei `cert.CreateCSR` behandelt.
 
 ---
 
@@ -131,7 +122,29 @@ Erstellt aus einer vorhandenen CSR ein selbstsigniertes Zertifikat. Subject und 
 **Hinweise:**
 - Die CSR-Signatur wird vor der Verarbeitung validiert.
 - Zusätzlich wird geprüft, ob der öffentliche Schlüssel der CSR tatsächlich zum übergebenen privaten Schlüssel passt – bei einer Nichtübereinstimmung schlägt der Aufruf fehl, statt ein unbrauchbares Zertifikat zu erzeugen.
+- DNS-SAN-Einträge aus der CSR werden vor der Übernahme nach Punycode/ACE validiert – enthält die CSR einen ungültigen SAN-Eintrag (z. B. rohes Unicode), schlägt der Aufruf fehl.
 - Unterstützte Key-Typen: RSA, ECDSA, PKCS#8 (siehe `loadPrivateKey`).
+
+---
+
+### `cert.SignCSR(csrPath, caCert, caKey, outCert [, days])`
+
+Signiert eine CSR mit einer CA und stellt ein gültiges Zertifikat aus.
+
+| Parameter | Typ | Beschreibung |
+|-----------|-----|--------------|
+| `csrPath` | String | Pfad zur CSR-Datei |
+| `caCert` | String | Pfad zum CA-Zertifikat |
+| `caKey` | String | Pfad zum CA-Schlüssel |
+| `outCert` | String | Ausgabedatei (PEM) |
+| `days` | Int (optional) | Gültigkeitsdauer in Tagen (Standard: 365) |
+
+**Rückgabe:** `Bool`
+
+**Hinweise:**
+- Die CSR-Signatur wird vor der Verarbeitung validiert.
+- DNS-SAN-Einträge aus der CSR werden vor der Übernahme nach Punycode/ACE validiert – enthält die CSR einen ungültigen SAN-Eintrag (z. B. rohes Unicode), schlägt der Aufruf fehl.
+- Das ausgestellte Zertifikat erhält `ExtKeyUsageServerAuth`.
 
 ---
 
@@ -242,6 +255,7 @@ Erstellt eine OpenSSL-Konfigurationsdatei mit SAN-Einträgen.
 **Hinweise:**
 - Ist `outFile` ein Ordner (oder leer), wird `<CN>.conf` als Dateiname verwendet.
 - Existiert die Zieldatei bereits, wird eine Überschreib-Bestätigung eingeholt.
+- CN und zusätzliche DNS-Einträge werden vor dem Schreiben nach Punycode/ACE konvertiert (Wildcards `*.example.com` werden unterstützt). Im interaktiven Modus wird bei einem ungültigen Eintrag nur gewarnt und weitergemacht; im Skript-Modus (`CreateConf(cn, dnsArray, ...)`) bricht ein ungültiger Eintrag den Aufruf mit `Error` ab.
 
 ---
 
@@ -254,6 +268,10 @@ Erstellt eine OpenSSL-Konfigurationsdatei mit SAN-Einträgen.
 | `parseAndValidateCSR(data)` | Dekodiert und validiert eine CSR inkl. Signaturprüfung |
 | `newSerial()` | Erzeugt eine kryptografisch sichere 128-Bit-Seriennummer |
 | `ensureDir(path)` | Erstellt übergeordnete Verzeichnisse falls nötig |
+| `generatePrivateKey(algo, bits)` | Erzeugt einen RSA- oder ECDSA-Key (genutzt von `cert.GenerateKey` und `cert.CreateFromConf`); RSA unter 4096 Bit wird mit Konsolenhinweis automatisch angehoben |
+| `parseVbxConf(confStr)` | Parst `CN`, `DNS.*` (Punycode-konvertiert, Wildcard-fähig) und `IP.*` aus einer von `cert.CreateConf` erzeugten Datei |
+| `toACEHostname(name)` | Konvertiert einen Domainnamen nach Punycode/ACE, mit Wildcard-Unterstützung (`*.example.com`) |
+| `buildSANs(subject, sansCSV)` | Baut DNS-/IP-SAN-Listen aus Subject+SAN-String: CN als erster Eintrag, Punycode-Konvertierung, Deduplizierung |
 
 ---
 
@@ -263,4 +281,5 @@ Erstellt eine OpenSSL-Konfigurationsdatei mit SAN-Einträgen.
 |-------|------------|
 | `github.com/fullsailor/pkcs7` | PKCS#7-Export |
 | `software.sslmate.com/src/go-pkcs12` | PFX/PKCS#12-Export |
+| `golang.org/x/net/idna` | Punycode/ACE-Konvertierung für internationalisierte Domainnamen (IDN) und Wildcard-SANs |
 | Go Standardbibliothek (`crypto/x509`, `crypto/rsa`, `crypto/ecdsa`, …) | Kern-PKI-Operationen |

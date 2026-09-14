@@ -22,12 +22,11 @@ var loadedModules = make(map[string]bool)
 var optionalModuleFunctions = map[string]int{
 	"7z":       5,
 	"ad":       8,
-	"cert":     12,
+	"cert":     14,
 	"convert":  5,
 	"computer": 14,
 	"db":       30,
 	"debug":    15,
-	"docker":   0,
 	"env":      3,
 	"geo":      1,
 	"git":      18,
@@ -42,7 +41,7 @@ var optionalModuleFunctions = map[string]int{
 	"sftp":     9,
 	"smtp":     3,
 	"ssh":      6,
-	"string":   33,
+	"string":   34,
 	"template": 3,
 	"win":      4,
 }

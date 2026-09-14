@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/fullsailor/pkcs7"
+	"golang.org/x/net/idna"
 	"software.sslmate.com/src/go-pkcs12"
 )
 
@@ -36,6 +37,7 @@ func InitCertFunctions() {
 
 	ns := "cert."
 
+	// ---------------- cert.GenerateKey ----------------
 	// ---------------- cert.GenerateKey ----------------
 	Register(ns+"GenerateKey", "cert",
 		"outFile, algo, bits",
@@ -51,37 +53,9 @@ func InitCertFunctions() {
 				return *errVal
 			}
 
-			algo := strings.ToLower(args[1].Str)
 			bits, _ := strconv.Atoi(args[2].Str)
 
-			var key crypto.PrivateKey
-			var err error
-
-			switch algo {
-			case "rsa":
-				if bits < 4096 {
-					bits = 4096
-				}
-				key, err = rsa.GenerateKey(rand.Reader, bits)
-
-			case "ecdsa":
-				var curve elliptic.Curve
-				switch bits {
-				case 256:
-					curve = elliptic.P256()
-				case 384:
-					curve = elliptic.P384()
-				case 521:
-					curve = elliptic.P521()
-				default:
-					curve = elliptic.P384()
-				}
-				key, err = ecdsa.GenerateKey(curve, rand.Reader)
-
-			default:
-				return ErrorVal("Unsupported algorithm")
-			}
-
+			key, err := generatePrivateKey(args[1].Str, bits)
 			if err != nil {
 				return ErrorVal(err.Error())
 			}
@@ -99,6 +73,7 @@ func InitCertFunctions() {
 			return BoolVal(err == nil)
 		})
 
+	// ---------------- cert.CreateCSR ----------------
 	Register(ns+"CreateCSR", "cert",
 		"subject, keyPath, outFile [, SANs]",
 		"Erstellt eine Certificate Signing Request (CSR) mit optionalen DNS/IP SANs.",
@@ -116,22 +91,19 @@ func InitCertFunctions() {
 				return ErrorVal(err.Error())
 			}
 
-			var dns []string
-			var ips []net.IP
-
+			subject := args[0].Str
+			sansCSV := ""
 			if len(args) >= 4 {
-				for _, s := range strings.Split(args[3].Str, ",") {
-					s = strings.TrimSpace(s)
-					if ip := net.ParseIP(s); ip != nil {
-						ips = append(ips, ip)
-					} else {
-						dns = append(dns, s)
-					}
-				}
+				sansCSV = args[3].Str
+			}
+
+			dns, ips, err := buildSANs(subject, sansCSV)
+			if err != nil {
+				return ErrorVal(err.Error())
 			}
 
 			tmpl := x509.CertificateRequest{
-				Subject:     pkix.Name{CommonName: args[0].Str},
+				Subject:     pkix.Name{CommonName: subject},
 				DNSNames:    dns,
 				IPAddresses: ips,
 			}
@@ -218,12 +190,23 @@ func InitCertFunctions() {
 				return ErrorVal("Private Key passt nicht zum Public Key der CSR")
 			}
 
-			// 4. Zertifikat-Template aus der CSR aufbauen (selbstsigniert: Issuer = Subject)
+			// 4. SAN-Einträge aus der CSR absichern (fremde CSR könnte rohes
+			//    Unicode im DNS-SAN enthalten, was gegen RFC 5280/6125 verstößt)
+			var sanitizedDNS []string
+			for _, d := range csr.DNSNames {
+				ace, err := toACEHostname(d)
+				if err != nil {
+					return ErrorVal("Ungültiger SAN-Eintrag in CSR ('" + d + "'): " + err.Error())
+				}
+				sanitizedDNS = append(sanitizedDNS, ace)
+			}
+
+			// 5. Zertifikat-Template aus der CSR aufbauen (selbstsigniert: Issuer = Subject)
 			serial := newSerial()
 			tmpl := &x509.Certificate{
 				SerialNumber:          serial,
 				Subject:               csr.Subject,
-				DNSNames:              csr.DNSNames,
+				DNSNames:              sanitizedDNS,
 				IPAddresses:           csr.IPAddresses,
 				NotBefore:             time.Now().Add(-5 * time.Minute),
 				NotAfter:              time.Now().AddDate(0, 0, days),
@@ -235,7 +218,7 @@ func InitCertFunctions() {
 				tmpl.KeyUsage |= x509.KeyUsageCertSign
 			}
 
-			// 5. Selbst signieren
+			// 6. Selbst signieren
 			certBytes, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, csr.PublicKey, priv)
 			if err != nil {
 				return ErrorVal("Zertifikat-Erstellung fehlgeschlagen: " + err.Error())
@@ -257,8 +240,6 @@ func InitCertFunctions() {
 			return ErrorVal("usage: cert.ExportPEM(certPath, outFile)")
 		}
 
-		// 1. Pfade sicher auflösen (Sandbox-Check)
-		// inP = Input Path, outP = Output Path
 		inP, errVal1 := absPathVal(args[0].Str)
 		if errVal1 != nil {
 			return *errVal1
@@ -269,19 +250,15 @@ func InitCertFunctions() {
 			return *errVal2
 		}
 
-		// 2. Quelldaten lesen (nutzt validierten inP)
 		certData, err := os.ReadFile(inP)
 		if err != nil {
 			return ErrorVal("Zertifikat konnte nicht gelesen werden: " + err.Error())
 		}
 
-		// 3. Datei schreiben (nutzt validierten outP)
-		// 0644 ist der Standard für öffentliche Zertifikate
 		if err := os.WriteFile(outP, certData, 0644); err != nil {
 			return ErrorVal("Fehler beim Schreiben der PEM-Datei: " + err.Error())
 		}
 
-		// 4. Erfolg zurückgeben
 		return NullVal()
 	})
 
@@ -291,7 +268,6 @@ func InitCertFunctions() {
 			return ErrorVal("usage: cert.ExportDER(certPath, outFile)")
 		}
 
-		// 1. Pfade sicher auflösen (Sandbox-Check)
 		inP, errVal1 := absPathVal(args[0].Str)
 		if errVal1 != nil {
 			return *errVal1
@@ -302,25 +278,20 @@ func InitCertFunctions() {
 			return *errVal2
 		}
 
-		// 2. Quelldatei lesen
 		certData, err := os.ReadFile(inP)
 		if err != nil {
 			return ErrorVal("Fehler beim Lesen der Zertifikatsdatei: " + err.Error())
 		}
 
-		// 3. PEM-Dekodierung
 		block, _ := pem.Decode(certData)
 		if block == nil {
 			return ErrorVal("Datei ist kein gültiges PEM-Format")
 		}
 
-		// 4. Typ-Prüfung (Sicherheits-Feature)
-		// Wir stellen sicher, dass wir nur Zertifikate exportieren, keine privaten Schlüssel!
 		if block.Type != "CERTIFICATE" {
 			return ErrorVal("Export abgebrochen: PEM-Block ist vom Typ '" + block.Type + "', erwartet wurde 'CERTIFICATE'")
 		}
 
-		// 5. Schreiben der binären DER-Daten
 		if err := os.WriteFile(outP, block.Bytes, 0644); err != nil {
 			return ErrorVal("Fehler beim Schreiben der DER-Datei: " + err.Error())
 		}
@@ -334,37 +305,31 @@ func InitCertFunctions() {
 			return ErrorVal("usage: cert.GetPublicKey(certPath)")
 		}
 
-		// 1. Pfad sicher auflösen (Sandbox-Check)
 		path, errVal := absPathVal(args[0].Str)
 		if errVal != nil {
 			return *errVal
 		}
 
-		// 2. Zertifikatsdatei lesen
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return ErrorVal("Zertifikat konnte nicht gelesen werden: " + err.Error())
 		}
 
-		// 3. PEM-Block dekodieren
 		block, _ := pem.Decode(data)
 		if block == nil || block.Type != "CERTIFICATE" {
 			return ErrorVal("Kein gültiges Zertifikat im PEM-Format gefunden")
 		}
 
-		// 4. Zertifikat parsen
 		cert, err := x509.ParseCertificate(block.Bytes)
 		if err != nil {
 			return ErrorVal("Zertifikat-Parse-Fehler: " + err.Error())
 		}
 
-		// 5. Öffentlichen Schlüssel extrahieren und in PKIX/DER formatieren
 		pubBytes, err := x509.MarshalPKIXPublicKey(cert.PublicKey)
 		if err != nil {
 			return ErrorVal("Fehler beim Exportieren des Public Keys: " + err.Error())
 		}
 
-		// 6. In PEM-Format umwandeln (für bessere Lesbarkeit im Skript)
 		pubPEM := pem.EncodeToMemory(&pem.Block{
 			Type:  "PUBLIC KEY",
 			Bytes: pubBytes,
@@ -416,7 +381,6 @@ func InitCertFunctions() {
 				return ErrorVal("Ordner-Fehler (CSR): " + err.Error())
 			}
 
-			// 1. Conf einlesen und parsen
 			confData, err := os.ReadFile(confP)
 			if err != nil {
 				return ErrorVal("Config-Ladefehler: " + err.Error())
@@ -426,7 +390,6 @@ func InitCertFunctions() {
 				return ErrorVal("Kein CN in der Konfigurationsdatei gefunden")
 			}
 
-			// 2. Private Key erzeugen
 			priv, err := generatePrivateKey(algo, bits)
 			if err != nil {
 				return ErrorVal("Key-Erstellung fehlgeschlagen: " + err.Error())
@@ -443,7 +406,6 @@ func InitCertFunctions() {
 				return ErrorVal("Key-Schreibfehler: " + err.Error())
 			}
 
-			// 3. CSR erzeugen (mit DNS + IP SANs)
 			csrTemplate := x509.CertificateRequest{
 				Subject:     pkix.Name{CommonName: cn},
 				DNSNames:    dnsNames,
@@ -464,12 +426,12 @@ func InitCertFunctions() {
 			return BoolVal(true)
 		})
 
+	// ---------------- cert.CreateSelfSigned ----------------
 	Register(ns+"CreateSelfSigned", "cert", "subject, keyPath, outCert [, days, SANs, isCA]", "Erstellt ein selbstsigniertes Zertifikat.", func(args []Value) Value {
 		if len(args) < 3 {
 			return ErrorVal("usage: cert.CreateSelfSigned(subject, keyPath, outCert [, days, SANs, isCA])")
 		}
 
-		// 1. Pfade sicher auflösen (Sandbox-Check)
 		kPath, errVal1 := absPathVal(args[1].Str)
 		if errVal1 != nil {
 			return *errVal1
@@ -488,7 +450,6 @@ func InitCertFunctions() {
 			}
 		}
 
-		// 2. Key laden (nutzt validierten kPath)
 		keyData, err := os.ReadFile(kPath)
 		if err != nil {
 			return ErrorVal("Key-Lesefehler: " + err.Error())
@@ -512,18 +473,13 @@ func InitCertFunctions() {
 			return ErrorVal("Key-Parse-Fehler: " + err.Error())
 		}
 
-		// 3. SANs (Subject Alternative Names) verarbeiten
-		var dnsNames []string
-		var ipAddresses []net.IP
-		if len(args) >= 5 && args[4].Str != "" {
-			for _, s := range strings.Split(args[4].Str, ",") {
-				s = strings.TrimSpace(s)
-				if ip := net.ParseIP(s); ip != nil {
-					ipAddresses = append(ipAddresses, ip)
-				} else {
-					dnsNames = append(dnsNames, s)
-				}
-			}
+		sansCSV := ""
+		if len(args) >= 5 {
+			sansCSV = args[4].Str
+		}
+		dnsNames, ipAddresses, err := buildSANs(subject, sansCSV)
+		if err != nil {
+			return ErrorVal(err.Error())
 		}
 
 		isCA := false
@@ -531,7 +487,6 @@ func InitCertFunctions() {
 			isCA = true
 		}
 
-		// 4. Zertifikat-Template
 		serial, _ := rand.Int(rand.Reader, big.NewInt(1<<62))
 		tmpl := x509.Certificate{
 			SerialNumber: serial,
@@ -551,13 +506,11 @@ func InitCertFunctions() {
 			tmpl.KeyUsage |= x509.KeyUsageCertSign
 		}
 
-		// 5. Selbst signieren
 		certBytes, err := x509.CreateCertificate(rand.Reader, &tmpl, &tmpl, publicKey(priv), priv)
 		if err != nil {
 			return ErrorVal("Zertifikat-Erstellung fehlgeschlagen: " + err.Error())
 		}
 
-		// 6. Speichern (nutzt validierten oPath)
 		certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certBytes})
 		if err := os.WriteFile(oPath, certPEM, 0644); err != nil {
 			return ErrorVal("Speicherfehler: " + err.Error())
@@ -566,6 +519,7 @@ func InitCertFunctions() {
 		return NullVal()
 	})
 
+	// ---------------- cert.SignCSR ----------------
 	Register(ns+"SignCSR", "cert",
 		"csrPath, caCert, caKey, outCert [, days]",
 		"Signiert eine CSR mit einer CA und erzeugt ein gültiges Zertifikat.",
@@ -600,10 +554,21 @@ func InitCertFunctions() {
 				return ErrorVal(err.Error())
 			}
 
+			// SAN-Einträge aus der CSR absichern (fremde CSR könnte rohes
+			// Unicode im DNS-SAN enthalten, was gegen RFC 5280/6125 verstößt)
+			var sanitizedDNS []string
+			for _, d := range csr.DNSNames {
+				ace, err := toACEHostname(d)
+				if err != nil {
+					return ErrorVal("Ungültiger SAN-Eintrag in CSR ('" + d + "'): " + err.Error())
+				}
+				sanitizedDNS = append(sanitizedDNS, ace)
+			}
+
 			tmpl := &x509.Certificate{
 				SerialNumber: newSerial(),
 				Subject:      csr.Subject,
-				DNSNames:     csr.DNSNames,
+				DNSNames:     sanitizedDNS,
 				IPAddresses:  csr.IPAddresses,
 				NotBefore:    time.Now().Add(-5 * time.Minute),
 				NotAfter:     time.Now().AddDate(0, 0, days),
@@ -624,6 +589,7 @@ func InitCertFunctions() {
 			return BoolVal(err == nil)
 		})
 
+	// ---------------- ExportPFX ----------------
 	Register(ns+"ExportPFX", "cert", "certP, keyP, outP, pass [, fName, mode]", "Exportiert Zertifikat und Key in einen PKCS#12 (PFX) Container.", func(args []Value) Value {
 		if len(args) < 4 {
 			return ErrorVal("usage: cert.ExportPFX(certP, keyP, outP, pass [, fName, mode])")
@@ -639,7 +605,6 @@ func InitCertFunctions() {
 			mode = strings.ToLower(args[5].Str)
 		}
 
-		// --- DER OPENSSL-TRICK: Alles aus der Datei lesen ---
 		certData, err := os.ReadFile(certP)
 		if err != nil {
 			return ErrorVal("Datei nicht lesbar: " + err.Error())
@@ -649,10 +614,10 @@ func InitCertFunctions() {
 		rest := certData
 		for {
 			var block *pem.Block
-			block, rest = pem.Decode(rest) // Sucht den nächsten Block
+			block, rest = pem.Decode(rest)
 			if block == nil {
 				break
-			} // Keine Blöcke mehr da
+			}
 
 			if block.Type == "CERTIFICATE" {
 				c, err := x509.ParseCertificate(block.Bytes)
@@ -667,14 +632,11 @@ func InitCertFunctions() {
 			return ErrorVal("Keine Zertifikate in der Datei gefunden!")
 		}
 
-		// Erstes Zertifikat = Hauptzertifikat (Leaf)
-		// Alle weiteren = Kette (Chain)
 		leaf := allCerts[0]
 		var chain []*x509.Certificate
 		if len(allCerts) > 1 {
 			chain = allCerts[1:]
 		}
-		// ---------------------------------------------------
 
 		key, err := loadPrivateKey(keyP)
 		if err != nil {
@@ -688,12 +650,10 @@ func InitCertFunctions() {
 			encoder = pkcs12.LegacyRC2
 		}
 
-		// FriendlyName Info (für den Compiler)
 		if fName != "" {
 			fmt.Printf("PFX Export: %s\n", fName)
 		}
 
-		// Jetzt bekommt der Encoder den Key, das Leaf UND die restliche Chain
 		pfxData, err := encoder.Encode(key, leaf, chain, password)
 		if err != nil {
 			return ErrorVal("Encoding Fehler: " + err.Error())
@@ -706,12 +666,12 @@ func InitCertFunctions() {
 		return BoolVal(true)
 	})
 
+	// ---------------- Combine ----------------
 	Register(ns+"Combine", "cert", "cert1, ..., outFile", "Kombiniert mehrere Zertifikate zu einer PEM-Kette (Chain).", func(args []Value) Value {
 		if len(args) < 2 {
 			return ErrorVal("usage: cert.Combine(cert1, ..., outFile)")
 		}
 
-		// Pfad-Intelligenz für das Ziel
 		outP, _ := absPathVal(args[len(args)-1].Str)
 		if err := ensureDir(outP); err != nil {
 			return ErrorVal("Ordner-Fehler: " + err.Error())
@@ -721,13 +681,12 @@ func InitCertFunctions() {
 		var combinedPEM []byte
 
 		for _, fileVal := range sourceFiles {
-			path, _ := absPathVal(fileVal.Str) // Auch Quellpfade auflösen
+			path, _ := absPathVal(fileVal.Str)
 			data, err := os.ReadFile(path)
 			if err != nil {
 				return ErrorVal(fmt.Sprintf("Fehler beim Lesen von %s: %v", path, err))
 			}
 
-			// ... (PEM/DER Erkennung wie zuvor) ...
 			block, _ := pem.Decode(data)
 			if block != nil {
 				current := data
@@ -755,6 +714,7 @@ func InitCertFunctions() {
 		return BoolVal(err == nil)
 	})
 
+	// ---------------- ExportPKCS7 ----------------
 	Register(ns+"ExportPKCS7", "cert", "certPath, outFile", "Erstellt einen PKCS#7 Container aus einem oder mehreren Zertifikaten.", func(args []Value) Value {
 		if len(args) < 2 {
 			return ErrorVal("usage: cert.ExportPKCS7(certPath, outFile)")
@@ -767,31 +727,25 @@ func InitCertFunctions() {
 			return ErrorVal("Ordner-Fehler: " + err.Error())
 		}
 
-		// Wir laden hier alle Zertifikate aus der Datei (für Bundles)
-		// Nutze hier die Logik aus ExportPFX, um den gesamten Stapel zu lesen
 		certs, err := loadAllCerts(certPath)
 		if err != nil {
 			return ErrorVal("Zertifikat-Ladefehler: " + err.Error())
 		}
 
-		// Neues PKCS7 Objekt
 		p7, err := pkcs7.NewSignedData([]byte{})
 		if err != nil {
 			return ErrorVal("PKCS7-Init Fehler: " + err.Error())
 		}
 
-		// Alle gefundenen Zertifikate zum Container hinzufügen
 		for _, c := range certs {
 			p7.AddCertificate(c)
 		}
 
-		// Den binären PKCS7 Block generieren
 		out, err := p7.Finish()
 		if err != nil {
 			return ErrorVal("PKCS7-Finish Fehler: " + err.Error())
 		}
 
-		// Speichern als binäre Datei
 		if err := os.WriteFile(outFile, out, 0644); err != nil {
 			return ErrorVal("Schreibfehler: " + err.Error())
 		}
@@ -799,6 +753,7 @@ func InitCertFunctions() {
 		return BoolVal(true)
 	})
 
+	// ---------------- cert.CreateConf ----------------
 	Register(ns+"CreateConf", "cert", "[cn, dnsArray, outFile]", "Assistent (interaktiv) oder Funktion zum Erstellen einer OpenSSL-Konfigurationsdatei.", func(args []Value) Value {
 		var cn string
 		var dnsNames []string
@@ -806,7 +761,6 @@ func InitCertFunctions() {
 		var outFile string
 		scanner := bufio.NewScanner(os.Stdin)
 
-		// Helper für interaktive Abfragen
 		ask := func(prompt string, defaultVal string) string {
 			suffix := ""
 			if defaultVal != "" {
@@ -823,11 +777,14 @@ func InitCertFunctions() {
 			return defaultVal
 		}
 
-		// --- LOGIK-ZWEIG: INTERAKTIV ODER DIREKT ---
 		if len(args) == 0 {
 			fmt.Println("\n--- VBMini Zertifikats-Assistent ---")
 			cn = ask("Common Name (CN)", "localhost")
-			dnsNames = append(dnsNames, cn) // CN ist immer der erste DNS
+			if aceCN, err := toACEHostname(cn); err == nil {
+				dnsNames = append(dnsNames, aceCN) // CN ist immer der erste DNS (als Punycode/ACE)
+			} else {
+				fmt.Printf("\x1b[33mWarnung:\x1b[0m CN '%s' konnte nicht nach Punycode konvertiert werden (%v) — wird nicht als SAN aufgenommen\n", cn, err)
+			}
 
 			fmt.Print("Möchten Sie weitere DNS/IP-Adressen hinzufügen? (j/n): ")
 			if scanner.Scan() && strings.ToLower(strings.TrimSpace(scanner.Text())) == "j" {
@@ -839,8 +796,10 @@ func InitCertFunctions() {
 
 					if ip := net.ParseIP(entry); ip != nil {
 						ipNames = append(ipNames, entry)
+					} else if ace, err := toACEHostname(entry); err == nil {
+						dnsNames = append(dnsNames, ace)
 					} else {
-						dnsNames = append(dnsNames, entry)
+						fmt.Printf("\x1b[33mWarnung:\x1b[0m '%s' ist weder eine gültige IP noch ein gültiger Domainname (%v) — übersprungen\n", entry, err)
 					}
 				}
 			}
@@ -848,13 +807,19 @@ func InitCertFunctions() {
 		} else {
 			// Direkte Übergabe aus einem Skript: CreateConf(cn, dnsArray, [outFile])
 			cn = args[0].Str
-			dnsNames = append(dnsNames, cn)
+			if aceCN, err := toACEHostname(cn); err == nil {
+				dnsNames = append(dnsNames, aceCN)
+			} else {
+				return ErrorVal("Ungültiger CN '" + cn + "': " + err.Error())
+			}
 			if len(args) > 1 {
 				for _, v := range args[1].Arr {
 					if ip := net.ParseIP(v.Str); ip != nil {
 						ipNames = append(ipNames, v.Str)
+					} else if ace, err := toACEHostname(v.Str); err == nil {
+						dnsNames = append(dnsNames, ace)
 					} else {
-						dnsNames = append(dnsNames, v.Str)
+						return ErrorVal("Ungültiger Domainname '" + v.Str + "': " + err.Error())
 					}
 				}
 			}
@@ -863,7 +828,6 @@ func InitCertFunctions() {
 			}
 		}
 
-		// --- TEMPLATE BAUEN ---
 		var sb strings.Builder
 		for i, d := range dnsNames {
 			sb.WriteString(fmt.Sprintf("DNS.%d = %s\n", i+1, d))
@@ -888,27 +852,22 @@ subjectAltName = @alt_names
 [ alt_names ]
 %s`, cn, sb.String())
 
-		// --- INTELLIGENTE PFAD-LOGIK ---
 		finalPath := ""
 		cwd, _ := os.Getwd()
 
 		if outFile == "" {
-			// Fall 1: Gar kein Pfad -> Aktueller Ordner + CN.conf
 			finalPath = filepath.Join(cwd, cn+".conf")
 		} else {
 			absOut, _ := filepath.Abs(outFile)
 			fi, err := os.Stat(absOut)
 
-			// Fall 2: Pfad ist ein Ordner oder endet auf Slash
 			if (err == nil && fi.IsDir()) || strings.HasSuffix(outFile, "/") || strings.HasSuffix(outFile, "\\") {
 				finalPath = filepath.Join(absOut, cn+".conf")
 			} else {
-				// Fall 3: Pfad ist ein direkter Dateiname
 				finalPath = absOut
 			}
 		}
 
-		// --- OVERWRITE-SCHUTZ ---
 		if _, err := os.Stat(finalPath); err == nil {
 			fmt.Printf("\x1b[33mDatei existiert bereits:\x1b[0m %s\n", filepath.Base(finalPath))
 			fmt.Print("Überschreiben? (j/n): ")
@@ -920,7 +879,6 @@ subjectAltName = @alt_names
 			}
 		}
 
-		// --- SPEICHERN ---
 		dir := filepath.Dir(finalPath)
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return ErrorVal("Ordner-Fehler: " + err.Error())
@@ -933,7 +891,8 @@ subjectAltName = @alt_names
 		return BoolVal(true)
 	})
 
-	Register(ns+"CreateCSRConf", "cert", "confPath, keyPath, outCSR", "Erstellt eine OpenSSL-Konfigurationsdatei mit SAN-Einträgen.", func(args []Value) Value {
+	// ---------------- cert.CreateCSRConf ----------------
+	Register(ns+"CreateCSRConf", "cert", "confPath, keyPath, outCSR", "Erstellt eine CSR auf Basis einer OpenSSL-Konfigurationsdatei (DNS/IP-SANs, inkl. Punycode-Konvertierung).", func(args []Value) Value {
 		if len(args) < 3 {
 			return ErrorVal("usage: cert.CreateCSRConf(confPath, keyPath, outCSR)")
 		}
@@ -946,55 +905,40 @@ subjectAltName = @alt_names
 			return ErrorVal(err.Error())
 		}
 
-		// 1. Config-Datei einlesen
 		confData, err := os.ReadFile(confP)
 		if err != nil {
 			return ErrorVal("Config-Ladefehler: " + err.Error())
 		}
-		confStr := string(confData)
 
-		// 2. Key laden
 		priv, err := loadPrivateKey(keyP)
 		if err != nil {
 			return ErrorVal("Key-Ladefehler: " + err.Error())
 		}
 
-		// 3. Einfacher Parser für CN und DNS (SAN)
-		var cn string
-		var dnsNames []string
-
-		lines := strings.Split(confStr, "\n")
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if strings.HasPrefix(line, "CN =") {
-				cn = strings.TrimSpace(strings.TrimPrefix(line, "CN ="))
-			} else if strings.Contains(line, "DNS.") && strings.Contains(line, "=") {
-				parts := strings.Split(line, "=")
-				if len(parts) == 2 {
-					dnsNames = append(dnsNames, strings.TrimSpace(parts[1]))
-				}
-			}
+		cn, dnsNames, ips := parseVbxConf(string(confData))
+		if cn == "" {
+			return ErrorVal("Kein CN in der Konfigurationsdatei gefunden")
 		}
 
-		// 4. CSR Template füllen
 		csrTemplate := x509.CertificateRequest{
-			Subject:  pkix.Name{CommonName: cn},
-			DNSNames: dnsNames,
+			Subject:     pkix.Name{CommonName: cn},
+			DNSNames:    dnsNames,
+			IPAddresses: ips,
 		}
 
-		// 5. CSR erstellen
 		csrBytes, err := x509.CreateCertificateRequest(rand.Reader, &csrTemplate, priv)
 		if err != nil {
 			return ErrorVal("CSR-Fehler: " + err.Error())
 		}
 
-		// 6. Als PEM speichern
 		pemBlock := &pem.Block{Type: "CERTIFICATE REQUEST", Bytes: csrBytes}
 		err = os.WriteFile(outP, pem.EncodeToMemory(pemBlock), 0644)
 
 		return BoolVal(err == nil)
 	})
 }
+
+// ---------------- Helper-Funktionen ----------------
 
 func ensureDir(path string) error {
 	dir := filepath.Dir(path)
@@ -1079,11 +1023,13 @@ func parseAndValidateCSR(data []byte) (*x509.CertificateRequest, error) {
 	return csr, nil
 }
 
-// ---------------- generatePrivateKey (Helper, geteilt mit GenerateKey) ----------------
+// generatePrivateKey erzeugt einen RSA- oder ECDSA-Key. Geteilte Kernlogik für
+// cert.GenerateKey und cert.CreateFromConf.
 func generatePrivateKey(algo string, bits int) (crypto.PrivateKey, error) {
 	switch strings.ToLower(algo) {
 	case "rsa":
 		if bits < 4096 {
+			fmt.Printf("\x1b[33mHinweis:\x1b[0m RSA-Schlüssellänge %d Bit ist zu gering, wird auf 4096 Bit angehoben.\n", bits)
 			bits = 4096
 		}
 		return rsa.GenerateKey(rand.Reader, bits)
@@ -1107,9 +1053,12 @@ func generatePrivateKey(algo string, bits int) (crypto.PrivateKey, error) {
 	}
 }
 
-// ---------------- parseVbxConf (Helper, geteilt mit CreateCSRConf) ----------------
-// Einfacher Parser für CN, DNS.x und IP.x aus einer von cert.CreateConf erzeugten Datei.
+// parseVbxConf parst CN, DNS.x und IP.x aus einer von cert.CreateConf erzeugten
+// Datei. Domainnamen werden nach ACE/Punycode konvertiert; ungültige Einträge
+// werden stillschweigend übersprungen (Datei kann von Hand editiert worden sein).
+// Geteilt zwischen cert.CreateCSRConf und cert.CreateFromConf.
 func parseVbxConf(confStr string) (cn string, dnsNames []string, ips []net.IP) {
+	seen := make(map[string]bool)
 	lines := strings.Split(confStr, "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -1119,7 +1068,12 @@ func parseVbxConf(confStr string) (cn string, dnsNames []string, ips []net.IP) {
 		case strings.Contains(line, "DNS.") && strings.Contains(line, "="):
 			parts := strings.SplitN(line, "=", 2)
 			if len(parts) == 2 {
-				dnsNames = append(dnsNames, strings.TrimSpace(parts[1]))
+				if ace, err := toACEHostname(strings.TrimSpace(parts[1])); err == nil {
+					if !seen["dns:"+ace] {
+						seen["dns:"+ace] = true
+						dnsNames = append(dnsNames, ace)
+					}
+				}
 			}
 		case strings.Contains(line, "IP.") && strings.Contains(line, "="):
 			parts := strings.SplitN(line, "=", 2)
@@ -1131,4 +1085,76 @@ func parseVbxConf(confStr string) (cn string, dnsNames []string, ips []net.IP) {
 		}
 	}
 	return
+}
+
+// toACEHostname wandelt einen (ggf. Unicode-)Domainnamen ins ASCII-Compatible-Encoding
+// (Punycode) um, wie es für X.509-SAN-Einträge zwingend erforderlich ist. Ein führendes
+// "*."  (Wildcard-Zertifikat) wird abgetrennt, der Rest konvertiert und danach wieder
+// vorangestellt, da "*" kein gültiges IDNA-Label-Zeichen ist. IPs werden hier nicht
+// behandelt, nur reine Hostnamen.
+func toACEHostname(name string) (string, error) {
+	wildcard := false
+	rest := name
+	if strings.HasPrefix(name, "*.") {
+		wildcard = true
+		rest = strings.TrimPrefix(name, "*.")
+	}
+
+	ace, err := idna.ToASCII(rest)
+	if err != nil {
+		return "", fmt.Errorf("ungültiger Domainname '%s': %w", name, err)
+	}
+
+	if wildcard {
+		return "*." + ace, nil
+	}
+	return ace, nil
+}
+
+// buildSANs baut aus Subject/CN und einer kommagetrennten SAN-Liste die finalen
+// DNS-/IP-SAN-Einträge: CN wird immer als erster Eintrag aufgenommen (Browser/
+// Clients validieren nur SANs, nicht mehr den CN), Domainnamen werden nach
+// ACE/Punycode konvertiert, und Duplikate werden übersprungen. Geteilt zwischen
+// cert.CreateCSR und cert.CreateSelfSigned.
+func buildSANs(subject string, sansCSV string) (dns []string, ips []net.IP, err error) {
+	seen := make(map[string]bool)
+
+	add := func(raw string) error {
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			return nil
+		}
+		if ip := net.ParseIP(raw); ip != nil {
+			key := "ip:" + ip.String()
+			if seen[key] {
+				return nil
+			}
+			seen[key] = true
+			ips = append(ips, ip)
+			return nil
+		}
+		ace, err := toACEHostname(raw)
+		if err != nil {
+			return err
+		}
+		key := "dns:" + ace
+		if seen[key] {
+			return nil
+		}
+		seen[key] = true
+		dns = append(dns, ace)
+		return nil
+	}
+
+	if err := add(subject); err != nil {
+		return nil, nil, err
+	}
+	if sansCSV != "" {
+		for _, s := range strings.Split(sansCSV, ",") {
+			if err := add(s); err != nil {
+				return nil, nil, err
+			}
+		}
+	}
+	return dns, ips, nil
 }
