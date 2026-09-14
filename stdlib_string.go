@@ -182,6 +182,90 @@ func InitStringFunctions() {
 
 	})
 
+	Register(ns+"RemoveLine", "string", "text, suchtext|zeile [, all]", "Entfernt eine oder mehrere Zeilen anhand eines enthaltenen Textes oder einer Zeilennummer.", func(args []Value) Value {
+		if len(args) < 2 || args[0].Kind != KindStr {
+			return ErrorVal("string.RemoveLine erwartet text und Suchtext oder Zeilennummer")
+		}
+
+		text := args[0].Str
+
+		// Zeilenenden vereinheitlichen
+		text = strings.ReplaceAll(text, "\r\n", "\n")
+		text = strings.ReplaceAll(text, "\r", "\n")
+
+		lines := strings.Split(text, "\n")
+
+		// -----------------------------------------------------------
+		// all bestimmen
+		// -----------------------------------------------------------
+
+		all := false
+
+		if len(args) >= 3 {
+			if args[2].Kind != KindBool {
+				return ErrorVal("string.RemoveLine: all muss Boolean sein")
+			}
+
+			all = args[2].Bool
+		}
+
+		// -----------------------------------------------------------
+		// Zeilennummer
+		// -----------------------------------------------------------
+
+		if args[1].Kind == KindNum {
+
+			index := int(args[1].Num)
+
+			if index < 0 || index >= len(lines) {
+				return args[0]
+			}
+
+			result := make([]string, 0, len(lines)-1)
+
+			for i, line := range lines {
+				if i != index {
+					result = append(result, line)
+				}
+			}
+
+			return StrVal(strings.Join(result, "\n"))
+		}
+
+		// -----------------------------------------------------------
+		// Enthaltener Text
+		// -----------------------------------------------------------
+
+		if args[1].Kind == KindStr {
+
+			search := args[1].Str
+
+			if search == "" {
+				return args[0]
+			}
+
+			result := make([]string, 0, len(lines))
+			removed := false
+
+			for _, line := range lines {
+
+				if strings.Contains(line, search) {
+
+					if all || !removed {
+						removed = true
+						continue
+					}
+				}
+
+				result = append(result, line)
+			}
+
+			return StrVal(strings.Join(result, "\n"))
+		}
+
+		return ErrorVal("string.RemoveLine erwartet als zweiten Parameter String oder Zahl")
+	})
+
 	Register(ns+"Switch", "string", "v...", "Gibt den Wert der ersten wahren Bedingung zurück", func(args []Value) Value {
 		// Switch braucht immer Paare (Bedingung + Ergebnis).
 		// Eine ungerade Anzahl an Argumenten oder weniger als 2 ist in VB ein Fehler/Undefined.

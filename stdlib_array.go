@@ -271,6 +271,16 @@ func InitArrayFunctions() {
 		return args[0]
 	})
 
+	Register(ns+"Push", "array", "arr, val", "Fügt ein Element am Ende des Arrays ein (In-Place).", func(args []Value) Value {
+		if len(args) < 2 || args[0].Kind != KindArr {
+			return ErrorVal("array.Push erwartet ein 1D-Array und einen Wert")
+		}
+
+		args[0].Arr = append(args[0].Arr, args[1])
+
+		return args[0]
+	})
+
 	Register(ns+"SortBy", "array", "arr, pattern, [desc]", "Sortiert ein Array von Strings anhand eines per Regex extrahierten Schlüssels (erste Capture Group). Gibt eine Kopie der Original-Elemente in sortierter Reihenfolge zurück. Elemente ohne Treffer werden immer ans Ende sortiert (unabhängig von der Richtung). Standard: aufsteigend (A-Z).", func(args []Value) Value {
 		if len(args) < 2 || args[0].Kind != KindArr {
 			return Value{}
