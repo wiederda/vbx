@@ -6,6 +6,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -148,6 +149,108 @@ func InitCertFunctions() {
 			return BoolVal(err == nil)
 		})
 
+	// ---------------- cert.SelfSignCSR ----------------
+	Register(ns+"SelfSignCSR", "cert",
+		"csrPath, keyPath, outCert [, days, isCA]",
+		"Erstellt aus einer vorhandenen CSR ein selbstsigniertes Zertifikat (Subject/SANs kommen aus der CSR, signiert mit dem zugehörigen Private Key).",
+		func(args []Value) Value {
+
+			if len(args) < 3 {
+				return ErrorVal("usage: cert.SelfSignCSR(csrPath, keyPath, outCert [, days, isCA])")
+			}
+
+			csrPath, errVal1 := absPathVal(args[0].Str)
+			if errVal1 != nil {
+				return *errVal1
+			}
+			keyPath, errVal2 := absPathVal(args[1].Str)
+			if errVal2 != nil {
+				return *errVal2
+			}
+			outPath, errVal3 := absPathVal(args[2].Str)
+			if errVal3 != nil {
+				return *errVal3
+			}
+
+			days := 365
+			if len(args) >= 4 {
+				if d, err := strconv.Atoi(args[3].Str); err == nil {
+					days = d
+				}
+			}
+			isCA := false
+			if len(args) >= 5 && strings.ToLower(args[4].Str) == "true" {
+				isCA = true
+			}
+
+			if err := ensureDir(outPath); err != nil {
+				return ErrorVal("Ordner-Fehler: " + err.Error())
+			}
+
+			// 1. CSR laden, parsen und Signatur prüfen (stellt sicher, dass der
+			//    öffentliche Schlüssel wirklich zum mitgelieferten Private Key passt)
+			csrData, err := os.ReadFile(csrPath)
+			if err != nil {
+				return ErrorVal("CSR konnte nicht gelesen werden: " + err.Error())
+			}
+			csr, err := parseAndValidateCSR(csrData)
+			if err != nil {
+				return ErrorVal(err.Error())
+			}
+
+			// 2. Private Key laden
+			priv, err := loadPrivateKey(keyPath)
+			if err != nil {
+				return ErrorVal(err.Error())
+			}
+
+			// 3. Sicherstellen, dass Key und CSR tatsächlich zusammengehören
+			pub := publicKey(priv)
+			pubBytes, err := x509.MarshalPKIXPublicKey(pub)
+			if err != nil {
+				return ErrorVal("Public-Key-Vergleichsfehler: " + err.Error())
+			}
+			csrPubBytes, err := x509.MarshalPKIXPublicKey(csr.PublicKey)
+			if err != nil {
+				return ErrorVal("Public-Key-Vergleichsfehler (CSR): " + err.Error())
+			}
+			if !bytes.Equal(pubBytes, csrPubBytes) {
+				return ErrorVal("Private Key passt nicht zum Public Key der CSR")
+			}
+
+			// 4. Zertifikat-Template aus der CSR aufbauen (selbstsigniert: Issuer = Subject)
+			serial := newSerial()
+			tmpl := &x509.Certificate{
+				SerialNumber:          serial,
+				Subject:               csr.Subject,
+				DNSNames:              csr.DNSNames,
+				IPAddresses:           csr.IPAddresses,
+				NotBefore:             time.Now().Add(-5 * time.Minute),
+				NotAfter:              time.Now().AddDate(0, 0, days),
+				BasicConstraintsValid: true,
+				IsCA:                  isCA,
+				KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+			}
+			if isCA {
+				tmpl.KeyUsage |= x509.KeyUsageCertSign
+			}
+
+			// 5. Selbst signieren
+			certBytes, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, csr.PublicKey, priv)
+			if err != nil {
+				return ErrorVal("Zertifikat-Erstellung fehlgeschlagen: " + err.Error())
+			}
+
+			if err := os.WriteFile(outPath, pem.EncodeToMemory(&pem.Block{
+				Type:  "CERTIFICATE",
+				Bytes: certBytes,
+			}), 0644); err != nil {
+				return ErrorVal("Schreibfehler: " + err.Error())
+			}
+
+			return BoolVal(true)
+		})
+
 	// ---------------- ExportPEM ----------------
 	Register(ns+"ExportPEM", "cert", "certPath, outFile", "Kopiert ein Zertifikat unverändert ins PEM-Format.", func(args []Value) Value {
 		if len(args) < 2 {
@@ -269,6 +372,97 @@ func InitCertFunctions() {
 
 		return StrVal(string(pubPEM))
 	})
+
+	// ---------------- cert.CreateFromConf ----------------
+	Register(ns+"CreateFromConf", "cert",
+		"confPath, outKey, outCSR [, algo, bits]",
+		"Erstellt in einem Schritt einen neuen Private Key und eine CSR basierend auf einer OpenSSL-Konfigurationsdatei (CN/SANs aus cert.CreateConf).",
+		func(args []Value) Value {
+
+			if len(args) < 3 {
+				return ErrorVal("usage: cert.CreateFromConf(confPath, outKey, outCSR [, algo, bits])")
+			}
+
+			confP, errVal1 := absPathVal(args[0].Str)
+			if errVal1 != nil {
+				return *errVal1
+			}
+			keyOutP, errVal2 := absPathVal(args[1].Str)
+			if errVal2 != nil {
+				return *errVal2
+			}
+			csrOutP, errVal3 := absPathVal(args[2].Str)
+			if errVal3 != nil {
+				return *errVal3
+			}
+
+			algo := "ecdsa"
+			bits := 384
+			if len(args) >= 4 && args[3].Str != "" {
+				algo = args[3].Str
+			}
+			if len(args) >= 5 {
+				if b, err := strconv.Atoi(args[4].Str); err == nil {
+					bits = b
+				}
+			} else if strings.ToLower(algo) == "rsa" {
+				bits = 4096
+			}
+
+			if err := ensureDir(keyOutP); err != nil {
+				return ErrorVal("Ordner-Fehler (Key): " + err.Error())
+			}
+			if err := ensureDir(csrOutP); err != nil {
+				return ErrorVal("Ordner-Fehler (CSR): " + err.Error())
+			}
+
+			// 1. Conf einlesen und parsen
+			confData, err := os.ReadFile(confP)
+			if err != nil {
+				return ErrorVal("Config-Ladefehler: " + err.Error())
+			}
+			cn, dnsNames, ips := parseVbxConf(string(confData))
+			if cn == "" {
+				return ErrorVal("Kein CN in der Konfigurationsdatei gefunden")
+			}
+
+			// 2. Private Key erzeugen
+			priv, err := generatePrivateKey(algo, bits)
+			if err != nil {
+				return ErrorVal("Key-Erstellung fehlgeschlagen: " + err.Error())
+			}
+
+			der, err := x509.MarshalPKCS8PrivateKey(priv)
+			if err != nil {
+				return ErrorVal("Key-Marshal-Fehler: " + err.Error())
+			}
+			if err := os.WriteFile(keyOutP, pem.EncodeToMemory(&pem.Block{
+				Type:  "PRIVATE KEY",
+				Bytes: der,
+			}), 0600); err != nil {
+				return ErrorVal("Key-Schreibfehler: " + err.Error())
+			}
+
+			// 3. CSR erzeugen (mit DNS + IP SANs)
+			csrTemplate := x509.CertificateRequest{
+				Subject:     pkix.Name{CommonName: cn},
+				DNSNames:    dnsNames,
+				IPAddresses: ips,
+			}
+
+			csrBytes, err := x509.CreateCertificateRequest(rand.Reader, &csrTemplate, priv)
+			if err != nil {
+				return ErrorVal("CSR-Erstellung fehlgeschlagen: " + err.Error())
+			}
+			if err := os.WriteFile(csrOutP, pem.EncodeToMemory(&pem.Block{
+				Type:  "CERTIFICATE REQUEST",
+				Bytes: csrBytes,
+			}), 0644); err != nil {
+				return ErrorVal("CSR-Schreibfehler: " + err.Error())
+			}
+
+			return BoolVal(true)
+		})
 
 	Register(ns+"CreateSelfSigned", "cert", "subject, keyPath, outCert [, days, SANs, isCA]", "Erstellt ein selbstsigniertes Zertifikat.", func(args []Value) Value {
 		if len(args) < 3 {
@@ -883,4 +1077,58 @@ func parseAndValidateCSR(data []byte) (*x509.CertificateRequest, error) {
 	}
 
 	return csr, nil
+}
+
+// ---------------- generatePrivateKey (Helper, geteilt mit GenerateKey) ----------------
+func generatePrivateKey(algo string, bits int) (crypto.PrivateKey, error) {
+	switch strings.ToLower(algo) {
+	case "rsa":
+		if bits < 4096 {
+			bits = 4096
+		}
+		return rsa.GenerateKey(rand.Reader, bits)
+
+	case "ecdsa":
+		var curve elliptic.Curve
+		switch bits {
+		case 256:
+			curve = elliptic.P256()
+		case 384:
+			curve = elliptic.P384()
+		case 521:
+			curve = elliptic.P521()
+		default:
+			curve = elliptic.P384()
+		}
+		return ecdsa.GenerateKey(curve, rand.Reader)
+
+	default:
+		return nil, fmt.Errorf("nicht unterstützter Algorithmus: %s", algo)
+	}
+}
+
+// ---------------- parseVbxConf (Helper, geteilt mit CreateCSRConf) ----------------
+// Einfacher Parser für CN, DNS.x und IP.x aus einer von cert.CreateConf erzeugten Datei.
+func parseVbxConf(confStr string) (cn string, dnsNames []string, ips []net.IP) {
+	lines := strings.Split(confStr, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(line, "CN ="):
+			cn = strings.TrimSpace(strings.TrimPrefix(line, "CN ="))
+		case strings.Contains(line, "DNS.") && strings.Contains(line, "="):
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				dnsNames = append(dnsNames, strings.TrimSpace(parts[1]))
+			}
+		case strings.Contains(line, "IP.") && strings.Contains(line, "="):
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				if ip := net.ParseIP(strings.TrimSpace(parts[1])); ip != nil {
+					ips = append(ips, ip)
+				}
+			}
+		}
+	}
+	return
 }

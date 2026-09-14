@@ -24,6 +24,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 )
 
 //var replaceAfterRunPath string
@@ -451,21 +452,27 @@ func InitFileFunctions() {
 
 	// ---------------- Copy ----------------
 	Register(ns+"Copy", "file",
-		"src, dst",
-		"Kopiert eine Datei (kein Überschreiben ohne Fehler).",
+		"src, dst, [overwrite]",
+		"Kopiert eine Datei. Mit overwrite=true wird ein bestehendes Ziel überschrieben, sonst schlägt der Aufruf fehl, falls es existiert.",
 		func(args []Value) Value {
 
 			if len(args) < 2 {
 				return fileResult(false, "file.Copy: benötigt src und dst")
 			}
 
-			srcStr, errS1 := expectStr(args, 0, "file.Copy(src, dst)")
+			srcStr, errS1 := expectStr(args, 0, "file.Copy(src, dst, [overwrite])")
 			if errS1 != nil {
 				return fileResult(false, errS1.Str)
 			}
-			dstStr, errS2 := expectStr(args, 1, "file.Copy(src, dst)")
+			dstStr, errS2 := expectStr(args, 1, "file.Copy(src, dst, [overwrite])")
 			if errS2 != nil {
 				return fileResult(false, errS2.Str)
+			}
+
+			// Optional: Standard false, identisch zum bisherigen Verhalten.
+			overwrite := false
+			if len(args) >= 3 {
+				overwrite = isTruthy(args[2])
 			}
 
 			src, e1 := absPathVal(srcStr)
@@ -486,7 +493,7 @@ func InitFileFunctions() {
 				return fileResult(false, "file.Copy: Zielverzeichnis fehlt: "+filepath.Dir(dst))
 			}
 
-			if _, err := os.Stat(dst); err == nil {
+			if _, err := os.Stat(dst); err == nil && !overwrite {
 				return fileResult(false, "file.Copy: Ziel existiert bereits: "+dst)
 			}
 
@@ -499,8 +506,8 @@ func InitFileFunctions() {
 
 	// ---------------- Move ----------------
 	Register(ns+"Move", "file",
-		"src, dst",
-		"Verschiebt oder benennt eine Datei um (Rename + Cross-Drive Fallback).",
+		"src, dst, [overwrite]",
+		"Verschiebt oder benennt eine Datei um (Rename + Cross-Drive Fallback). Mit overwrite=true wird ein bestehendes Ziel überschrieben, sonst schlägt der Aufruf fehl, falls es existiert.",
 		func(args []Value) Value {
 
 			// -------------------------
@@ -510,13 +517,19 @@ func InitFileFunctions() {
 				return fileResult(false, "file.Move: benötigt src und dst")
 			}
 
-			srcStr, errS1 := expectStr(args, 0, "file.Move(src, dst)")
+			srcStr, errS1 := expectStr(args, 0, "file.Move(src, dst, [overwrite])")
 			if errS1 != nil {
 				return fileResult(false, errS1.Str)
 			}
-			dstStr, errS2 := expectStr(args, 1, "file.Move(src, dst)")
+			dstStr, errS2 := expectStr(args, 1, "file.Move(src, dst, [overwrite])")
 			if errS2 != nil {
 				return fileResult(false, errS2.Str)
+			}
+
+			// Optional: Standard false, identisch zum bisherigen Verhalten.
+			overwrite := false
+			if len(args) >= 3 {
+				overwrite = isTruthy(args[2])
 			}
 
 			// -------------------------
@@ -549,12 +562,15 @@ func InitFileFunctions() {
 			// -------------------------
 			// Ziel existiert bereits
 			// -------------------------
-			if _, err := os.Stat(dst); err == nil {
+			if _, err := os.Stat(dst); err == nil && !overwrite {
 				return fileResult(false, "file.Move: Zieldatei existiert bereits: "+dst)
 			}
 
 			// -------------------------
 			// 1. Versuch: Rename (schnell, atomar)
+			// os.Rename ersetzt laut Go-Doku plattformübergreifend eine
+			// bestehende Zieldatei automatisch (kein Verzeichnis) --
+			// bei overwrite=true also ohne weiteres Zutun.
 			// -------------------------
 			if err := os.Rename(src, dst); err == nil {
 				return fileResult(true)
@@ -1404,6 +1420,65 @@ func InitFileFunctions() {
 		}
 
 		return NullVal()
+	})
+
+	Register(ns+"TextStats", "file", "path", "Zählt Wörter, Zeichen (ohne Leerzeichen) und Leerzeichen im Inhalt einer Datei.", func(args []Value) Value {
+		// --- Pfad ---
+		pathStr, errS := expectStr(args, 0, "file.TextStats(path)")
+		if errS != nil {
+			return *errS
+		}
+
+		path, errVal := absPathVal(pathStr)
+		if errVal != nil {
+			return *errVal
+		}
+
+		// --- Datei öffnen ---
+		file, err := openFileShared(path)
+		if err != nil {
+			return ErrorVal("Fehler beim Öffnen der Datei: " + err.Error())
+		}
+		defer file.Close()
+
+		// --- Datei lesen ---
+		data, err := io.ReadAll(file)
+		if err != nil {
+			return ErrorVal("Fehler beim Lesen der Datei: " + err.Error())
+		}
+
+		content := string(data)
+
+		// --- Wörter zählen ---
+		// strings.Fields kümmert sich um mehrfache/verschiedene
+		// Whitespace-Zeichen, analog zu string.WordCount.
+		wordCount := len(strings.Fields(content))
+
+		// --- Zeichen (ohne Leerzeichen) UND Leerzeichen in einem Durchlauf zählen ---
+		// Satz-/Sonderzeichen zählen bewusst zu charCount mit -- bei
+		// beliebigem Text (Brief, Aufsatz, ...) wäre es sonst willkürlich,
+		// was als "Zeichen" zählt und was nicht. charCount + spaceCount
+		// ergibt damit die Gesamtzeichenzahl des Dateiinhalts.
+		charCount := 0
+		spaceCount := 0
+
+		for _, r := range content {
+			if unicode.IsSpace(r) {
+				spaceCount++
+			} else {
+				charCount++
+			}
+		}
+
+		// --- Ergebnis zurückgeben ---
+		return Value{
+			Kind: KindArr,
+			Arr: []Value{
+				NumVal(float64(wordCount)),
+				NumVal(float64(charCount)),
+				NumVal(float64(spaceCount)),
+			},
+		}
 	})
 
 	// ---------------- LineCount ----------------

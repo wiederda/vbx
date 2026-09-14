@@ -131,7 +131,7 @@ Alle Funktionen sind Runen-basiert und damit korrekt für Unicode/UTF-8.
 
 ## string.CharCount(s)
 - **Konkret:**
-  Zählt alle Buchstaben und Ziffern im Text (keine Leer- oder Sonderzeichen).
+  Zählt alle Zeichen im Text außer Leerzeichen. Buchstaben, Ziffern sowie Satz- und Sonderzeichen zählen mit.
 - **Parameter:**
   - `s`: String.
 - **Rückgabe:**

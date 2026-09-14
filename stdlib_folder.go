@@ -162,9 +162,9 @@ func InitFolderFunctions() {
 	})
 
 	// folder.Copy
-	Register(ns+"Copy", "folder", "src, dst, [progress], [network]", "Kopiert einen Ordner rekursiv. progress=True zeigt Fortschritt. network=True optimiert für Netzwerk-Transfers.", func(args []Value) Value {
+	Register(ns+"Copy", "folder", "src, dst, [progress], [network], [failIfExists]", "Kopiert einen Ordner rekursiv. progress=True zeigt Fortschritt. network=True optimiert für Netzwerk-Transfers. failIfExists=True bricht ab, wenn dst bereits existiert (Standard: es wird in ein vorhandenes Ziel hineingemergt/überschrieben).", func(args []Value) Value {
 		if len(args) < 2 {
-			return ErrorVal("usage: folder.Copy(src, dst, [progress], [network])")
+			return ErrorVal("usage: folder.Copy(src, dst, [progress], [network], [failIfExists])")
 		}
 
 		src, e1 := absPathVal(args[0].Str)
@@ -184,6 +184,20 @@ func InitFolderFunctions() {
 		networkMode := false
 		if len(args) >= 4 {
 			networkMode = (args[3].Str == "true" || (args[3].Kind == KindBool && args[3].Bool))
+		}
+
+		// Optional: Standard false (bisheriges Verhalten unverändert) --
+		// anders als file.Copy ist der Default hier bewusst permissiv
+		// (in ein vorhandenes Ziel hineinmergen), siehe Doku.
+		failIfExists := false
+		if len(args) >= 5 {
+			failIfExists = isTruthy(args[4])
+		}
+
+		if failIfExists {
+			if _, err := os.Stat(dst); err == nil {
+				return ErrorVal("folder.Copy: Ziel existiert bereits: " + dst)
+			}
 		}
 
 		type job struct {
@@ -294,20 +308,41 @@ func InitFolderFunctions() {
 	})
 
 	// folder.Move
-	Register(ns+"Move", "folder", "src, dst", "Verschiebt einen Ordner (Rename mit Fallback auf Copy/Delete).",
+	Register(ns+"Move", "folder", "src, dst, [failIfExists]", "Verschiebt einen Ordner (Rename mit Fallback auf Copy/Delete). failIfExists=True bricht ab, wenn dst bereits existiert (Standard: es wird ggf. in ein vorhandenes Ziel hineingemergt).",
 		func(args []Value) Value {
 			if len(args) < 2 {
-				return ErrorVal("usage: folder.Move(src, dst)")
+				return ErrorVal("usage: folder.Move(src, dst, [failIfExists])")
 			}
 			src, _ := absPathVal(args[0].Str)
 			dst, _ := absPathVal(args[1].Str)
+
+			// Optional: Standard false, identisch zum bisherigen Verhalten.
+			failIfExists := false
+			if len(args) >= 3 {
+				failIfExists = isTruthy(args[2])
+			}
+
+			if failIfExists {
+				if _, err := os.Stat(dst); err == nil {
+					return ErrorVal("folder.Move: Ziel existiert bereits: " + dst)
+				}
+			}
 
 			if err := os.Rename(src, dst); err == nil {
 				return NullVal()
 			}
 
 			if copyInfo, ok := builtins[ns+"Copy"]; ok {
-				copyRes := copyInfo.Fn([]Value{StrVal(src), StrVal(dst)})
+				copyArgs := []Value{StrVal(src), StrVal(dst)}
+				if failIfExists {
+					// progress=false, network=false, failIfExists=true durchreichen,
+					// damit der Fallback dieselbe Prüfung anwendet -- falls
+					// os.Rename z.B. aus einem anderen Grund als "existiert
+					// bereits" fehlschlug, dst zwischenzeitlich aber doch da ist.
+					copyArgs = []Value{StrVal(src), StrVal(dst), BoolVal(false), BoolVal(false), BoolVal(true)}
+				}
+
+				copyRes := copyInfo.Fn(copyArgs)
 				if copyRes.Kind == KindError {
 					return copyRes
 				}

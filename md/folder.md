@@ -103,7 +103,7 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
 
 ---
 
-## folder.Copy(src, dst [, progress, network])
+## folder.Copy(src, dst [, progress, network, failIfExists])
 - **Konkret:**
   Kopiert einen Ordner rekursiv mit parallelen Worker-Goroutinen.
   Im lokalen Modus werden max. 4 Worker genutzt, im Netzwerkmodus bis zu 16.
@@ -113,20 +113,26 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   - `dst`: Zielverzeichnis.
   - `progress`: Optional. `BoolVal` – Fortschrittsanzeige.
   - `network`: Optional. `BoolVal` – optimierter Modus für Netzwerk-Transfers.
+  - `failIfExists`: Optional. `BoolVal` – bei `true` bricht der Aufruf mit `ErrorVal` ab, falls `dst` bereits existiert. Standard: `false`.
 - **Rückgabe:**
-  `NullVal`
+  `NullVal`, `ErrorVal` bei `failIfExists=true` und bereits existierendem Ziel.
+- **Achtung – abweichend von `file.Copy`:**
+  Ohne `failIfExists` (Standard) wird **immer** in ein bereits vorhandenes `dst` hineinkopiert: fehlende Unterordner werden angelegt, gleichnamige Dateien werden überschrieben, in `dst` vorhandene Dateien ohne Gegenstück in `src` bleiben unangetastet stehen (echtes Merge, kein Spiegeln/Mirror). `file.Copy` verhält sich umgekehrt (Standard: Fehler bei existierendem Ziel) – bei `folder.Copy` ist der permissive Default aus Kompatibilitätsgründen bewusst so belassen worden.
 
 ---
 
-## folder.Move(src, dst)
+## folder.Move(src, dst [, failIfExists])
 - **Konkret:**
   Verschiebt einen Ordner. Versucht zuerst ein atomares Rename.
-  Schlägt das fehl (z. B. laufwerksübergreifend), wird auf Copy + Delete zurückgegriffen.
+  Schlägt das fehl (z. B. laufwerksübergreifend), wird auf Copy + Delete zurückgegriffen (`folder.Copy` mit denselben `failIfExists`-Regeln, danach `src` gelöscht).
 - **Parameter:**
   - `src`: Quellverzeichnis.
   - `dst`: Zielverzeichnis.
+  - `failIfExists`: Optional. `BoolVal` – bei `true` bricht der Aufruf mit `ErrorVal` ab, falls `dst` bereits existiert (auch VOR dem Rename-Versuch geprüft). Standard: `false`.
 - **Rückgabe:**
   `NullVal` bei Erfolg, `ErrorVal` bei Fehler.
+- **Achtung – abweichend von `file.Move`:**
+  Ohne `failIfExists` (Standard) kann beim Copy+Delete-Fallback in ein bereits vorhandenes `dst` hineingemergt werden (siehe `folder.Copy`), **bevor** `src` anschließend gelöscht wird. `file.Move` verhält sich umgekehrt (Standard: Fehler bei existierendem Ziel). Für einen "sauberen" Verschiebevorgang, der nicht versehentlich in einen bestehenden Ordner hineinmergt, `failIfExists=true` setzen.
 
 ---
 

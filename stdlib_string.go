@@ -288,7 +288,7 @@ func InitStringFunctions() {
 		return StrVal(versions[len(versions)-1])
 	})
 
-	Register(ns+"WordCount", "string", "s", "Zählt die Anzahl der Wörter in einem Text.", func(args []Value) Value {
+	Register(ns+"WordCount", "string", "s", "Zählt die Anzahl der Wörter in einem Text (mehrfache Leerzeichen werden korrekt behandelt).", func(args []Value) Value {
 		s, err := getStrArg(args, 0, "WordCount")
 		if err.Kind == KindError {
 			return err
@@ -298,7 +298,7 @@ func InitStringFunctions() {
 		return NumVal(float64(len(words)))
 	})
 
-	Register(ns+"CharCount", "string", "s", "Zählt Buchstaben und Ziffern im Text.", func(args []Value) Value {
+	Register(ns+"CharCount", "string", "s", "Zählt alle Zeichen im Text außer Leerzeichen (Buchstaben, Ziffern sowie Satz-/Sonderzeichen zählen mit).", func(args []Value) Value {
 		s, err := getStrArg(args, 0, "CharCount")
 		if err.Kind == KindError {
 			return err
@@ -306,7 +306,7 @@ func InitStringFunctions() {
 
 		count := 0
 		for _, r := range s {
-			if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			if !unicode.IsSpace(r) {
 				count++
 			}
 		}

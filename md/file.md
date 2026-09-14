@@ -76,6 +76,17 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
 
 ---
 
+## file.TextStats(path)
+- **Konkret:**
+  Liest eine Datei und zählt Wörter, Zeichen (ohne Leerzeichen) und Leerzeichen im Inhalt.
+- **Parameter:**
+  - `path`: Quelldatei.
+- **Rückgabe:**
+  `ArrVal`
+  Format: `[WordCount, CharCount, SpaceCount]`. `CharCount` zählt alle Zeichen außer Leerzeichen (Buchstaben, Ziffern sowie Satz-/Sonderzeichen zählen mit) — `CharCount + SpaceCount` ergibt die Gesamtzeichenzahl des Dateiinhalts. `ErrorVal` bei Lesefehler.
+
+---
+
 ## file.FindWords(words, inputFile, outputFile, [caseInsensitive])
 - **Konkret:**
   Sucht beliebige Wörter aus einem Array in einer Datei und schreibt alle Trefferzeilen mit vorangestellter Zeilennummer in eine Ausgabedatei.
@@ -111,27 +122,30 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
 
 ---
 
-## file.Copy(src, dst)
+## file.Copy(src, dst, [overwrite])
 - **Konkret:**
-  Kopiert eine Datei. Ziel darf nicht bereits existieren.
+  Kopiert eine Datei.
+  Ohne `overwrite` (Standard `false`) schlägt der Aufruf fehl, falls das Ziel bereits existiert.
   Das Zielverzeichnis muss vorhanden sein.
 - **Parameter:**
   - `src`: Quelldatei.
   - `dst`: Zieldatei.
+  - `overwrite`: Optional. `BoolVal` – bei `true` wird ein bereits vorhandenes Ziel überschrieben. Standard: `false`.
 - **Rückgabe:**
   `ArrVal`
   Format: `[OK, Msg]`
 
 ---
 
-## file.Move(src, dst)
+## file.Move(src, dst, [overwrite])
 - **Konkret:**
   Verschiebt oder benennt eine Datei um.
   Versucht zuerst ein atomares Rename; bei Cross-Drive-Operationen wird auf Copy+Delete zurückgegriffen.
-  Ziel darf nicht bereits existieren.
+  Ohne `overwrite` (Standard `false`) schlägt der Aufruf fehl, falls das Ziel bereits existiert.
 - **Parameter:**
   - `src`: Quelldatei.
   - `dst`: Zieldatei.
+  - `overwrite`: Optional. `BoolVal` – bei `true` wird ein bereits vorhandenes Ziel überschrieben. Standard: `false`.
 - **Rückgabe:**
   `ArrVal`
   Format: `[OK, Msg]`

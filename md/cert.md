@@ -51,6 +51,28 @@ Erstellt eine CSR auf Basis einer OpenSSL-Konfigurationsdatei. Liest `CN` und `D
 
 ---
 
+### `cert.CreateFromConf(confPath, outKey, outCSR [, algo, bits])`
+
+Erstellt in einem Schritt einen neuen Private Key und eine CSR auf Basis einer OpenSSL-Konfigurationsdatei. Liest `CN`, `DNS.*` und `IP.*`-Einträge aus der Datei.
+
+| Parameter | Typ | Beschreibung |
+|-----------|-----|--------------|
+| `confPath` | String | Pfad zur `.conf`-Datei |
+| `outKey` | String | Zieldatei für den neuen Key (PEM, PKCS#8) |
+| `outCSR` | String | Zieldatei für die CSR (PEM) |
+| `algo` | String (optional) | Algorithmus: `rsa` oder `ecdsa` (Standard: `ecdsa`) |
+| `bits` | String/Int (optional) | RSA: Mindestens 4096. ECDSA: 256, 384, 521 (Standard: 384) |
+
+**Rückgabe:** `Bool`
+
+**Hinweise:**
+- Kombiniert `cert.GenerateKey` und `cert.CreateCSRConf` in einem Aufruf – nützlich, wenn kein bereits vorhandener Key wiederverwendet werden soll.
+- Anders als `cert.CreateCSRConf` wertet dieser Parser zusätzlich `IP.*`-Einträge als IP-SANs aus.
+- Fehlt der `CN`-Eintrag in der Konfigurationsdatei, schlägt der Aufruf fehl.
+- Der Key wird mit Berechtigung `0600` gespeichert.
+
+---
+
 ### `cert.CreateSelfSigned(subject, keyPath, outCert [, days, SANs, isCA])`
 
 Erstellt ein selbstsigniertes Zertifikat.
@@ -89,6 +111,27 @@ Signiert eine CSR mit einer CA und stellt ein gültiges Zertifikat aus.
 **Hinweise:**
 - Die CSR-Signatur wird vor der Verarbeitung validiert.
 - Das ausgestellte Zertifikat erhält `ExtKeyUsageServerAuth`.
+
+---
+
+### `cert.SelfSignCSR(csrPath, keyPath, outCert [, days, isCA])`
+
+Erstellt aus einer vorhandenen CSR ein selbstsigniertes Zertifikat. Subject und SANs werden aus der CSR übernommen, Aussteller und Inhaber sind identisch.
+
+| Parameter | Typ | Beschreibung |
+|-----------|-----|--------------|
+| `csrPath` | String | Pfad zur CSR-Datei |
+| `keyPath` | String | Pfad zum privaten Schlüssel, der zur CSR gehört |
+| `outCert` | String | Ausgabedatei (PEM) |
+| `days` | Int (optional) | Gültigkeitsdauer in Tagen (Standard: 365) |
+| `isCA` | String (optional) | `"true"` für CA-Zertifikat |
+
+**Rückgabe:** `Bool`
+
+**Hinweise:**
+- Die CSR-Signatur wird vor der Verarbeitung validiert.
+- Zusätzlich wird geprüft, ob der öffentliche Schlüssel der CSR tatsächlich zum übergebenen privaten Schlüssel passt – bei einer Nichtübereinstimmung schlägt der Aufruf fehl, statt ein unbrauchbares Zertifikat zu erzeugen.
+- Unterstützte Key-Typen: RSA, ECDSA, PKCS#8 (siehe `loadPrivateKey`).
 
 ---
 
