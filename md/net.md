@@ -74,6 +74,36 @@ Dient zur Kommunikation über HTTP, TCP und DNS sowie zur Abfrage lokaler und ex
   `StrVal` (Response-Body) bei Erfolg (HTTP 2xx).
   `ErrorVal` nach Ausschöpfen aller Versuche bzw. bei nicht wiederholbarem Statuscode.
 
+---
+
+---
+
+## net.PostFile(url, dateipfad, contentType [, token, retries, baseDelayMs, maxDelayMs, timeoutMs])
+- **Konkret:**
+  Sendet den rohen Binärinhalt einer Datei per POST, mit explizit vorgegebenem Content-Type – im Unterschied zu `net.Post`, das den Body nur als String mit automatischer JSON/Form-Erkennung sendet.
+  Gedacht für Datei-Uploads, bei denen der Empfänger einen bestimmten Content-Type erwartet, z. B. GitHub-Release-Asset-Uploads (`application/zip`).
+  Kein festes Timeout wie bei `net.Get`/`net.Post` (15s) – Standard hier `15000` ms, über `timeoutMs` bei großen Dateien/langsamen Verbindungen erhöhbar.
+  Retry-Verhalten identisch zu `net.Get`/`net.Post` (5xx/429/Netzwerkfehler mit exponentiellem Backoff, andere 4xx sofort final).
+- **Parameter:**
+  - `url`: Ziel-URL.
+  - `dateipfad`: Pfad zur hochzuladenden Datei.
+  - `contentType`: MIME-Type des Bodys (z. B. `"application/zip"`). Leer → `"application/octet-stream"`.
+  - `token`: Optional. Auth-Token (gleiche Präfixe wie `net.Get`, siehe [Auth-Token-Präfixe](#auth-token-präfixe)).
+  - `retries`: Optional. Siehe `net.Get` (Standard: `0`).
+  - `baseDelayMs`: Optional. Siehe `net.Get` (Standard: `500`).
+  - `maxDelayMs`: Optional. Siehe `net.Get` (Standard: `30000`).
+  - `timeoutMs`: Optional. Timeout in Millisekunden (Standard: `15000`).
+- **Rückgabe:**
+  `StrVal` (Response-Body) bei Erfolg (HTTP 2xx).
+  `ErrorVal` nach Ausschöpfen aller Versuche bzw. bei nicht wiederholbarem Statuscode.
+
+```vb
+result = net.PostFile(uploadUrl, "release.zip", "application/zip", "gh:" & githubToken)
+
+If IsError(result) Then
+    Print "Fehler beim Hochladen: " & ErrorText(result)
+End If
+```
 
 ---
 

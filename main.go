@@ -22,6 +22,7 @@ var loadedModules = make(map[string]bool)
 var optionalModuleFunctions = map[string]int{
 	"7z":       5,
 	"ad":       8,
+	"acme":     2,
 	"cert":     14,
 	"convert":  5,
 	"computer": 14,

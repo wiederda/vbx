@@ -34,6 +34,7 @@ var optionalModulesMap = map[string]func(*Environment){
 	"debug": InitDebugFunctions,
 	"7z":    func(e *Environment) { InitSevenZipFunctions() },
 	"ad":    func(e *Environment) { InitADFunctions() },
+	"acme":  func(e *Environment) { InitAcmeFunctions() },
 	"db":    func(e *Environment) { InitDBFunctions() },
 	"env":   func(e *Environment) { InitEnvFunctions() },
 	"cert":  func(e *Environment) { InitCertFunctions() },

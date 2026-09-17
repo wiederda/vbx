@@ -25,6 +25,7 @@ var keywords = map[string]TokenType{
 	"return":   RETURN,
 	"in":       IN,
 	"include":  INCLUDE,
+	"const":    CONST,
 
 	"true":  BOOL,
 	"false": BOOL,

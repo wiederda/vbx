@@ -66,6 +66,7 @@ const (
 	ERROR
 	UNTIL
 	CONTINUE
+	CONST
 )
 
 type Token struct {
@@ -147,6 +148,7 @@ type AssignNode struct {
 	Value         Expr
 	IsDeclaration bool
 	InLoop        bool
+	IsConst       bool
 }
 type PrintNode struct {
 	Value Expr // Der Text/Wert
@@ -326,6 +328,8 @@ func (t TokenType) String() string {
 		return "EXIT"
 	case CONTINUE:
 		return "CONTINUE"
+	case CONST:
+		return "CONST"
 	case UNTIL:
 		return "UNTIL"
 	case COMMENT:

@@ -39,6 +39,8 @@ import (
 // Bestehende Aufrufstellen müssen entsprechend angepasst werden.
 // ------------------------------------------------------------
 
+const defaultPostFileTimeoutMs = 15000
+
 // Defaults für die neuen Parameter, falls nicht angegeben oder <= 0
 const (
 	defaultBaseDelayMs = 500
@@ -373,6 +375,123 @@ func InitNetFunctions() {
 				return ErrorVal(fmt.Sprintf("net.Get: nach %d Versuch(en) fehlgeschlagen, letzter Status %d: %s", retries+1, lastStatusCode, string(lastBody)))
 			}
 			return ErrorVal(fmt.Sprintf("net.Get: nach %d Versuch(en) fehlgeschlagen: %s", retries+1, lastErrMsg))
+		})
+
+	// ------------------------------------------------------------
+	// net.PostFile(url, dateipfad, contentType, [token], [retries], [baseDelayMs], [maxDelayMs], [timeoutMs])
+	//
+	// Eigenständige Ergänzung zu net.Post: sendet den ROHEN Binärinhalt
+	// einer Datei als Request-Body, mit explizit vorgegebenem Content-Type
+	// -- ohne die JSON/Form-Auto-Erkennung von net.Post anzufassen.
+	// Gedacht z.B. für GitHub-Release-Asset-Uploads (application/zip).
+	//
+	// Teilt sich Retry-/Backoff-/Auth-Logik 1:1 mit net.Get/net.Post
+	// (retryDelays, shouldRetryStatus, setAuthHeader), gleiche
+	// ErrorVal-Semantik bei Fehlschlag.
+	// ------------------------------------------------------------
+
+	Register(ns+"PostFile", "net", "url, dateipfad, contentType, [token], [retries], [baseDelayMs], [maxDelayMs], [timeoutMs]",
+		"Sendet den Binärinhalt einer Datei per POST mit explizitem Content-Type (z.B. für Datei-Uploads wie GitHub-Release-Assets). Retry-Verhalten identisch zu net.Post. timeoutMs (Standard 15000) kann bei großen Dateien/langsamen Verbindungen erhöht werden.",
+		func(args []Value) Value {
+			if len(args) < 3 {
+				return ErrorVal("net.PostFile: url, dateipfad und contentType benötigt")
+			}
+			u := strings.TrimSpace(ToString(args[0]))
+
+			absP, eVal := absPathVal(ToString(args[1]))
+			if eVal != nil {
+				return *eVal
+			}
+
+			contentType := strings.TrimSpace(ToString(args[2]))
+			if contentType == "" {
+				contentType = "application/octet-stream"
+			}
+
+			fileBytes, err := os.ReadFile(absP)
+			if err != nil {
+				return ErrorVal("net.PostFile: Datei konnte nicht gelesen werden: " + err.Error())
+			}
+
+			var token string
+			if len(args) >= 4 {
+				token = ToString(args[3])
+			}
+			retries := 0
+			if len(args) >= 5 {
+				retries = int(toNumVal(args[4]))
+			}
+			baseDelayMs := 0
+			if len(args) >= 6 {
+				baseDelayMs = int(toNumVal(args[5]))
+			}
+			maxDelayMs := 0
+			if len(args) >= 7 {
+				maxDelayMs = int(toNumVal(args[6]))
+			}
+			baseDelayMs, maxDelayMs = retryDelays(baseDelayMs, maxDelayMs)
+
+			timeoutMs := defaultPostFileTimeoutMs
+			if len(args) >= 8 {
+				if t := int(toNumVal(args[7])); t > 0 {
+					timeoutMs = t
+				}
+			}
+
+			client := &http.Client{Timeout: time.Duration(timeoutMs) * time.Millisecond}
+			delay := baseDelayMs
+
+			var lastErrMsg string
+			var lastStatusCode int
+			var lastBody []byte
+
+			for attempt := 0; attempt <= retries; attempt++ {
+				req, err := http.NewRequest("POST", u, bytes.NewReader(fileBytes))
+				if err != nil {
+					return ErrorVal("net.PostFile: ungültige Anfrage: " + err.Error())
+				}
+				req.Header.Set("Content-Type", contentType)
+				req.Header.Set("User-Agent", "VBX/1.0")
+				req.ContentLength = int64(len(fileBytes))
+				if token != "" {
+					setAuthHeader(req, token)
+				}
+
+				resp, err := client.Do(req)
+				if err != nil {
+					lastHttpStatus = 0
+					lastErrMsg = err.Error()
+					lastStatusCode = 0
+				} else {
+					lastHttpStatus = resp.StatusCode
+					lastStatusCode = resp.StatusCode
+					b, _ := io.ReadAll(resp.Body)
+					resp.Body.Close()
+
+					if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+						return StrVal(string(b))
+					}
+
+					lastBody = b
+					if !shouldRetryStatus(resp.StatusCode) {
+						return ErrorVal(fmt.Sprintf("net.PostFile: HTTP %d: %s", resp.StatusCode, string(b)))
+					}
+					lastErrMsg = fmt.Sprintf("HTTP %d", resp.StatusCode)
+				}
+
+				if attempt < retries {
+					time.Sleep(time.Duration(delay) * time.Millisecond)
+					delay *= 2
+					if delay > maxDelayMs {
+						delay = maxDelayMs
+					}
+				}
+			}
+
+			if lastStatusCode > 0 {
+				return ErrorVal(fmt.Sprintf("net.PostFile: nach %d Versuch(en) fehlgeschlagen, letzter Status %d: %s", retries+1, lastStatusCode, string(lastBody)))
+			}
+			return ErrorVal(fmt.Sprintf("net.PostFile: nach %d Versuch(en) fehlgeschlagen: %s", retries+1, lastErrMsg))
 		})
 
 	// ------------------------------------------------------------

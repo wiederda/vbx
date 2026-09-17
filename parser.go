@@ -706,8 +706,10 @@ func (p *Parser) parseStmt() Stmt {
 		p.expectEnd(SELECT)
 		return node
 
-	case DIM, PUBLIC:
-		isPublic := p.peek().Type == PUBLIC
+	case DIM, PUBLIC, CONST:
+		kind := p.peek().Type
+		isPublic := kind == PUBLIC
+		isConst := kind == CONST
 		p.next()
 		var stmts []Stmt
 		inLoopContext := p.loopDepth > 0
@@ -716,12 +718,15 @@ func (p *Parser) parseStmt() Stmt {
 			nameTok := p.next()
 
 			if nameTok.Type != IDENT {
-				p.error("Erwartet Variablennamen nach DIM/PUBLIC")
+				p.error("Erwartet Variablennamen nach DIM/PUBLIC/CONST")
 			}
 
 			name := nameTok.Value
 
 			if p.peek().Type == LPAREN {
+				if isConst {
+					p.error("'Const' unterstützt keine Arrays (Konstante '%s')", name)
+				}
 				p.next() // (
 				var size1 Expr
 				var size2 Expr
@@ -729,32 +734,33 @@ func (p *Parser) parseStmt() Stmt {
 				if p.peek().Type != RPAREN {
 					size1 = p.parseExpr()
 
-					// --- NEU: Prüfen, ob ein Komma für die 2. Dimension folgt ---
 					if p.peek().Type == COMMA {
-						p.next() // Komma überspringen
+						p.next()
 						size2 = p.parseExpr()
 					}
 				}
 
-				// Hier muss jetzt zwingend die schließende Klammer kommen
 				if p.next().Type != RPAREN {
 					p.error("Erwartet ')' nach Array-Definition")
 				}
 
 				if isPublic {
-					// Hinweis: Stelle sicher, dass PublicArrayNode auch Size2 hat!
 					stmts = append(stmts, &PublicArrayNode{Name: name, Size1: size1, Size2: size2})
 				} else {
 					stmts = append(stmts, &DimArrayNode{
 						Name:   name,
 						Size1:  size1,
-						Size2:  size2, // Jetzt wird Size2 mitgegeben
+						Size2:  size2,
 						InLoop: inLoopContext,
 					})
 				}
 			} else {
-				// ... (Rest deiner Logik für normale Variablen: init = 0, etc.)
 				var init Expr = &NumberNode{Value: 0}
+
+				if isConst && p.peek().Type != EQ {
+					p.error("'Const %s' benötigt einen Wert (z.B. Const %s = 5)", name, name)
+				}
+
 				if p.peek().Type == EQ {
 					p.next() // =
 					if p.peek().Type == LBRACE {
@@ -772,6 +778,7 @@ func (p *Parser) parseStmt() Stmt {
 						Value:         init,
 						IsDeclaration: true,
 						InLoop:        inLoopContext,
+						IsConst:       isConst,
 					})
 				}
 			}

@@ -142,6 +142,8 @@ Relative Pfade, einmaliges Laden, rekursive Includes werden erkannt und Include-
 
 **Global (`Public`)** – im gesamten Skript sichtbar, wird in Function/Sub genutzt, wenn keine lokale Variable gleichen Namens existiert.
 
+**Konstant (`Const`)** – wie `Dim`, aber schreibgeschützt: ein Initialwert ist zwingend erforderlich, eine spätere Zuweisung (auch `+=` etc.) bricht das Skript mit einem Fehler ab. Keine Arrays. In Function/Sub kann eine lokale `Const` denselben Namen wie eine äußere `Const`/Variable tragen (Shadowing, wie bei `Dim` – ohne Hinweis-Ausgabe, da bei `Const` ein gewolltes Pattern). Nicht zu verwechseln mit den vb-Konstanten (siehe Abschnitt „Konstanten" unten) – `vbx -const -h` zeigt Letztere.
+
 ---
 
 ## Optionale Parameter
@@ -176,7 +178,7 @@ Print vbRed() & "Fehler" & vbNormal()
 
 ---
 
-## Konstanten
+## vb-Konstanten
 
 | Kategorie | Beispiele |
 |---|---|

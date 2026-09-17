@@ -92,11 +92,12 @@ var NilValue = Value{Kind: KindNil}
 // GetRef liefert einen Pointer auf den Wert in der Map
 type Environment struct {
 	vars            map[string]*Value
+	consts          map[string]bool // NEU: Namen, die in diesem Environment als Const deklariert wurden
 	parent          *Environment
 	currentLine     int
 	currentFile     string
 	currentFuncName string
-	fnReturn        Value // NEU: ersetzt den "_fnReturn"-Map-Eintrag
+	fnReturn        Value
 }
 
 func tryParseFloat(s string) (float64, bool) {
@@ -270,6 +271,65 @@ func (e *Environment) Define(name string, val Value, inLoop bool) {
 
 	// Wert setzen/speichern
 	e.vars[name] = &val
+}
+
+// DefineConst wie Define, unterdrückt aber den Shadowing-Hinweis:
+// Const innen mit gleichem Namen wie außen ist bei Const ein
+// gewolltes, häufiges Pattern (z.B. Function-Parameter/Konstanten
+// gleich benennen wie global), kein warnungswürdiger Sonderfall.
+func (e *Environment) DefineConst(name string, val Value) {
+	e.defineInternal(name, val, false, true)
+}
+
+func (e *Environment) defineInternal(name string, val Value, inLoop bool, suppressShadowInfo bool) {
+	// ANSI Farbcodes
+	const (
+		colorYellow = "\033[33m"
+		colorCyan   = "\033[36m"
+		colorReset  = "\033[0m"
+	)
+
+	_, existsLocally := e.vars[name]
+
+	if existsLocally {
+		if inLoop {
+			e.vars[name] = &val
+			return
+		}
+		fmt.Printf("%s![HINWEIS]: Variable '%s' bereits deklariert.%s\n", colorYellow, name, colorReset)
+	} else {
+		if e.parent != nil && !suppressShadowInfo {
+			if _, existsAbove := e.parent.Get(name); existsAbove {
+				fmt.Printf("%s![INFO]: Variable '%s' wird im lokalen Scope verwendet (Shadowing).%s\n", colorCyan, name, colorReset)
+			}
+		}
+	}
+
+	e.vars[name] = &val
+}
+
+// MarkConst markiert einen im AKTUELLEN Environment bereits vorhandenen
+// Namen als schreibgeschützt. Wird direkt nach Define() für eine
+// Const-Deklaration aufgerufen.
+func (e *Environment) MarkConst(name string) {
+	if e.consts == nil {
+		e.consts = make(map[string]bool)
+	}
+	e.consts[name] = true
+}
+
+// IsConst prüft, ob [name] als Const markiert ist. Läuft dieselbe
+// Scope-Kette ab wie Get/Update: es zählt das Environment, in dem die
+// Variable TATSÄCHLICH liegt (wichtig bei Shadowing - eine lokale Dim
+// mit gleichem Namen wie eine äußere Const ist eigenständig und NICHT
+// schreibgeschützt).
+func (e *Environment) IsConst(name string) bool {
+	for env := e; env != nil; env = env.parent {
+		if _, ok := env.vars[name]; ok {
+			return env.consts != nil && env.consts[name]
+		}
+	}
+	return false
 }
 
 // Hilfsfunktion zur Index-Prüfung (vermeidet Code-Doppelung)
@@ -586,15 +646,26 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 		val := evalExpr(n.Value, env)
 
 		if env.currentFuncName != "" && n.Name == env.currentFuncName {
-			env.fnReturn = val // statt: env.Update("_fnReturn", val)
+			env.fnReturn = val
 			return NullVal(), SignalNone
 		}
 
-		// 2. Deklaration vs. Zuweisung
 		if n.IsDeclaration {
-			env.Define(n.Name, val, n.InLoop)
+			if env.consts != nil && env.consts[n.Name] {
+				return ErrorVal(fmt.Sprintf("Fehler: '%s' wurde bereits als Konstante deklariert", n.Name)), SignalError
+			}
+
+			if n.IsConst {
+				env.DefineConst(n.Name, val)
+				env.MarkConst(n.Name)
+			} else {
+				env.Define(n.Name, val, n.InLoop)
+			}
 		} else {
-			// Normale Zuweisung (x = 10): Suche erst lokal, dann global
+			if env.IsConst(n.Name) {
+				return ErrorVal(fmt.Sprintf("Fehler: Es wird versucht die Konstante '%s' zu verändern", n.Name)), SignalError
+			}
+
 			err := env.Update(n.Name, val)
 			if err != nil {
 				scopeInfo := "Public (global)"
@@ -611,6 +682,10 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 		v, ok := n.Left.(*VarNode)
 		if !ok {
 			return ErrorVal("only variables supported"), SignalNone
+		}
+
+		if env.IsConst(v.Name) {
+			return ErrorVal(fmt.Sprintf("Fehler: Es wird versucht die Konstante '%s' zu verändern", v.Name)), SignalError
 		}
 
 		current, ok := env.Get(v.Name)
