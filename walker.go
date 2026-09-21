@@ -177,6 +177,14 @@ func collectDeclaredNamesStmt(s Stmt, target map[string]bool) {
 		target[strings.ToLower(n.VarName)] = true
 		collectDeclaredNames(n.Body, target)
 
+	case *TryNode:
+		if n.CatchVarName != "" {
+			target[strings.ToLower(n.CatchVarName)] = true
+		}
+		collectDeclaredNames(n.TryBody, target)
+		collectDeclaredNames(n.CatchBody, target)
+		collectDeclaredNames(n.FinallyBody, target)
+
 	case *WhileNode:
 		collectDeclaredNames(n.Body, target)
 
@@ -496,6 +504,11 @@ func (c *callChecker) walkStmt(s Stmt, sc scope) {
 		c.walkExpr(n.Index, sc)
 		c.walkExpr(n.Index2, sc)
 		c.walkExpr(n.Value, sc)
+
+	case *TryNode:
+		c.walkStmts(n.TryBody, sc)
+		c.walkStmts(n.CatchBody, sc)
+		c.walkStmts(n.FinallyBody, sc)
 
 	case *ReturnNode:
 		c.walkExpr(n.Value, sc)

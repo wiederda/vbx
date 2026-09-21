@@ -396,6 +396,24 @@ func InitProcFunctions() {
 		return Value{Kind: KindNum, Num: float64(cmd.Process.Pid)}
 	})
 
+	// Arbeitsverzeichnis des aktuellen VBX-Prozesses ändern
+	Register(ns+"SetCurrentDirectory", "proc", "path", "Setzt das aktuelle Arbeitsverzeichnis des VBX-Prozesses.", func(args []Value) Value {
+		if len(args) < 1 {
+			return ErrorVal("SetCurrentDirectory: Pfad fehlt")
+		}
+
+		path := ToString(args[0])
+		if path == "" {
+			return ErrorVal("SetCurrentDirectory: Pfad ist leer")
+		}
+
+		if err := os.Chdir(path); err != nil {
+			return ErrorVal("SetCurrentDirectory: " + err.Error())
+		}
+
+		return BoolVal(true)
+	})
+
 	Register(ns+"Exec", "proc", "cmd, [args...]", "Führt Befehl aus und wartet. Output geht direkt an die Konsole.", func(args []Value) Value {
 		if len(args) < 1 {
 			return BoolVal(false)
@@ -425,7 +443,6 @@ func InitProcFunctions() {
 		}
 
 		cmdName := ToString(args[0])
-		// Timeout in Millisekunden aus dem zweiten Argument
 		timeoutMs := time.Duration(toNumVal(args[1])) * time.Millisecond
 
 		// Alle weiteren Argumente sammeln
@@ -434,30 +451,33 @@ func InitProcFunctions() {
 			cmdArgs = append(cmdArgs, ToString(args[i]))
 		}
 
-		// Context mit Timeout für den Prozess-Abbruch
-		ctx, cancel := context.WithTimeout(context.Background(), timeoutMs)
-		defer cancel()
-
-		cmd := exec.CommandContext(ctx, cmdName, cmdArgs...)
-
-		var stdout, stderr bytes.Buffer
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
-
-		// Befehl ausführen
-		err := cmd.Run()
-
-		// --- Exit-Code Logik ---
-		exitCode := getExitCode(err, ctx)
-
-		// Rückgabe des 4-stufigen Arrays
-		return buildExecResult(
-			stdout.String()+stderr.String(),
-			stdout.String(),
-			stderr.String(),
-			exitCode,
-		)
+		return execExRun(cmdName, timeoutMs, "", cmdArgs...)
 	})
+
+	// proc.ExecExDir(command, timeout_ms, workingDir, [args...])
+	Register(ns+"ExecExDir", "proc", "cmd, timeout, workingDir, args...",
+		"Führt Befehl mit eigenem Arbeitsverzeichnis aus und liefert [Full, Stdout, Stderr, ExitCode]",
+		func(args []Value) Value {
+			if len(args) < 3 {
+				return ErrorVal("ExecExDir: command, timeout_ms und workingDir benötigt")
+			}
+
+			cmdName := ToString(args[0])
+			timeoutMs := time.Duration(toNumVal(args[1])) * time.Millisecond
+			workingDir := ToString(args[2])
+
+			if workingDir == "" {
+				return ErrorVal("ExecExDir: workingDir ist leer")
+			}
+
+			// Alle weiteren Argumente sind Argumente des gestarteten Prozesses
+			var cmdArgs []string
+			for i := 3; i < len(args); i++ {
+				cmdArgs = append(cmdArgs, ToString(args[i]))
+			}
+
+			return execExRun(cmdName, timeoutMs, workingDir, cmdArgs...)
+		})
 
 	// Nach mal prüfen - ExecInteractive
 	Register(ns+"ExecInteractive", "proc", "cmd, timeout, responses, args...",
@@ -1023,6 +1043,33 @@ func nameMatch(name, target string, contains bool) bool {
 	}
 
 	return name == target
+}
+
+// execExRun führt einen Prozess mit Timeout und optionalem Arbeitsverzeichnis aus.
+func execExRun(cmdName string, timeoutMs time.Duration, workingDir string, cmdArgs ...string) Value {
+	ctx, cancel := context.WithTimeout(context.Background(), timeoutMs)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, cmdName, cmdArgs...)
+
+	if workingDir != "" {
+		cmd.Dir = workingDir
+	}
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+
+	exitCode := getExitCode(err, ctx)
+
+	return buildExecResult(
+		stdout.String()+stderr.String(),
+		stdout.String(),
+		stderr.String(),
+		exitCode,
+	)
 }
 
 func getExitCode(err error, ctx context.Context) float64 {

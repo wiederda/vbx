@@ -81,11 +81,13 @@ Relative Pfade, einmaliges Laden, rekursive Includes werden erkannt und Include-
 
 ## Namespaces
 
-**Permanent:** app.*, array.*, date.*, file.*, folder.*, global.*, math.*
+**Permanent:** [app.*](md/app.md), [array.*](md/array.md), [date.*](md/date.md), [file.*](md/file.md), [folder.*](md/folder.md), [global.*](md/global.md), [math.*](md/math.md)
 
-**Optional:** ad.*, cert.*, computer.*, convert.*, crypt.*, data.*, db.*, debug.*, docker.*, env.*, fin.*, geo.*, git.*, ini.*, json.*, map.*, net.*, pgp.*, picture.*, pqc.*, proc.*, rand.*, reg.*, service.*, sftp.*, smtp.*, ssh.*, steg.*, string.*, tar.*, template.*, uptime-kuma.*, win.*, xml.*, yaml.*, zip.*
+**Optional:** [ad.*](md/ad.md), [cert.*](md/cert.md), [computer.*](md/computer.md), [convert.*](md/convert.md), [db.*](md/db.md), [debug.*](md/debug.md),  [env.*](md/env.md), [geo.*](md/geo.md), [git.*](md/git.md), [json.*](md/json.md), [uptime-kuma.*](md/kuma.md), [map.*](md/map.md), [net.*](md/net.md), [picture.*](md/picture.md), [proc.*](md/proc.md),  [reg.*](md/reg.md), [service.*](md/service.md), [sftp.*](md/sftp.md), [smtp.*](md/smtp.md), [ssh.*](md/ssh.md), [string.*](md/string.md), [template.*](md/template.md), [win.*](md/win.md)
 
-**Plugins:** data.*, docker.*, fin.*, ini.*, pgp.*, pqc.*, rand.*, steg.*, tar.*, xml.*, yaml.*, zip.*
+**Plugins:** [crypt.*], [data.*], [docker.*], [fin.*], [ini.*], [media.*], [pgp.*], [pqc.*], [rand.*], [steg.*], [tar.*], [xml.*], [yaml.*], [zip.*]
+
+Plugins werden im Verzeichnis `plugins` neben der VBX-Runtime gesucht. Alternativ kann das Plugin-Verzeichnis über `VBX_PLUGIN_PATH` festgelegt werden.
 
 ---
 
@@ -161,6 +163,36 @@ Funktionen, die scheitern können, geben einen Fehlerwert (`ErrorVal`) statt ein
 
 Beide sind Sprach-Kernfunktionen, immer verfügbar, unabhängig von `#use`.
 
+### Try / Catch / Finally
+
+Fängt einen Skriptabbruch innerhalb eines Blocks ab, statt das ganze Skript zu beenden:
+
+```vbx
+Try
+    RiskyCall()
+Catch err
+    Print "Fehler: " & ErrorText(err)
+Finally
+    Print "Wird immer ausgeführt"
+End Try
+```
+
+`Catch` ist optional, `Finally` ist optional – mindestens einer der beiden Zweige muss vorhanden sein. `Finally` läuft in jedem Fall (Erfolg, abgefangener Fehler, oder ein Signal wie `Return`/`Exit For` aus dem Try-Block).
+
+**Wichtig:** `Try/Catch` fängt nur "harte" Skriptabbrüche ab – also einen Funktionsaufruf, der als eigenständige Zeile steht (`RiskyCall()`), oder einen Fehler in einer Bedingung (`If RiskyCall() = x Then`). Ein Fehler, der einer Variablen zugewiesen wird (`Dim x = RiskyCall()`), löst **keinen** Abbruch aus – `x` enthält dann einfach den `ErrorVal`, weiterhin nur per `IsError(x)` prüfbar. Beide Mechanismen bestehen nebeneinander, je nachdem wie der Aufruf geschrieben ist.
+
+Ein `Try` außen um eine Schleife bricht bei einem Fehler die **gesamte Schleife** ab (restliche Durchläufe werden nicht mehr erreicht), lässt das Skript danach aber normal weiterlaufen. Um nur den fehlerhaften Durchlauf zu überspringen und mit dem Rest der Schleife fortzufahren, muss `Try` **innerhalb** des Schleifenkörpers stehen:
+
+```vbx
+For Each x In files
+    Try
+        RiskyCall(x)
+    Catch err
+        Print "Fehler bei " & x & ": " & ErrorText(err)
+    End Try
+Next
+```
+
 ---
 
 ## Maps
@@ -190,6 +222,24 @@ Print vbRed() & "Fehler" & vbNormal()
 
 ---
 
+## Reservierte Schlüsselwörter
+
+Folgende Wörter sind reserviert und können nicht als Namen für Variablen, Funktionen, Subs oder Parameter verwendet werden (Groß-/Kleinschreibung spielt keine Rolle):
+
+| Kategorie | Schlüsselwörter |
+|---|---|
+| Deklaration | `Dim`, `Public`, `Const` |
+| Bedingungen | `If`, `Then`, `Else`, `ElseIf` |
+| Schleifen | `For`, `Next`, `Each`, `To`, `Step`, `While`, `Do`, `Loop`, `Until`, `In` |
+| Schleifensteuerung | `Exit`, `Continue` |
+| Prozeduren | `Sub`, `Function`, `Return` |
+| Fallunterscheidung | `Select`, `Case`, `Is` |
+| Fehlerbehandlung | `Try`, `Catch`, `Finally` |
+| Logik | `And`, `Or`, `Not`, `True`, `False` |
+| Sonstiges | `Print`, `End`, `Include` |
+
+---
+
 ## Kontrollstrukturen
 
 | Struktur        | Syntax-Skelett                                                                        | Abschluss      |
@@ -201,11 +251,13 @@ Print vbRed() & "Fehler" & vbNormal()
 | **While**       | `While bed`                                                                           | `End While`    |
 | **Do Loop**     | `Do [While/Until bed]` … `Loop [While/Until bed]`                                     | `Loop`         |
 | **Continue**    | `Continue For` / `Continue While` / `Continue Do`                                     | –              |
+| **Try/Catch**   | `Try` … `[Catch var …]` `[Finally …]` (mind. Catch oder Finally nötig)                | `End Try`      |
 | **Exit**        | `Exit For` / `Exit While` / `Exit Do` / `Exit Sub` / `Exit Function`                  | –              |
 | **Sub**         | `Sub Name(param1, param2 [, Optional param3 = wert])`                                 | `End Sub`      |
 | **Function**    | `Function Name(...)` … `Return wert` oder `Name = wert`                               | `End Function` |
 | **Cls**         | `Cls()`                                                                               | –              |
 | **Print**       | `Print wert`                                                                          | –              |
+
 
 `For Each` unterstützt 1D-Arrays, 2D-Arrays und Maps. Bei einem 1D-Array wird über die einzelnen Elemente iteriert. Bei einem 2D-Array wird über die einzelnen Zeilen iteriert. Bei einer Map wird über die Schlüssel und Werte iteriert.
 

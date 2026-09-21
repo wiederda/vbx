@@ -1236,6 +1236,23 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 		env.fnReturn = val // statt: env.Set("_fnReturn", val)
 		return val, SignalReturn
 
+	case *TryNode:
+		rv, sig := evalStatements(n.TryBody, env)
+
+		if sig == SignalError && n.CatchBody != nil {
+			env.PutInternal(n.CatchVarName, rv) // rv ist der ErrorVal, der SignalError ausgelöst hat
+			rv, sig = evalStatements(n.CatchBody, env)
+		}
+
+		if n.FinallyBody != nil {
+			frv, fsig := evalStatements(n.FinallyBody, env)
+			if fsig != SignalNone {
+				return frv, fsig // Finally-Signal überschreibt das ursprüngliche (Standard-Verhalten wie in Java/C#)
+			}
+		}
+
+		return rv, sig
+
 	case *IfNode:
 		executed := false
 		for _, br := range n.Branches {

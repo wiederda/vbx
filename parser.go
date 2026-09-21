@@ -718,7 +718,7 @@ func (p *Parser) parseStmt() Stmt {
 			nameTok := p.next()
 
 			if nameTok.Type != IDENT {
-				p.error("Erwartet Variablennamen nach DIM/PUBLIC/CONST")
+				p.error("Erwartet Variablennamen nach DIM/PUBLIC/CONST, aber '%s' ist ein reserviertes Schlüsselwort und kann nicht als Name verwendet werden.", nameTok.Value)
 			}
 
 			name := nameTok.Value
@@ -969,6 +969,37 @@ func (p *Parser) parseStmt() Stmt {
 			Params: params,
 			Body:   body,
 		}
+
+	case TRY:
+		p.next() // TRY konsumieren
+		p.skipStuff()
+
+		node := &TryNode{
+			TryBody: p.parseBlock("Try", CATCH, FINALLY),
+		}
+		p.skipStuff()
+
+		if p.peek().Type == CATCH {
+			p.next() // CATCH konsumieren
+			node.CatchVarName = p.expectIdentifier()
+			p.skipStuff()
+			node.CatchBody = p.parseBlock("Try", FINALLY)
+			p.skipStuff()
+		}
+
+		if p.peek().Type == FINALLY {
+			p.next() // FINALLY konsumieren
+			p.skipStuff()
+			node.FinallyBody = p.parseBlock("Try", FINALLY)
+			p.skipStuff()
+		}
+
+		if node.CatchBody == nil && node.FinallyBody == nil {
+			p.error("Ein 'Try'-Block braucht mindestens einen 'Catch'- oder 'Finally'-Zweig.")
+		}
+
+		p.expectEnd(TRY)
+		return node
 
 	case RETURN:
 		p.next()

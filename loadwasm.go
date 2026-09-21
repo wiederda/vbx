@@ -27,6 +27,149 @@ const expectedABIVersion = 1
 
 const pluginDebug = false
 
+type hostFFmpegRequest struct {
+	Args []string `json:"args"`
+}
+
+type hostFFmpegResponse struct {
+	Stdout string `json:"stdout"`
+	Stderr string `json:"stderr"`
+	Code   int    `json:"code"`
+}
+
+func resolveFFmpegExecutable() string {
+
+	if p := os.Getenv("VBX_FFMPEG"); p != "" {
+		return p
+	}
+
+	if runtime.GOOS == "windows" {
+		return "ffmpeg.exe"
+	}
+
+	return "ffmpeg"
+}
+
+// ------------------------------------------------------------
+// FFmpeg auf dem Host ausführen
+// ------------------------------------------------------------
+
+func ffmpegExecHost(
+	req hostFFmpegRequest,
+) hostFFmpegResponse {
+
+	if len(req.Args) == 0 {
+		return hostFFmpegResponse{
+			Stderr: "ffmpeg_exec: keine Argumente angegeben",
+			Code:   -1,
+		}
+	}
+
+	args := translateFFmpegArgs(req.Args)
+
+	executable := resolveFFmpegExecutable()
+
+	cmd := exec.Command(
+		executable,
+		args...,
+	)
+
+	var stdout strings.Builder
+	var stderr strings.Builder
+
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	err := cmd.Run()
+
+	code := 0
+
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			code = exitErr.ExitCode()
+		} else {
+			code = -1
+		}
+	}
+
+	return hostFFmpegResponse{
+		Stdout: strings.TrimSpace(stdout.String()),
+		Stderr: strings.TrimSpace(stderr.String()),
+		Code:   code,
+	}
+}
+
+// ------------------------------------------------------------
+// WASI-Gastpfad -> Host-Pfad
+// ------------------------------------------------------------
+//
+// Windows:
+//   /c/Media/test.mkv
+//       ->
+//   C:\Media\test.mkv
+//
+// Linux/macOS:
+//   Pfad bleibt unverändert.
+//
+
+func guestToHostPath(path string) string {
+
+	if runtime.GOOS != "windows" {
+		return path
+	}
+
+	if len(path) >= 3 &&
+		path[0] == '/' &&
+		((path[1] >= 'a' && path[1] <= 'z') ||
+			(path[1] >= 'A' && path[1] <= 'Z')) &&
+		path[2] == '/' {
+
+		drive := strings.ToUpper(
+			string(path[1]),
+		)
+
+		rest := strings.ReplaceAll(
+			path[3:],
+			"/",
+			string(os.PathSeparator),
+		)
+
+		return drive + ":\\" + rest
+	}
+
+	return path
+}
+
+func translateFFmpegArgs(
+	args []string,
+) []string {
+
+	result := make(
+		[]string,
+		len(args),
+	)
+
+	for i, arg := range args {
+
+		// Nur absolute Windows-WASI-Pfade übersetzen.
+		// Linux/macOS-Pfade bleiben unverändert.
+		if runtime.GOOS == "windows" &&
+			len(arg) >= 3 &&
+			arg[0] == '/' &&
+			((arg[1] >= 'a' && arg[1] <= 'z') ||
+				(arg[1] >= 'A' && arg[1] <= 'Z')) &&
+			arg[2] == '/' {
+
+			result[i] = guestToHostPath(arg)
+			continue
+		}
+
+		result[i] = arg
+	}
+
+	return result
+}
+
 func pluginDebugf(format string, args ...interface{}) {
 	if pluginDebug {
 		fmt.Printf("[PLUGIN DEBUG] "+format+"\n", args...)
@@ -118,7 +261,7 @@ func safeJoin(base, requested string) (string, error) {
 // go-gits PlainOpen aufrufen - braucht das instanziierte
 // WASI-Modul mindestens eine Preopened-Directory. Ohne das
 // scheitert JEDER Dateizugriff des Plugins unabhängig vom
-// übergebenen Pfad (siehe git.IsRepo-Bug).
+// übergebenen Pfad.
 //
 // Linux/macOS: Host- und Gast-Pfade sind ohnehin POSIX-artig,
 // daher genügt ein 1:1-Mount von "/" auf "/".
@@ -159,7 +302,7 @@ func buildGuestFSConfig() (wazero.FSConfig, error) {
 		drive := string(letter) + `:\`
 
 		if _, err := os.Stat(drive); err != nil {
-			continue // Laufwerk existiert nicht
+			continue
 		}
 
 		guestRoot := "/" + strings.ToLower(string(letter))
@@ -180,21 +323,6 @@ func buildGuestFSConfig() (wazero.FSConfig, error) {
 // ------------------------------------------------------------
 // Host-Pfad <-> Gast-Pfad Übersetzung
 // ------------------------------------------------------------
-//
-// Plugin-Funktionsargumente laufen generisch über toJSONValue
-// (siehe unten). Da der Host nicht weiß, welches Argument
-// einer Plugin-Funktion "ein Pfad" ist (nur Freitext in
-// Params, z.B. "url, path"), wird heuristisch erkannt: sieht
-// ein String wie ein Host-Dateipfad aus, wird er auf das
-// Guest-FS-Layout aus buildGuestFSConfig übersetzt.
-//
-// Bewusste Einschränkung: nur absolute Pfade (und ".") werden
-// erkannt. Ein relativer Pfad wie "meinrepo" wird NICHT
-// übersetzt, da sonst z.B. Commit-Messages, die zufällig mit
-// "/" beginnen, fälschlich als Pfad behandelt würden. Für
-// Plugin-Aufrufe mit relativen Pfaden gilt: absolute Pfade
-// verwenden.
-//
 
 func looksLikeHostPath(s string) bool {
 
@@ -403,6 +531,195 @@ type hostWriteFileResponse struct {
 }
 
 // ------------------------------------------------------------
+// Datei ersetzen
+// ------------------------------------------------------------
+
+type hostReplaceFileRequest struct {
+	Source string `json:"source"`
+	Target string `json:"target"`
+}
+
+type hostReplaceFileResponse struct {
+	OK    bool   `json:"ok"`
+	Error string `json:"error,omitempty"`
+}
+
+// ------------------------------------------------------------
+// Datei auf dem Host ersetzen
+// ------------------------------------------------------------
+//
+// Source und Target kommen aus dem WASM-Gast und werden deshalb
+// zunächst in Host-Pfade übersetzt.
+//
+// Die temporäre Datei liegt bei media.SetTag im selben
+// Verzeichnis wie die Originaldatei.
+//
+// Linux/macOS:
+//   os.Rename(source, target) ersetzt die vorhandene Datei.
+//
+// Windows:
+//   Die Originaldatei wird zunächst auf eine Backup-Datei
+//   verschoben. Danach wird die temporäre Datei auf den
+//   ursprünglichen Namen verschoben.
+//
+// Falls der zweite Schritt fehlschlägt, wird versucht,
+// die Originaldatei wiederherzustellen.
+//
+
+func replaceFileHost(
+	req hostReplaceFileRequest,
+) hostReplaceFileResponse {
+
+	if strings.TrimSpace(req.Source) == "" {
+		return hostReplaceFileResponse{
+			Error: "keine Quelldatei angegeben",
+		}
+	}
+
+	if strings.TrimSpace(req.Target) == "" {
+		return hostReplaceFileResponse{
+			Error: "keine Zieldatei angegeben",
+		}
+	}
+
+	source := guestToHostPath(req.Source)
+	target := guestToHostPath(req.Target)
+
+	sourceAbs, err := filepath.Abs(source)
+	if err != nil {
+		return hostReplaceFileResponse{
+			Error: fmt.Sprintf(
+				"Quelldatei konnte nicht aufgelöst werden: %v",
+				err,
+			),
+		}
+	}
+
+	targetAbs, err := filepath.Abs(target)
+	if err != nil {
+		return hostReplaceFileResponse{
+			Error: fmt.Sprintf(
+				"Zieldatei konnte nicht aufgelöst werden: %v",
+				err,
+			),
+		}
+	}
+
+	if _, err := os.Stat(sourceAbs); err != nil {
+		return hostReplaceFileResponse{
+			Error: fmt.Sprintf(
+				"Quelldatei existiert nicht: %s: %v",
+				sourceAbs,
+				err,
+			),
+		}
+	}
+
+	if sourceAbs == targetAbs {
+		return hostReplaceFileResponse{
+			Error: "Quelle und Ziel sind identisch",
+		}
+	}
+
+	// --------------------------------------------------------
+	// Linux/macOS
+	// --------------------------------------------------------
+
+	if runtime.GOOS != "windows" {
+
+		if err := os.Rename(
+			sourceAbs,
+			targetAbs,
+		); err != nil {
+
+			return hostReplaceFileResponse{
+				Error: fmt.Sprintf(
+					"Datei konnte nicht ersetzt werden: %v",
+					err,
+				),
+			}
+		}
+
+		return hostReplaceFileResponse{
+			OK: true,
+		}
+	}
+
+	// --------------------------------------------------------
+	// Windows
+	// --------------------------------------------------------
+
+	backup := targetAbs + ".vbx-tag-backup.tmp"
+
+	// Falls von einem vorherigen fehlgeschlagenen Vorgang
+	// noch ein Backup existiert, entfernen wir es.
+	_ = os.Remove(backup)
+
+	// Originaldatei auf Backup verschieben.
+	if err := os.Rename(
+		targetAbs,
+		backup,
+	); err != nil {
+
+		return hostReplaceFileResponse{
+			Error: fmt.Sprintf(
+				"Originaldatei konnte nicht gesichert werden: %v",
+				err,
+			),
+		}
+	}
+
+	// Neue Datei an die ursprüngliche Stelle verschieben.
+	if err := os.Rename(
+		sourceAbs,
+		targetAbs,
+	); err != nil {
+
+		// Rollback versuchen.
+		rollbackErr := os.Rename(
+			backup,
+			targetAbs,
+		)
+
+		if rollbackErr != nil {
+			return hostReplaceFileResponse{
+				Error: fmt.Sprintf(
+					"Neue Datei konnte nicht übernommen werden: %v; "+
+						"Originaldatei konnte auch nicht wiederhergestellt werden: %v",
+					err,
+					rollbackErr,
+				),
+			}
+		}
+
+		return hostReplaceFileResponse{
+			Error: fmt.Sprintf(
+				"Neue Datei konnte nicht übernommen werden: %v",
+				err,
+			),
+		}
+	}
+
+	// Backup löschen.
+	if err := os.Remove(backup); err != nil {
+
+		// Die eigentliche Ersetzung war erfolgreich.
+		// Das Backup bleibt im Fehlerfall liegen, damit
+		// keine Daten verloren gehen.
+		return hostReplaceFileResponse{
+			Error: fmt.Sprintf(
+				"Datei wurde ersetzt, aber das Backup konnte nicht gelöscht werden: %v",
+				err,
+			),
+		}
+	}
+
+	return hostReplaceFileResponse{
+		OK: true,
+	}
+}
+
+// ------------------------------------------------------------
 // Docker auf dem Host ausführen
 // ------------------------------------------------------------
 
@@ -566,12 +883,6 @@ func instantiateHostBridge(
 	// ============================================================
 	// write_file
 	// ============================================================
-	//
-	// Bleibt als Fallback bestehen für Plugins, die bewusst
-	// nur über die Host-Bridge schreiben (statt direkt über
-	// das gemountete Guest-FS). Arbeitet ausschließlich mit
-	// Host-Pfaden relativ zu pluginBaseDir - siehe safeJoin.
-	//
 
 	builder.NewFunctionBuilder().
 		WithFunc(func(
@@ -709,6 +1020,204 @@ func instantiateHostBridge(
 
 		}).
 		Export("write_file")
+
+	// ============================================================
+	// ffmpeg_exec
+	// ============================================================
+
+	builder.NewFunctionBuilder().
+		WithFunc(func(
+			ctx context.Context,
+			mod api.Module,
+			reqPtr uint32,
+			reqLen uint32,
+		) uint64 {
+
+			reqBytes, ok := mod.Memory().Read(
+				reqPtr,
+				reqLen,
+			)
+
+			if !ok {
+				return hostBridgeError(
+					ctx,
+					mod,
+					"ffmpeg_exec: Request konnte nicht aus WASM-Speicher gelesen werden",
+				)
+			}
+
+			var req hostFFmpegRequest
+
+			if err := json.Unmarshal(
+				reqBytes,
+				&req,
+			); err != nil {
+				return hostBridgeError(
+					ctx,
+					mod,
+					"ffmpeg_exec: ungültiger Request: "+err.Error(),
+				)
+			}
+
+			result := ffmpegExecHost(req)
+
+			resultBytes, err := json.Marshal(result)
+			if err != nil {
+				return hostBridgeError(
+					ctx,
+					mod,
+					"ffmpeg_exec: Host-Antwort konnte nicht kodiert werden: "+err.Error(),
+				)
+			}
+
+			allocFn := mod.ExportedFunction("alloc")
+
+			if allocFn == nil {
+				return hostBridgeError(
+					ctx,
+					mod,
+					"ffmpeg_exec: Plugin exportiert keine Funktion 'alloc'",
+				)
+			}
+
+			res, err := allocFn.Call(
+				ctx,
+				uint64(len(resultBytes)),
+			)
+
+			if err != nil {
+				return hostBridgeError(
+					ctx,
+					mod,
+					"ffmpeg_exec: Plugin-alloc fehlgeschlagen: "+err.Error(),
+				)
+			}
+
+			if len(res) == 0 {
+				return hostBridgeError(
+					ctx,
+					mod,
+					"ffmpeg_exec: Plugin-alloc liefert keinen Pointer",
+				)
+			}
+
+			ptr := uint32(res[0])
+
+			if !mod.Memory().Write(
+				ptr,
+				resultBytes,
+			) {
+				return hostBridgeError(
+					ctx,
+					mod,
+					"ffmpeg_exec: Host-Antwort konnte nicht in WASM-Speicher geschrieben werden",
+				)
+			}
+
+			return (uint64(ptr) << 32) |
+				uint64(len(resultBytes))
+
+		}).
+		Export("ffmpeg_exec")
+
+	// ============================================================
+	// replace_file
+	// ============================================================
+
+	builder.NewFunctionBuilder().
+		WithFunc(func(
+			ctx context.Context,
+			mod api.Module,
+			reqPtr uint32,
+			reqLen uint32,
+		) uint64 {
+
+			reqBytes, ok := mod.Memory().Read(
+				reqPtr,
+				reqLen,
+			)
+
+			if !ok {
+				return hostBridgeError(
+					ctx,
+					mod,
+					"replace_file: Request konnte nicht aus WASM-Speicher gelesen werden",
+				)
+			}
+
+			var req hostReplaceFileRequest
+
+			if err := json.Unmarshal(
+				reqBytes,
+				&req,
+			); err != nil {
+				return hostBridgeError(
+					ctx,
+					mod,
+					"replace_file: ungültiger Request: "+err.Error(),
+				)
+			}
+
+			result := replaceFileHost(req)
+
+			resultBytes, err := json.Marshal(result)
+			if err != nil {
+				return hostBridgeError(
+					ctx,
+					mod,
+					"replace_file: Host-Antwort konnte nicht kodiert werden: "+err.Error(),
+				)
+			}
+
+			allocFn := mod.ExportedFunction("alloc")
+
+			if allocFn == nil {
+				return hostBridgeError(
+					ctx,
+					mod,
+					"replace_file: Plugin exportiert keine Funktion 'alloc'",
+				)
+			}
+
+			res, err := allocFn.Call(
+				ctx,
+				uint64(len(resultBytes)),
+			)
+
+			if err != nil {
+				return hostBridgeError(
+					ctx,
+					mod,
+					"replace_file: Plugin-alloc fehlgeschlagen: "+err.Error(),
+				)
+			}
+
+			if len(res) == 0 {
+				return hostBridgeError(
+					ctx,
+					mod,
+					"replace_file: Plugin-alloc liefert keinen Pointer",
+				)
+			}
+
+			ptr := uint32(res[0])
+
+			if !mod.Memory().Write(
+				ptr,
+				resultBytes,
+			) {
+				return hostBridgeError(
+					ctx,
+					mod,
+					"replace_file: Host-Antwort konnte nicht in WASM-Speicher geschrieben werden",
+				)
+			}
+
+			return (uint64(ptr) << 32) |
+				uint64(len(resultBytes))
+
+		}).
+		Export("replace_file")
 
 	// ============================================================
 	// Host-Modul instanziieren
@@ -968,13 +1477,6 @@ func LoadWasmPlugin(
 
 	// ------------------------------------------------------------
 	// WASI Reactor instanziieren
-	//
-	// Wichtig:
-	// Normal-Go-WASM-Plugins (GOOS=wasip1) besitzen _initialize
-	// statt automatischem _start-Durchlauf.
-	//
-	// _start darf hier NICHT automatisch ausgeführt werden,
-	// da main() ansonsten das WASI-Modul beendet.
 	// ------------------------------------------------------------
 
 	pluginDebugf(
@@ -1613,10 +2115,6 @@ func toJSONValue(
 			if translated, err := hostToGuestPath(s); err == nil {
 				s = translated
 			}
-			// Bei Übersetzungsfehler: Original-String
-			// durchreichen, das Plugin liefert dann einen
-			// erklärenden Fehler statt eines stillen
-			// Fehlschlags.
 		}
 
 		return jsonValue{

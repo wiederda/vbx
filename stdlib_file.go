@@ -408,46 +408,29 @@ func InitFileFunctions() {
 		"Löscht eine Datei.",
 		func(args []Value) Value {
 
-			// -------------------------
-			// Parametercheck
-			// -------------------------
 			pathStr, errS := expectStr(args, 0, "file.Delete(path)")
 			if errS != nil {
-				return fileResult(false, errS.Str)
+				return *errS
 			}
 			if pathStr == "" {
-				return fileResult(false, "file.Delete: Pfad fehlt")
+				return ErrorVal("file.Delete: Pfad fehlt")
 			}
 
-			// -------------------------
-			// Pfad absichern
-			// -------------------------
 			path, errVal := absPathVal(pathStr)
 			if errVal != nil {
-				return fileResult(false, "file.Delete: ungültiger Pfad")
+				return ErrorVal("file.Delete: ungültiger Pfad")
 			}
 
-			// -------------------------
-			// Datei löschen
-			// -------------------------
 			err := os.Remove(path)
 			if err != nil {
-
 				// "nicht existiert" ist kein echter Fehler
 				if os.IsNotExist(err) {
-					return fileResult(true, "")
+					return NullVal()
 				}
-
-				return fileResult(false,
-					"file.Delete: "+err.Error()+
-						" path="+path,
-				)
+				return ErrorVal("file.Delete: " + err.Error() + " path=" + path)
 			}
 
-			// -------------------------
-			// Erfolg
-			// -------------------------
-			return fileResult(true, "")
+			return NullVal()
 		})
 
 	// ---------------- Copy ----------------
@@ -457,19 +440,18 @@ func InitFileFunctions() {
 		func(args []Value) Value {
 
 			if len(args) < 2 {
-				return fileResult(false, "file.Copy: benötigt src und dst")
+				return ErrorVal("file.Copy: benötigt src und dst")
 			}
 
 			srcStr, errS1 := expectStr(args, 0, "file.Copy(src, dst, [overwrite])")
 			if errS1 != nil {
-				return fileResult(false, errS1.Str)
+				return *errS1
 			}
 			dstStr, errS2 := expectStr(args, 1, "file.Copy(src, dst, [overwrite])")
 			if errS2 != nil {
-				return fileResult(false, errS2.Str)
+				return *errS2
 			}
 
-			// Optional: Standard false, identisch zum bisherigen Verhalten.
 			overwrite := false
 			if len(args) >= 3 {
 				overwrite = isTruthy(args[2])
@@ -477,31 +459,31 @@ func InitFileFunctions() {
 
 			src, e1 := absPathVal(srcStr)
 			if e1 != nil {
-				return fileResult(false, "file.Copy: ungültiger Quellpfad")
+				return ErrorVal("file.Copy: ungültiger Quellpfad")
 			}
 
 			dst, e2 := absPathVal(dstStr)
 			if e2 != nil {
-				return fileResult(false, "file.Copy: ungültiger Zielpfad")
+				return ErrorVal("file.Copy: ungültiger Zielpfad")
 			}
 
 			if _, err := os.Stat(src); err != nil {
-				return fileResult(false, "file.Copy: Quelle fehlt: "+src)
+				return ErrorVal("file.Copy: Quelle fehlt: " + src)
 			}
 
 			if _, err := os.Stat(filepath.Dir(dst)); err != nil {
-				return fileResult(false, "file.Copy: Zielverzeichnis fehlt: "+filepath.Dir(dst))
+				return ErrorVal("file.Copy: Zielverzeichnis fehlt: " + filepath.Dir(dst))
 			}
 
 			if _, err := os.Stat(dst); err == nil && !overwrite {
-				return fileResult(false, "file.Copy: Ziel existiert bereits: "+dst)
+				return ErrorVal("file.Copy: Ziel existiert bereits: " + dst)
 			}
 
 			if err := copyFile(src, dst); err != nil {
-				return fileResult(false, "file.Copy: "+err.Error())
+				return ErrorVal("file.Copy: " + err.Error())
 			}
 
-			return fileResult(true)
+			return NullVal()
 		})
 
 	// ---------------- Move ----------------
@@ -510,85 +492,57 @@ func InitFileFunctions() {
 		"Verschiebt oder benennt eine Datei um (Rename + Cross-Drive Fallback). Mit overwrite=true wird ein bestehendes Ziel überschrieben, sonst schlägt der Aufruf fehl, falls es existiert.",
 		func(args []Value) Value {
 
-			// -------------------------
-			// Parametercheck
-			// -------------------------
 			if len(args) < 2 {
-				return fileResult(false, "file.Move: benötigt src und dst")
+				return ErrorVal("file.Move: benötigt src und dst")
 			}
 
 			srcStr, errS1 := expectStr(args, 0, "file.Move(src, dst, [overwrite])")
 			if errS1 != nil {
-				return fileResult(false, errS1.Str)
+				return *errS1
 			}
 			dstStr, errS2 := expectStr(args, 1, "file.Move(src, dst, [overwrite])")
 			if errS2 != nil {
-				return fileResult(false, errS2.Str)
+				return *errS2
 			}
 
-			// Optional: Standard false, identisch zum bisherigen Verhalten.
 			overwrite := false
 			if len(args) >= 3 {
 				overwrite = isTruthy(args[2])
 			}
 
-			// -------------------------
-			// Pfade absichern
-			// -------------------------
 			src, e1 := absPathVal(srcStr)
 			if e1 != nil {
-				return fileResult(false, "file.Move: ungültiger Quellpfad")
+				return ErrorVal("file.Move: ungültiger Quellpfad")
 			}
 
 			dst, e2 := absPathVal(dstStr)
 			if e2 != nil {
-				return fileResult(false, "file.Move: ungültiger Zielpfad")
+				return ErrorVal("file.Move: ungültiger Zielpfad")
 			}
 
-			// -------------------------
-			// Quelle prüfen
-			// -------------------------
 			if _, err := os.Stat(src); err != nil {
-				return fileResult(false, "file.Move: Quelle existiert nicht: "+src)
+				return ErrorVal("file.Move: Quelle existiert nicht: " + src)
 			}
 
-			// -------------------------
-			// Zielverzeichnis prüfen
-			// -------------------------
 			if _, err := os.Stat(filepath.Dir(dst)); err != nil {
-				return fileResult(false, "file.Move: Zielverzeichnis fehlt: "+filepath.Dir(dst))
+				return ErrorVal("file.Move: Zielverzeichnis fehlt: " + filepath.Dir(dst))
 			}
 
-			// -------------------------
-			// Ziel existiert bereits
-			// -------------------------
 			if _, err := os.Stat(dst); err == nil && !overwrite {
-				return fileResult(false, "file.Move: Zieldatei existiert bereits: "+dst)
+				return ErrorVal("file.Move: Zieldatei existiert bereits: " + dst)
 			}
 
-			// -------------------------
 			// 1. Versuch: Rename (schnell, atomar)
-			// os.Rename ersetzt laut Go-Doku plattformübergreifend eine
-			// bestehende Zieldatei automatisch (kein Verzeichnis) --
-			// bei overwrite=true also ohne weiteres Zutun.
-			// -------------------------
 			if err := os.Rename(src, dst); err == nil {
-				return fileResult(true)
+				return NullVal()
 			}
 
-			// -------------------------
 			// 2. Fallback: Copy + Delete (Cross-Drive)
-			// -------------------------
 			if err := copyAndDelete(src, dst); err != nil {
-				return fileResult(false,
-					"file.Move: Cross-Drive-Fallback fehlgeschlagen: "+
-						err.Error()+
-						" src="+src+
-						" dst="+dst,
-				)
+				return ErrorVal("file.Move: Cross-Drive-Fallback fehlgeschlagen: " + err.Error() + " src=" + src + " dst=" + dst)
 			}
 
-			return fileResult(true)
+			return NullVal()
 		})
 
 	// ------------------------
@@ -2333,25 +2287,6 @@ func mapUserLayoutToGo(userLayout string) string {
 		"SS", "05",
 	)
 	return r.Replace(userLayout)
-}
-
-func fileResult(ok bool, msg ...string) Value {
-	if ok {
-		return ArrVal([]Value{
-			BoolVal(true),
-			NullVal(),
-		})
-	}
-
-	m := ""
-	if len(msg) > 0 {
-		m = msg[0]
-	}
-
-	return ArrVal([]Value{
-		BoolVal(false),
-		StrVal(m),
-	})
 }
 
 func copyAndDelete(src, dst string) error {

@@ -40,9 +40,12 @@ var keywords = map[string]TokenType{
 	"exit":     EXIT,
 	"continue": CONTINUE,
 
-	"case":   CASE,
-	"select": SELECT,
-	"end":    END,
+	"case":    CASE,
+	"select":  SELECT,
+	"end":     END,
+	"try":     TRY,
+	"catch":   CATCH,
+	"finally": FINALLY,
 }
 
 // ---------------- Lexer ----------------

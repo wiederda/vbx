@@ -169,34 +169,40 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   - `fullPath`: Optional. `BoolVal` – vollständige Pfade statt nur Dateinamen.
 - **Rückgabe:**
   `ArrVal`
-  Array von `StrVal`-Einträgen.
+  Array von `StrVal`-Einträgen, natürlich/alphabetisch sortiert (`"2.mp3"` vor `"10.mp3"`) – **nicht** nach Erstellungs- oder Änderungsdatum. Wird eine bestimmte inhaltliche Reihenfolge benötigt (z. B. bei `media.Merge`), entweder Dateinamen mit sortierbarem Präfix versehen (`01_...`, `02_...`) oder die Reihenfolge im Skript selbst herstellen.
 
 ---
 
-## folder.GetSubFolders(path [, pattern, recursive, fullPath])
+## folder.GetSubFolders(path [, pattern, recursive, fullPath, ignore])
 - **Konkret:**
   Gibt ein Array mit Unterverzeichnisnamen (oder vollständigen Pfaden) zurück.
-  Identische Parameter wie `folder.GetFiles`.
+  Identische Parameter wie `folder.GetFiles`, zusätzlich `ignore`.
 - **Parameter:**
   - `path`: Verzeichnispfad (Standard: `"."`).
   - `pattern`: Optional. Glob-Muster.
   - `recursive`: Optional. `BoolVal`.
   - `fullPath`: Optional. `BoolVal`.
+  - `ignore`: Optional. Ordnernamen, die ausgeschlossen werden sollen (Komma-getrennter String oder Array) – bei `recursive` wird in ignorierten Ordnern auch nicht weitergesucht.
 - **Rückgabe:**
   `ArrVal`
 
 ---
 
-## folder.GetDirectories(path [, pattern])
+## folder.GetDirectories(path [, ignore])
 - **Konkret:**
-  Gibt ein Array mit den Namen direkt enthaltener Unterverzeichnisse zurück, die dem Muster entsprechen.
-  Nicht rekursiv.
+  Gibt ein Array mit den Namen aller direkten Unterverzeichnisse zurück.
+  Nicht rekursiv, kein Pattern-Matching – dafür `folder.GetSubFolders` verwenden.
 - **Parameter:**
   - `path`: Verzeichnispfad (Standard: `"."`).
-  - `pattern`: Optional. Glob-Muster (Standard: `"*"`).
+  - `ignore`: Optional. Ordnernamen, die ausgeschlossen werden sollen (Komma-getrennter String oder Array).
 - **Rückgabe:**
   `ArrVal`
-  Array von `StrVal`-Einträgen.
+  Array von `StrVal`-Einträgen, natürlich/alphabetisch sortiert.
+
+```vbx
+' Alle Unterordner außer "Ordner_Backup"
+Dim folders = folder.GetDirectories("C:\MyOrdner", "Ordner_Backup")
+```
 
 ---
 

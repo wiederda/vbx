@@ -33,14 +33,14 @@ func InitFolderFunctions() {
 	// folder.Create
 	Register(ns+"Create", "folder", "path", "Erstellt ein Verzeichnis rekursiv. Gibt True zurück, wenn der Ordner existiert oder erfolgreich erstellt wurde.", func(args []Value) Value {
 		if len(args) < 1 {
-			return BoolVal(false)
+			return ErrorVal("folder.Create: Pfad fehlt")
 		}
 		path, errVal := absPathVal(args[0].Str)
 		if errVal != nil {
-			return BoolVal(false)
+			return *errVal
 		}
 		if err := os.MkdirAll(path, 0755); err != nil {
-			return BoolVal(false)
+			return ErrorVal("folder.Create: " + err.Error())
 		}
 		return BoolVal(true)
 	})
@@ -388,16 +388,11 @@ func InitFolderFunctions() {
 	})
 
 	// folder.GetDirectories
-	Register(ns+"GetDirectories", "folder", "[path], [pattern]", "Gibt ein Array mit den Namen aller direkten Unterverzeichnisse zurück.", func(args []Value) Value {
+	// folder.GetDirectories
+	Register(ns+"GetDirectories", "folder", "path [, ignore]", "Gibt ein Array mit den Namen aller direkten Unterverzeichnisse zurück. 'ignore' schließt Ordner mit diesem Namen aus (Komma-getrennt oder Array).", func(args []Value) Value {
 		rawDir := "."
-		pattern := "*"
-
 		if len(args) >= 1 && args[0].Str != "" {
 			rawDir = args[0].Str
-		}
-
-		if len(args) >= 2 && args[1].Str != "" {
-			pattern = args[1].Str
 		}
 
 		dir, errVal := absPathVal(rawDir)
@@ -405,27 +400,49 @@ func InitFolderFunctions() {
 			return *errVal
 		}
 
+		ignore := map[string]bool{}
+
+		if len(args) >= 2 {
+			switch args[1].Kind {
+			case KindArr:
+				for _, v := range args[1].Arr {
+					name := strings.TrimSpace(v.Str)
+					if name != "" {
+						ignore[name] = true
+					}
+				}
+
+			default:
+				for _, s := range strings.Split(args[1].Str, ",") {
+					name := strings.TrimSpace(s)
+					if name != "" {
+						ignore[name] = true
+					}
+				}
+			}
+		}
+
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			return ErrorVal("Verzeichnis konnte nicht gelesen werden: " + err.Error())
 		}
 
-		var results []Value
+		results := make([]Value, 0)
 
-		for _, e := range entries {
-			if !e.IsDir() {
+		for _, entry := range entries {
+			// Nur direkte Unterordner
+			if !entry.IsDir() {
 				continue
 			}
 
-			match, _ := filepath.Match(pattern, e.Name())
-			if !match {
+			// Ignore
+			if ignore[entry.Name()] {
 				continue
 			}
 
-			results = append(results, StrVal(e.Name()))
+			results = append(results, StrVal(entry.Name()))
 		}
 
-		// Natürliche Sortierung wie im Explorer:
 		sort.SliceStable(results, func(i, j int) bool {
 			return naturalLess(results[i].Str, results[j].Str)
 		})
@@ -474,6 +491,26 @@ func InitFolderFunctions() {
 	// folder.GetSubFolders
 	Register(ns+"GetSubFolders", "folder", "path [, pattern, recursive, fullPath]", "Gibt ein Array mit Unterverzeichnissen zurück.", func(args []Value) Value {
 		opts := parseFolderArgs(args)
+
+		if len(args) >= 5 {
+			opts.Ignore = make(map[string]bool)
+			switch args[4].Kind {
+			case KindArr:
+				for _, v := range args[4].Arr {
+					name := strings.TrimSpace(v.Str)
+					if name != "" {
+						opts.Ignore[name] = true
+					}
+				}
+			default:
+				for _, s := range strings.Split(args[4].Str, ",") {
+					name := strings.TrimSpace(s)
+					if name != "" {
+						opts.Ignore[name] = true
+					}
+				}
+			}
+		}
 
 		var out []Value
 
@@ -1067,6 +1104,25 @@ func parseFolderArgs(args []Value) FolderOptions {
 	}
 	if len(args) >= 4 {
 		opts.FullPath = isTruthy(args[3])
+	}
+	if len(args) >= 5 {
+		opts.Ignore = make(map[string]bool)
+		switch args[4].Kind {
+		case KindArr:
+			for _, v := range args[4].Arr {
+				name := strings.TrimSpace(v.Str)
+				if name != "" {
+					opts.Ignore[name] = true
+				}
+			}
+		default:
+			for _, s := range strings.Split(args[4].Str, ",") {
+				name := strings.TrimSpace(s)
+				if name != "" {
+					opts.Ignore[name] = true
+				}
+			}
+		}
 	}
 	return opts
 }

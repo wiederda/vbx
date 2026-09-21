@@ -67,6 +67,9 @@ const (
 	UNTIL
 	CONTINUE
 	CONST
+	TRY
+	CATCH
+	FINALLY
 )
 
 type Token struct {
@@ -162,6 +165,14 @@ type IfNode struct {
 	}
 	Else []Stmt
 }
+
+type TryNode struct {
+	TryBody      []Stmt
+	CatchVarName string // "" wenn kein Catch-Zweig
+	CatchBody    []Stmt // nil wenn kein Catch-Zweig
+	FinallyBody  []Stmt // nil wenn kein Finally-Zweig
+}
+
 type ForNode struct {
 	VarName string
 	Start   Expr
@@ -214,6 +225,12 @@ func (t TokenType) String() string {
 		return "EOF"
 	case IDENT:
 		return "IDENT"
+	case TRY:
+		return "TRY"
+	case CATCH:
+		return "CATCH"
+	case FINALLY:
+		return "FINALLY"
 	case NUMBER:
 		return "NUMBER"
 	case STRING:
