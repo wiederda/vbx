@@ -212,6 +212,32 @@ Alle Funktionen sind Runen-basiert und damit korrekt für Unicode/UTF-8.
 
 ---
 
+## string.PatternFromExample(example, exact, position [, keep])
+- **Konkret:**
+  Leitet aus einem Beispielstring ein Regex-Muster ab. Ziffernfolgen werden zu `\d`, Buchstabenfolgen zu `[a-zA-Z]` generalisiert, Sonderzeichen (`_`, `.`, `-` etc.) bleiben literal und werden bei Bedarf escaped.
+- **Parameter:**
+  - `example`: Beispieltext, aus dem das Muster abgeleitet wird.
+  - `exact`: `Bool`. `true` generalisiert mit exakter Länge (`\d{8}`, `[a-zA-Z]{3}`), `false` mit beliebiger Länge (`\d+`, `[a-zA-Z]+`).
+  - `position`: `"start"` (Muster wird mit `^` verankert), `"end"` (Muster wird mit `$` verankert) oder `"anywhere"` (kein Anker).
+  - `keep`: Optional. Literaler Teilstring innerhalb von `example`, der NICHT generalisiert werden soll (z. B. `"IMG"`, `"Bericht"`). Kommt der Teilstring in `example` nicht vor, wird er ignoriert.
+- **Rückgabe:**
+  `StrVal` mit dem generierten Regex-Muster. `ErrorVal` bei ungültigem `position`-Wert.
+  Beispiel: `string.PatternFromExample("_20210910_0952", true, "end")` → `"_\d{8}_\d{4}$"`.
+
+---
+
+## string.CombinePatterns(patterns)
+- **Konkret:**
+  Kombiniert mehrere Regex-Muster (Array von Strings) per Oder-Verknüpfung (`|`) zu einem einzigen Muster. Jedes Teilmuster wird in eine nicht-capturing Gruppe `(?:...)` geklammert, damit sich Anker (`^`/`$`) und Vorrangregeln der einzelnen Muster nicht gegenseitig stören.
+- **Parameter:**
+  - `patterns`: `ArrVal` mit einzelnen Regex-Mustern, z. B. erzeugt per `string.PatternFromExample`.
+- **Rückgabe:**
+  `StrVal` mit dem kombinierten Muster. Leeres Array liefert einen leeren String zurück. `ErrorVal` wenn `patterns` kein Array ist.
+  Beispiel: `["_\d{8}_\d{4}$", "_old$"]` → `"(?:_\d{8}_\d{4}$)|(?:_old$)"`.
+  Kann direkt an `string.RegExp` übergeben werden.
+
+---
+
 ## string.Extract(text, pattern)
 - **Konkret:**
   Extrahiert den Wert der ersten Capture Group eines Regex-Patterns.

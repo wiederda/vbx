@@ -11,7 +11,7 @@ Weitere Funktionen können über Plugins eingebunden werden.
 * **Modul-System** – Erweiterungen (Netzwerk, Kryptografie, Datenbanken, ...)
 * **Shell-Interface** – Direkte Ausführung von Funktionen über die Kommandozeile
 
-Über **650 Funktionen**, ohne den Kern aufzublähen.
+Über **550 Funktionen**, ohne den Kern aufzublähen. Weitere können über Plugins hinzugefügt werden.
 
 ---
 

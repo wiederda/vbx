@@ -488,6 +488,51 @@ func InitFolderFunctions() {
 		}
 	})
 
+	Register(ns+"GetFilesMax", "folders", "folders [, pattern, recursive, fullPath]", "Gibt ein Array mit Dateien aus mehreren Verzeichnissen zurück.", func(args []Value) Value {
+		if len(args) == 0 || args[0].Kind != KindArr {
+			return ErrorVal("GetFilesMax: erster Parameter muss ein Array von Ordnerpfaden sein")
+		}
+
+		folders := args[0]
+		rest := args[1:]
+
+		var out []Value
+
+		for _, f := range folders.Arr {
+			// pro Ordner die restlichen Parameter (pattern, recursive, fullPath) übernehmen
+			folderArgs := append([]Value{f}, rest...)
+			opts := parseFolderArgs(folderArgs)
+
+			err := WalkFolder(opts, func(it FolderItem) error {
+				if it.Info != nil && !it.Info.IsDir() {
+					name := it.Name
+
+					if opts.FullPath {
+						name = it.Path
+					}
+
+					out = append(out, StrVal(name))
+				}
+
+				return nil
+			})
+
+			if err != nil {
+				return ErrorVal(err.Error())
+			}
+		}
+
+		// Natürliche Sortierung
+		sort.SliceStable(out, func(i, j int) bool {
+			return naturalLess(out[i].Str, out[j].Str)
+		})
+
+		return Value{
+			Kind: KindArr,
+			Arr:  out,
+		}
+	})
+
 	// folder.GetSubFolders
 	Register(ns+"GetSubFolders", "folder", "path [, pattern, recursive, fullPath]", "Gibt ein Array mit Unterverzeichnissen zurück.", func(args []Value) Value {
 		opts := parseFolderArgs(args)

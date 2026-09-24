@@ -979,22 +979,32 @@ func (p *Parser) parseStmt() Stmt {
 		}
 		p.skipStuff()
 
+		hasCatch := false
 		if p.peek().Type == CATCH {
+			hasCatch = true
 			p.next() // CATCH konsumieren
-			node.CatchVarName = p.expectIdentifier()
+			p.skipStuff()
+
+			// Variablenname ist optional: nur lesen, wenn wirklich ein IDENT folgt
+			if p.peek().Type == IDENT {
+				node.CatchVarName = p.expectIdentifier()
+			}
+
 			p.skipStuff()
 			node.CatchBody = p.parseBlock("Try", FINALLY)
 			p.skipStuff()
 		}
 
+		hasFinally := false
 		if p.peek().Type == FINALLY {
-			p.next() // FINALLY konsumieren
+			hasFinally = true
+			p.next()
 			p.skipStuff()
 			node.FinallyBody = p.parseBlock("Try", FINALLY)
 			p.skipStuff()
 		}
 
-		if node.CatchBody == nil && node.FinallyBody == nil {
+		if !hasCatch && !hasFinally {
 			p.error("Ein 'Try'-Block braucht mindestens einen 'Catch'- oder 'Finally'-Zweig.")
 		}
 

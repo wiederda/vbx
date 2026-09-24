@@ -183,11 +183,37 @@ func InitSevenZipFunctions() {
 			return BoolVal(true)
 		})
 
+	Register(ns+"IsValid", "7z", "archivePath [, password]",
+		"Prüft, ob eine Datei ein gültiges 7z-Archiv ist (Inhalt, nicht nur Dateiendung).",
+		func(args []Value) Value {
+			if len(args) < 1 {
+				return ErrorVal("usage: 7z.IsValid(archivePath [, password])")
+			}
+
+			absP, err := absPathStrict(args[0].Str)
+			if err != nil {
+				return ErrorVal(err.Error())
+			}
+
+			password := ""
+			if len(args) >= 2 {
+				password = args[1].Str
+			}
+
+			r, err := open7z(absP, password)
+			if err != nil {
+				return BoolVal(false)
+			}
+			defer r.Close()
+
+			return BoolVal(true)
+		})
+
 	// ---------------------------------------------------------------------------
 	// 7z.Extract(archivePath, dest [, password])  →  null | error
 	// ---------------------------------------------------------------------------
 	Register(ns+"Extract", "7z", "archivePath, dest [, password]",
-		"Entpackt ein 7z-Archiv nativ (ohne externes 7z benötigt). Schützt gegen Zip-Slip durch Pfad-Validierung.",
+		"Entpackt ein 7z-Archiv. Nutzt zunächst die native Go-Implementierung; fällt bei Fehlern automatisch auf eine 7z-Binary zurück (System-PATH, Standardpfad oder via 7z.SetBinaryPath gesetzt) — deckt Fälle ab, die die reine Go-Bibliothek nicht unterstützt (z.B. bestimmte Solid-Block-/Coder-Kombinationen).",
 		func(args []Value) Value {
 			if len(args) < 2 {
 				return ErrorVal("usage: 7z.Extract(archivePath, dest [, password])")
@@ -208,14 +234,22 @@ func InitSevenZipFunctions() {
 				password = args[2].Str
 			}
 
-			r, err := open7zFriendly(absArchive, password)
-			if err != nil {
-				return ErrorVal(err.Error())
-			}
-			defer r.Close()
+			if r, err := open7z(absArchive, password); err == nil {
+				extractErr := extract7zTo(r, absDest)
+				r.Close()
 
-			if err := extract7zTo(r, absDest); err != nil {
-				return ErrorVal(err.Error())
+				if extractErr == nil {
+					return NullVal()
+				}
+			}
+
+			// Fallback: externes Binary (System-PATH, Standardpfad,
+			// oder via 7z.SetBinaryPath gesetzter portabler Pfad)
+			if err := extract7zViaBinary(absArchive, absDest, password); err != nil {
+				return ErrorVal(fmt.Sprintf(
+					"entpacken fehlgeschlagen (go-implementierung UND fallback-binary): %s",
+					err.Error(),
+				))
 			}
 
 			return NullVal()
@@ -385,4 +419,29 @@ func looksLikeFilePath(s string) bool {
 	return strings.ContainsAny(s, "/\\") ||
 		strings.HasPrefix(s, ".") ||
 		filepath.IsAbs(s)
+}
+
+func extract7zViaBinary(absArchive, absDest, password string) error {
+	bin, err := find7zBinary()
+	if err != nil {
+		return fmt.Errorf("kein 7z-binary verfügbar (weder im PATH noch via 7z.SetBinaryPath gesetzt): %w", err)
+	}
+
+	if err := os.MkdirAll(absDest, 0755); err != nil {
+		return fmt.Errorf("zielverzeichnis konnte nicht erstellt werden: %w", err)
+	}
+
+	cmdArgs := []string{"x", "-y", "-o" + absDest}
+	if password != "" {
+		cmdArgs = append(cmdArgs, "-p"+password)
+	}
+	cmdArgs = append(cmdArgs, absArchive)
+
+	cmd := exec.Command(bin, cmdArgs...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("7z-binary-fehler: %v (%s)", err, strings.TrimSpace(string(out)))
+	}
+
+	return nil
 }

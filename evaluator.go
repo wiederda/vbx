@@ -158,6 +158,23 @@ func mapAssignOp(op TokenType) TokenType {
 	}
 }
 
+// Lazy gebauter Index für qualifizierte Builtin-Aufrufe (modul.funktion),
+// vermeidet den linearen Scan über die gesamte builtins-Map bei jedem Aufruf.
+var builtinModuleIndex map[string]BuiltinInfo
+var builtinModuleIndexBuilt bool
+
+func buildBuiltinModuleIndex() {
+	builtinModuleIndex = make(map[string]BuiltinInfo, len(builtins))
+	for builtinName, info := range builtins {
+		if info.Module == "" {
+			continue
+		}
+		key := strings.ToLower(info.Module) + "." + strings.ToLower(builtinName)
+		builtinModuleIndex[key] = info
+	}
+	builtinModuleIndexBuilt = true
+}
+
 func findBuiltinByModuleAndName(module, name string) (BuiltinInfo, bool) {
 	// 1. Direkter qualifizierter Name:
 	//    z.B. "app.ExecutablePath"
@@ -165,13 +182,13 @@ func findBuiltinByModuleAndName(module, name string) (BuiltinInfo, bool) {
 		return info, true
 	}
 
-	// 2. Unqualifizierter Name mit Module-Information:
-	//    z.B. "ExecutablePath" + Module == "app"
-	for builtinName, info := range builtins {
-		if strings.EqualFold(builtinName, name) &&
-			strings.EqualFold(info.Module, module) {
-			return info, true
-		}
+	// 2. Indizierter Lookup statt linearem Scan über builtins.
+	if !builtinModuleIndexBuilt {
+		buildBuiltinModuleIndex()
+	}
+	key := strings.ToLower(module) + "." + strings.ToLower(name)
+	if info, ok := builtinModuleIndex[key]; ok {
+		return info, true
 	}
 
 	return BuiltinInfo{}, false
@@ -1383,18 +1400,14 @@ func evalExpr(e Expr, env *Environment) Value {
 		}
 
 	case *ArrayLiteralNode:
-		var elements []Value
+		elements := make([]Value, 0, len(n.Elements))
 		for _, expr := range n.Elements {
-			// Rekursiver Aufruf: Wertet jedes Element aus
 			val := evalExpr(expr, env)
-
-			// Das "Sicherheitsende": Fehler werden sofort gemeldet
 			if val.Kind == KindError {
-				return val // Reicht das ErrorVal direkt an den Parser/Runner weiter
+				return val
 			}
 			elements = append(elements, val)
 		}
-		// Finales Paket: Ein fertiges VB-Array
 		return Value{Kind: KindArr, Arr: elements}
 
 	case *NumberNode:
@@ -1410,25 +1423,20 @@ func evalExpr(e Expr, env *Environment) Value {
 
 	case *MultiStmtNode:
 		var lastVal Value
-		// Wir brauchen eine Variable für das Signal, um den Rückgabewert
-		// von evalStatements "aufzufangen", aber wir geben es nicht weiter.
 		var sig Signal
 
 		for _, stmt := range n.Stmts {
-			// Hier empfangen wir beide Werte
-			lastVal, sig = evalStatements([]Stmt{stmt}, env)
+			// Direkt evalSingleStatement statt evalStatements([]Stmt{stmt}, env) —
+			// erspart pro Statement eine Slice-Allocation.
+			lastVal, sig = evalSingleStatement(stmt, env)
 
-			// Wenn innerhalb eines Ausdrucks ein Fehler auftritt,
-			// geben wir den Fehler-Wert zurück.
 			if sig == SignalError {
 				return lastVal
 			}
-			// Andere Signale wie SignalReturn ignorieren wir hier (oder behandeln sie als Ende)
 			if sig != SignalNone {
 				break
 			}
 		}
-		// WICHTIG: Hier nur EINEN Wert zurückgeben!
 		return lastVal
 
 	case *MapIndexNode:

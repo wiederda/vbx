@@ -173,6 +173,26 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
 
 ---
 
+## folder.GetFilesMax(folders [, pattern, recursive, fullPath])
+- **Konkret:**
+  Wie `folder.GetFiles`, durchsucht aber mehrere Ordner in einem Aufruf.
+  `pattern`, `recursive` und `fullPath` gelten dabei für jeden Ordner gleichermaßen.
+  Die Dateien aller angegebenen Ordner werden zu einem gemeinsamen Ergebnis
+  zusammengeführt und natürlich sortiert (wie bei `GetFiles`).
+- **Parameter:**
+  - `folders`: Array `{}` mit den zu durchsuchenden Ordnerpfaden.
+  - `pattern`: Optional. Suchmuster (z. B. `"*.txt"`).
+  - `recursive`: Optional. Boolean – bei `true` werden Unterordner mit einbezogen.
+  - `fullPath`: Optional. Boolean – bei `true` werden vollständige Pfade statt nur Dateinamen zurückgegeben.
+- **Rückgabe:**
+  `ArrVal` mit den gefundenen Dateien (natürlich sortiert).
+- **Beispiel:**
+```vbx
+Dim files = folder.GetFilesMax({"C:\Ordner1", "C:\Ordner2"}, "*.txt", True)
+```
+
+---
+
 ## folder.GetSubFolders(path [, pattern, recursive, fullPath, ignore])
 - **Konkret:**
   Gibt ein Array mit Unterverzeichnisnamen (oder vollständigen Pfaden) zurück.

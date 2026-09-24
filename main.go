@@ -20,7 +20,7 @@ var loadedModules = make(map[string]bool)
 
 // var BuildDate string   // wird via ldflags gesetzt
 var optionalModuleFunctions = map[string]int{
-	"7z":       5,
+	"7z":       6,
 	"ad":       8,
 	"acme":     2,
 	"cert":     14,
@@ -29,20 +29,21 @@ var optionalModuleFunctions = map[string]int{
 	"db":       30,
 	"debug":    15,
 	"env":      3,
+	"export":   5,
 	"geo":      1,
 	"git":      18,
 	"json":     25,
 	"kuma":     5,
 	"map":      11,
-	"net":      18,
+	"net":      19,
 	"picture":  3,
-	"proc":     30,
+	"proc":     32,
 	"reg":      7,
 	"service":  8,
 	"sftp":     9,
 	"smtp":     3,
 	"ssh":      6,
-	"string":   35,
+	"string":   37,
 	"template": 3,
 	"win":      4,
 }

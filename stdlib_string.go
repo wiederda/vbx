@@ -385,6 +385,80 @@ func InitStringFunctions() {
 		return StrVal(versions[len(versions)-1])
 	})
 
+	Register(ns+"PatternFromExample", "string", "example, exact, position, keep", "Leitet aus einem Beispielstring ein Regex-Muster ab (Ziffern-/Buchstabenfolgen werden zu \\d/[a-zA-Z]). exact=true nutzt {n}, false nutzt +. position: \"start\", \"end\" oder \"anywhere\". keep (optional): literaler Teilstring, der nicht generalisiert werden soll, z.B. \"IMG\" oder \"Bericht\".", func(args []Value) Value {
+		if len(args) < 3 {
+			return ErrorVal("PatternFromExample: expected at least 3 arguments (example, exact, position)")
+		}
+
+		example := ToString(args[0])
+		exact := ToBool(args[1])
+		position := ToString(args[2])
+
+		keep := ""
+		if len(args) >= 4 {
+			keep = ToString(args[3])
+		}
+
+		if position != "start" && position != "end" && position != "anywhere" {
+			return ErrorVal("PatternFromExample: position must be \"start\", \"end\" or \"anywhere\"")
+		}
+
+		var pattern string
+		if keep != "" {
+			idx := strings.Index(example, keep)
+			if idx == -1 {
+				// keep kommt im Beispiel gar nicht vor -> ignorieren, normal generalisieren
+				pattern = classifyRuns(example, exact)
+			} else {
+				before := example[:idx]
+				after := example[idx+len(keep):]
+
+				var sb strings.Builder
+				if before != "" {
+					sb.WriteString(classifyRuns(before, exact))
+				}
+				sb.WriteString(regexp.QuoteMeta(keep))
+				if after != "" {
+					sb.WriteString(classifyRuns(after, exact))
+				}
+				pattern = sb.String()
+			}
+		} else {
+			pattern = classifyRuns(example, exact)
+		}
+
+		switch position {
+		case "start":
+			pattern = "^" + pattern
+		case "end":
+			pattern = pattern + "$"
+		}
+
+		return StrVal(pattern)
+	})
+
+	Register(ns+"CombinePatterns", "string", "patterns", "Kombiniert mehrere Regex-Muster (Array von Strings) per Oder-Verknüpfung (|) zu einem einzigen Muster, jedes Teil in einer nicht-capturing Gruppe geklammert.", func(args []Value) Value {
+		if len(args) < 1 {
+			return ErrorVal("CombinePatterns: expected 1 argument (patterns)")
+		}
+
+		if args[0].Kind != KindArr {
+			return ErrorVal("CombinePatterns: patterns must be an array of strings")
+		}
+		patterns := args[0].Arr
+
+		if len(patterns) == 0 {
+			return StrVal("")
+		}
+
+		parts := make([]string, 0, len(patterns))
+		for _, p := range patterns {
+			parts = append(parts, "(?:"+ToString(p)+")")
+		}
+
+		return StrVal(strings.Join(parts, "|"))
+	})
+
 	Register(ns+"WordCount", "string", "s", "Zählt die Anzahl der Wörter in einem Text (mehrfache Leerzeichen werden korrekt behandelt).", func(args []Value) Value {
 		s, err := getStrArg(args, 0, "WordCount")
 		if err.Kind == KindError {
@@ -880,4 +954,43 @@ func ToUtf8(val interface{}) string {
 		runes = append(runes, r)
 	}
 	return string(runes)
+}
+
+func classifyRuns(s string, exact bool) string {
+	var sb strings.Builder
+	runes := []rune(s)
+	i := 0
+	for i < len(runes) {
+		c := runes[i]
+		switch {
+		case unicode.IsDigit(c):
+			n := runLength(runes, i, unicode.IsDigit)
+			if exact {
+				sb.WriteString(fmt.Sprintf(`\d{%d}`, n))
+			} else {
+				sb.WriteString(`\d+`)
+			}
+			i += n
+		case unicode.IsLetter(c):
+			n := runLength(runes, i, unicode.IsLetter)
+			if exact {
+				sb.WriteString(fmt.Sprintf(`[a-zA-Z]{%d}`, n))
+			} else {
+				sb.WriteString(`[a-zA-Z]+`)
+			}
+			i += n
+		default:
+			sb.WriteString(regexp.QuoteMeta(string(c)))
+			i++
+		}
+	}
+	return sb.String()
+}
+
+func runLength(runes []rune, start int, pred func(rune) bool) int {
+	n := 0
+	for start+n < len(runes) && pred(runes[start+n]) {
+		n++
+	}
+	return n
 }
