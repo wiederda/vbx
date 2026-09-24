@@ -12,6 +12,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -1112,4 +1113,34 @@ func splitPath(path string) []string {
 		return []string{}
 	}
 	return strings.Split(path, ".")
+}
+
+func clipboardWriteCmd() (*exec.Cmd, error) {
+	switch runtime.GOOS {
+	case "windows":
+		return exec.Command("clip"), nil
+	case "darwin":
+		return exec.Command("pbcopy"), nil
+	case "linux":
+		return exec.Command("xclip", "-selection", "clipboard"), nil
+	default:
+		return nil, fmt.Errorf("Betriebssystem nicht unterstützt: %s", runtime.GOOS)
+	}
+}
+
+// clipboardReadCmd liefert den Befehl, der den aktuellen
+// Zwischenablage-Text auf STDOUT ausgibt.
+func clipboardReadCmd() (*exec.Cmd, error) {
+	switch runtime.GOOS {
+	case "windows":
+		// Kein eingebautes Gegenstück zu "clip" fürs Lesen -
+		// PowerShell ist auf Windows Server/RDS Standard.
+		return exec.Command("powershell", "-NoProfile", "-Command", "Get-Clipboard"), nil
+	case "darwin":
+		return exec.Command("pbpaste"), nil
+	case "linux":
+		return exec.Command("xclip", "-selection", "clipboard", "-o"), nil
+	default:
+		return nil, fmt.Errorf("Betriebssystem nicht unterstützt: %s", runtime.GOOS)
+	}
 }

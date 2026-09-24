@@ -210,23 +210,65 @@ func InitGlobal() {
 		return NumVal(0)
 	})
 
-	// 497: ToClipboard
 	Register("ToClipboard", "global", "text", "Kopiert Text in die Zwischenablage.", func(args []Value) Value {
-		// Nutzt deine toStringSafe Logik
 		text := ""
 		if len(args) > 0 {
 			text = toStringSafe(args[0], "")
 		}
 
-		var cmd *exec.Cmd
-		if runtime.GOOS == "windows" {
-			cmd = exec.Command("clip")
-		} else {
-			cmd = exec.Command("xclip", "-selection", "clipboard")
+		cmd, err := clipboardWriteCmd()
+		if err != nil {
+			return ErrorVal("ToClipboard: " + err.Error())
 		}
+
 		cmd.Stdin = strings.NewReader(text)
-		err := cmd.Run()
-		return Value{Kind: KindBool, Bool: err == nil}
+
+		return Value{Kind: KindBool, Bool: cmd.Run() == nil}
+	})
+
+	Register("FromClipboard", "global", "", "Liest den aktuellen Textinhalt der Zwischenablage.", func(args []Value) Value {
+		cmd, err := clipboardReadCmd()
+		if err != nil {
+			return ErrorVal("FromClipboard: " + err.Error())
+		}
+
+		out, err := cmd.Output()
+		if err != nil {
+			return ErrorVal("Zwischenablage konnte nicht gelesen werden: " + err.Error())
+		}
+
+		// Get-Clipboard hängt ein Zeilenende an, xclip/pbpaste
+		// normalerweise nicht - zur Sicherheit auf allen Seiten trimmen.
+		text := strings.TrimRight(string(out), "\r\n")
+
+		return Value{Kind: KindStr, Str: text}
+	})
+
+	Register("ClipboardHasText", "global", "", "Prüft, ob aktuell Text in der Zwischenablage liegt.", func(args []Value) Value {
+		cmd, err := clipboardReadCmd()
+		if err != nil {
+			return ErrorVal("ClipboardHasText: " + err.Error())
+		}
+
+		out, err := cmd.Output()
+		if err != nil {
+			// Kein Text (oder z.B. Bild in der Zwischenablage) zählt
+			// hier als "kein Text", nicht als Fehler.
+			return Value{Kind: KindBool, Bool: false}
+		}
+
+		return Value{Kind: KindBool, Bool: strings.TrimSpace(string(out)) != ""}
+	})
+
+	Register("ClipboardClear", "global", "", "Leert die Zwischenablage.", func(args []Value) Value {
+		cmd, err := clipboardWriteCmd()
+		if err != nil {
+			return ErrorVal("ClipboardClear: " + err.Error())
+		}
+
+		cmd.Stdin = strings.NewReader("")
+
+		return Value{Kind: KindBool, Bool: cmd.Run() == nil}
 	})
 
 	// ------------------------

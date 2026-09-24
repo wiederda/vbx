@@ -646,12 +646,46 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
 ## ToClipboard(text)
 - **Konkret:**
   Kopiert Text in die Zwischenablage.
-  Windows: `clip`. Linux: `xclip`.
+  Windows: `clip`. macOS: `pbcopy`. Linux: `xclip`.
 - **Parameter:**
   - `text`: Zu kopierender Text.
 - **Rückgabe:**
   `BoolVal`
-  `true` bei Erfolg.
+  `true` bei Erfolg. `ErrorVal`, wenn das Betriebssystem nicht unterstützt wird.
+
+---
+
+## FromClipboard()
+- **Konkret:**
+  Liest den aktuellen Textinhalt der Zwischenablage.
+  Windows: `Get-Clipboard` (PowerShell). macOS: `pbpaste`. Linux: `xclip`.
+- **Parameter:**
+  Keine.
+- **Rückgabe:**
+  `StrVal`
+  Der gelesene Text. `ErrorVal`, wenn die Zwischenablage nicht gelesen werden kann oder das Betriebssystem nicht unterstützt wird.
+
+---
+
+## ClipboardHasText()
+- **Konkret:**
+  Prüft, ob aktuell Text in der Zwischenablage liegt.
+- **Parameter:**
+  Keine.
+- **Rückgabe:**
+  `BoolVal`
+  `true`, wenn Text vorhanden ist. `false` auch dann, wenn z.B. ein Bild statt Text in der Zwischenablage liegt. `ErrorVal`, wenn das Betriebssystem nicht unterstützt wird.
+
+---
+
+## ClipboardClear()
+- **Konkret:**
+  Leert die Zwischenablage.
+- **Parameter:**
+  Keine.
+- **Rückgabe:**
+  `BoolVal`
+  `true` bei Erfolg. `ErrorVal`, wenn das Betriebssystem nicht unterstützt wird.
 
 ---
 
