@@ -1964,30 +1964,42 @@ func getCompilationCache() (
 	wazero.CompilationCache,
 	error,
 ) {
-
 	if wasmCache != nil {
 		return wasmCache, nil
 	}
 
-	base, err := os.UserCacheDir()
-	if err != nil {
-		return nil, fmt.Errorf(
-			"Cache-Verzeichnis konnte nicht ermittelt werden: %w",
-			err,
+	var cacheDir string
+
+	if p := strings.TrimSpace(os.Getenv("VBX_PLUGIN_CACHE")); p != "" {
+		abs, err := filepath.Abs(p)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"VBX_PLUGIN_CACHE konnte nicht aufgelöst werden: %w",
+				err,
+			)
+		}
+
+		cacheDir = abs
+	} else {
+		base, err := os.UserCacheDir()
+		if err != nil {
+			return nil, fmt.Errorf(
+				"Cache-Verzeichnis konnte nicht ermittelt werden: %w",
+				err,
+			)
+		}
+
+		cacheDir = filepath.Join(
+			base,
+			"vbx",
+			"plugin-cache",
 		)
 	}
-
-	cacheDir := filepath.Join(
-		base,
-		"vbx",
-		"plugin-cache",
-	)
 
 	if err := os.MkdirAll(
 		cacheDir,
 		0755,
 	); err != nil {
-
 		return nil, fmt.Errorf(
 			"Cache-Verzeichnis %q konnte nicht angelegt werden: %w",
 			cacheDir,

@@ -1,3 +1,9 @@
+# 🔐 acme.* – ACME-Zertifikatsfunktionen
+
+Verwaltet ACME-Konten und unterstützt die Beantragung von TLS-Zertifikaten über ACME-kompatible Zertifizierungsstellen wie Let's Encrypt. Aktuell wird ausschließlich die **DNS-01-Validierung** unterstützt. Als erster DNS-Provider wird **ipv64.net** unterstützt.
+
+---
+
 ## acme.Account(directory, keyPath, statePath, email, acceptTOS)
 
 **Konkret:** Erstellt ein neues ACME-Konto beim angegebenen Server oder lädt ein

@@ -91,6 +91,21 @@ Plugins werden im Verzeichnis `plugins` neben der VBX-Runtime gesucht. Alternati
 
 ---
 
+## Plugin-Cache
+
+Die kompilierten WASM-Plugins werden von VBX in einem Compilation-Cache gespeichert.
+
+Standardmäßig verwendet VBX dafür:
+
+```text
+<vbx-user-cache>/vbx/plugin-cache
+C:\Users\<username>\AppData\Local\vbx\plugin-cache
+---
+
+Alternativ kann das Plugin-Cache über `VBX_PLUGIN_CACHE` festgelegt werden.
+
+---
+
 ## Kommentare
 
 ```vbx

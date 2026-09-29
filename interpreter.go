@@ -111,6 +111,20 @@ type VarNode struct {
 	isDotted   bool
 	objName    string
 	fieldName  string
+
+	// Cache für die Variablenauflösung.
+	//
+	// cachedLookupEnv ist die Environment, von der aus die Variable
+	// ursprünglich gesucht wurde.
+	//
+	// cachedDefEnv ist die Environment, in der die Variable tatsächlich
+	// gefunden wurde.
+	//
+	// Der *Value wird bewusst NICHT gecacht, weil Define() einen
+	// bestehenden Pointer ersetzen kann.
+	cachedLookupEnv *Environment
+	cachedDefEnv    *Environment
+	cachedPtr       *Value
 }
 type CallExprNode struct {
 	Name string
@@ -137,6 +151,10 @@ type BinOpNode struct {
 	Left  Expr
 	Op    TokenType
 	Right Expr
+
+	constChecked bool
+	cachedConst  bool
+	cachedValue  Value
 }
 type DimArrayNode struct {
 	Name   string
@@ -152,6 +170,12 @@ type AssignNode struct {
 	IsDeclaration bool
 	InLoop        bool
 	IsConst       bool
+
+	// Cache für normale Zuweisungen.
+	// Wird nur verwendet, wenn IsDeclaration == false.
+	cachedLookupEnv *Environment
+	cachedPtr       *Value
+	cachedConst     bool
 }
 type PrintNode struct {
 	Value Expr // Der Text/Wert

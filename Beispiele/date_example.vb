@@ -1,6 +1,6 @@
-' ==============================================================
-' TEST-SUITE: DATE-MODULE (GO-BACKEND 2026)
-' ==============================================================
+' ============================
+' Date Beispiele für VBX
+' ============================
 Dim nowVal, d1, d2, currentYear, ts, silvesterFull, silvesterShort
 
 Print "=== date.Now & Parts ==="

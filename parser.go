@@ -102,6 +102,10 @@ type CompoundAssignNode struct {
 	Left  Expr
 	Op    TokenType
 	Right Expr
+
+	cachedLookupEnv *Environment
+	cachedPtr       *Value
+	cachedConst     bool
 }
 
 func (i *IsNode) expressionNode() {}

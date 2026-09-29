@@ -92,12 +92,14 @@ var NilValue = Value{Kind: KindNil}
 // GetRef liefert einen Pointer auf den Wert in der Map
 type Environment struct {
 	vars            map[string]*Value
-	consts          map[string]bool // NEU: Namen, die in diesem Environment als Const deklariert wurden
+	consts          map[string]bool
 	parent          *Environment
 	currentLine     int
 	currentFile     string
 	currentFuncName string
 	fnReturn        Value
+
+	varVersion uint64
 }
 
 func tryParseFloat(s string) (float64, bool) {
@@ -240,6 +242,16 @@ func (e *Environment) GetRefStrict(name string) (*Value, bool) {
 		}
 	}
 	return nil, false
+}
+
+func (e *Environment) GetRefStrictEnv(name string) (*Environment, *Value, bool) {
+	for env := e; env != nil; env = env.parent {
+		if ptr, ok := env.vars[name]; ok {
+			return env, ptr, true
+		}
+	}
+
+	return nil, nil, false
 }
 
 func (e *Environment) GetRef(name string) *Value {
@@ -660,16 +672,38 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 	switch n := s.(type) {
 
 	case *AssignNode:
-		val := evalExpr(n.Value, env)
+
+		// ============================================================
+		// Function-Return
+		// ============================================================
 
 		if env.currentFuncName != "" && n.Name == env.currentFuncName {
+			val := evalExpr(n.Value, env)
+
+			if val.Kind == KindError {
+				return val, SignalError
+			}
+
 			env.fnReturn = val
 			return NullVal(), SignalNone
 		}
 
+		// ============================================================
+		// Deklaration
+		// ============================================================
+
 		if n.IsDeclaration {
+			val := evalExpr(n.Value, env)
+
+			if val.Kind == KindError {
+				return val, SignalError
+			}
+
 			if env.consts != nil && env.consts[n.Name] {
-				return ErrorVal(fmt.Sprintf("Fehler: '%s' wurde bereits als Konstante deklariert", n.Name)), SignalError
+				return ErrorVal(fmt.Sprintf(
+					"Fehler: '%s' wurde bereits als Konstante deklariert",
+					n.Name,
+				)), SignalError
 			}
 
 			if n.IsConst {
@@ -678,20 +712,99 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 			} else {
 				env.Define(n.Name, val, n.InLoop)
 			}
-		} else {
-			if env.IsConst(n.Name) {
-				return ErrorVal(fmt.Sprintf("Fehler: Es wird versucht die Konstante '%s' zu verändern", n.Name)), SignalError
-			}
 
-			err := env.Update(n.Name, val)
-			if err != nil {
-				scopeInfo := "Public (global)"
-				if env.parent != nil {
-					scopeInfo = "lokal (Dim) oder Public (global)"
+			return NullVal(), SignalNone
+		}
+
+		// ============================================================
+		// Normale Zuweisung
+		// ============================================================
+
+		// ------------------------------------------------------------
+		// Fast-Path für eine konstante Zahl:
+		//
+		//     y = 123
+		//
+		// Kein evalExpr() und kein NumberNode -> NumVal().
+		// ------------------------------------------------------------
+
+		if numberNode, ok := n.Value.(*NumberNode); ok {
+			if n.cachedLookupEnv == env && n.cachedPtr != nil {
+				if n.cachedConst {
+					return ErrorVal(fmt.Sprintf(
+						"Fehler: Es wird versucht die Konstante '%s' zu verändern",
+						n.Name,
+					)), SignalError
 				}
-				return ErrorVal(fmt.Sprintf("Variable '%s' muss erst mit Dim oder Public deklariert werden (nicht gefunden in %s)", n.Name, scopeInfo)), SignalError
+
+				*n.cachedPtr = Value{
+					Kind: KindNum,
+					Num:  numberNode.Value,
+				}
+
+				return NullVal(), SignalNone
 			}
 		}
+
+		// ------------------------------------------------------------
+		// Normale Auswertung
+		// ------------------------------------------------------------
+
+		val := evalExpr(n.Value, env)
+
+		if val.Kind == KindError {
+			return val, SignalError
+		}
+
+		// Fast-Path:
+		// Das Environment und der Value-Pointer wurden bereits beim
+		// ersten Zugriff ermittelt.
+		if n.cachedLookupEnv == env && n.cachedPtr != nil {
+			if n.cachedConst {
+				return ErrorVal(fmt.Sprintf(
+					"Fehler: Es wird versucht die Konstante '%s' zu verändern",
+					n.Name,
+				)), SignalError
+			}
+
+			*n.cachedPtr = val
+			return NullVal(), SignalNone
+		}
+
+		// Erster Zugriff:
+		// Variable suchen und gleichzeitig das tatsächliche Environment
+		// merken.
+		defEnv, ptr, found := env.GetRefStrictEnv(n.Name)
+
+		if !found {
+			scopeInfo := "Public (global)"
+			if env.parent != nil {
+				scopeInfo = "lokal (Dim) oder Public (global)"
+			}
+
+			return ErrorVal(fmt.Sprintf(
+				"Variable '%s' muss erst mit Dim oder Public deklariert werden (nicht gefunden in %s)",
+				n.Name,
+				scopeInfo,
+			)), SignalError
+		}
+
+		// Const-Status direkt im gefundenen Environment prüfen.
+		isConst := defEnv.consts != nil && defEnv.consts[n.Name]
+
+		// Cache aufbauen.
+		n.cachedLookupEnv = env
+		n.cachedPtr = ptr
+		n.cachedConst = isConst
+
+		if isConst {
+			return ErrorVal(fmt.Sprintf(
+				"Fehler: Es wird versucht die Konstante '%s' zu verändern",
+				n.Name,
+			)), SignalError
+		}
+
+		*ptr = val
 
 		return NullVal(), SignalNone
 
@@ -701,13 +814,44 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 			return ErrorVal("only variables supported"), SignalNone
 		}
 
-		if env.IsConst(v.Name) {
-			return ErrorVal(fmt.Sprintf("Fehler: Es wird versucht die Konstante '%s' zu verändern", v.Name)), SignalError
-		}
+		var current Value
 
-		current, ok := env.Get(v.Name)
-		if !ok {
-			return ErrorVal("undefined variable: " + v.Name), SignalNone
+		// ------------------------------------------------------------
+		// Fast-Path: bereits aufgelöste Variable
+		// ------------------------------------------------------------
+		if n.cachedLookupEnv == env && n.cachedPtr != nil {
+			if n.cachedConst {
+				return ErrorVal(fmt.Sprintf(
+					"Fehler: Es wird versucht die Konstante '%s' zu verändern",
+					v.Name,
+				)), SignalError
+			}
+
+			current = *n.cachedPtr
+		} else {
+			// --------------------------------------------------------
+			// Erster Zugriff: Variable auflösen und cachen
+			// --------------------------------------------------------
+			defEnv, ptr, found := env.GetRefStrictEnv(v.Name)
+
+			if !found {
+				return ErrorVal("undefined variable: " + v.Name), SignalNone
+			}
+
+			isConst := defEnv.consts != nil && defEnv.consts[v.Name]
+
+			n.cachedLookupEnv = env
+			n.cachedPtr = ptr
+			n.cachedConst = isConst
+
+			if isConst {
+				return ErrorVal(fmt.Sprintf(
+					"Fehler: Es wird versucht die Konstante '%s' zu verändern",
+					v.Name,
+				)), SignalError
+			}
+
+			current = *ptr
 		}
 
 		rhs := evalExpr(n.Right, env)
@@ -717,7 +861,8 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 
 		result := calculateBinaryOp(mapAssignOp(n.Op), current, rhs)
 
-		env.Set(v.Name, result)
+		*n.cachedPtr = result
+
 		return result, SignalNone
 
 	case *PrintNode:
@@ -757,33 +902,139 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 		return NullVal(), SignalNone
 
 	case *WhileNode:
-		runBody := func() (Value, Signal, bool) {
-			rv, sig := evalStatements(n.Body, env)
-			switch sig {
-			case SignalNone, SignalContinueLoop:
-				return Value{}, SignalNone, false
-			case SignalExitLoop:
-				return Value{}, SignalNone, true
-			default:
-				return rv, sig, true
+		// ------------------------------------------------------------
+		// Fast-Path: WHILE-Body besteht aus genau einer Anweisung
+		// ------------------------------------------------------------
+		if len(n.Body) == 1 {
+			body := n.Body[0]
+
+			// --------------------------------------------------------
+			// Spezial-Path:
+			// WHILE ... : x += wert : WEND
+			//
+			// evalSingleStatement() und dessen Type-Switch vermeiden.
+			// --------------------------------------------------------
+			if bodyNode, ok := body.(*CompoundAssignNode); ok {
+				if v, ok := bodyNode.Left.(*VarNode); ok {
+
+					// Variable einmalig auflösen.
+					var ptr *Value
+
+					if bodyNode.cachedLookupEnv == env && bodyNode.cachedPtr != nil {
+						if bodyNode.cachedConst {
+							return ErrorVal(fmt.Sprintf(
+								"Fehler: Es wird versucht die Konstante '%s' zu verändern",
+								v.Name,
+							)), SignalError
+						}
+
+						ptr = bodyNode.cachedPtr
+					} else {
+						defEnv, p, found := env.GetRefStrictEnv(v.Name)
+						if !found {
+							return ErrorVal("undefined variable: " + v.Name), SignalNone
+						}
+
+						isConst := defEnv.consts != nil && defEnv.consts[v.Name]
+
+						bodyNode.cachedLookupEnv = env
+						bodyNode.cachedPtr = p
+						bodyNode.cachedConst = isConst
+
+						if isConst {
+							return ErrorVal(fmt.Sprintf(
+								"Fehler: Es wird versucht die Konstante '%s' zu verändern",
+								v.Name,
+							)), SignalError
+						}
+
+						ptr = p
+					}
+
+					assignOp := mapAssignOp(bodyNode.Op)
+
+					for {
+						cond := evalExpr(n.Condition, env)
+						if cond.Kind == KindError {
+							return cond, SignalError
+						}
+
+						if !isTruthy(cond) {
+							break
+						}
+
+						rhs := evalExpr(bodyNode.Right, env)
+						if rhs.Kind == KindError {
+							return rhs, SignalNone
+						}
+
+						result := calculateBinaryOp(assignOp, *ptr, rhs)
+						*ptr = result
+
+						if result.Kind == KindError {
+							return result, SignalNone
+						}
+					}
+
+					return NullVal(), SignalNone
+				}
 			}
+
+			// --------------------------------------------------------
+			// Normaler Single-Statement-Fast-Path
+			// --------------------------------------------------------
+
+			for {
+				cond := evalExpr(n.Condition, env)
+				if cond.Kind == KindError {
+					return cond, SignalError
+				}
+
+				if !isTruthy(cond) {
+					break
+				}
+
+				rv, sig := evalSingleStatement(body, env)
+
+				switch sig {
+				case SignalNone, SignalContinueLoop:
+					// weiter
+				case SignalExitLoop:
+					return NullVal(), SignalNone
+				default:
+					return rv, sig
+				}
+			}
+
+			return NullVal(), SignalNone
 		}
 
+		// ------------------------------------------------------------
+		// Normaler Pfad: mehrere Anweisungen im WHILE-Body
+		// ------------------------------------------------------------
 		for {
 			cond := evalExpr(n.Condition, env)
 			if cond.Kind == KindError {
 				return cond, SignalError
 			}
+
 			if !isTruthy(cond) {
 				break
 			}
-			if rv, sig, stop := runBody(); stop {
-				if sig != SignalNone {
-					return rv, sig
-				}
-				break
+
+			rv, sig := evalStatements(n.Body, env)
+
+			switch sig {
+			case SignalNone, SignalContinueLoop:
+				// weiter
+			case SignalExitLoop:
+				return NullVal(), SignalNone
+			default:
+				return rv, sig
 			}
 		}
+
+		return NullVal(), SignalNone
 
 	case *DoLoopNode:
 		runBody := func() (Value, Signal, bool) {
@@ -936,45 +1187,189 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 			return startVal, SignalError
 		}
 		startNum := toNumVal(startVal)
+
 		endVal := evalExpr(n.End, env)
 		if endVal.Kind == KindError {
 			return endVal, SignalError
 		}
 		endNum := toNumVal(endVal)
+
 		step := n.Step
 		if step == 0 {
 			return ErrorVal("FOR mit STEP 0 ist nicht erlaubt"), SignalError
 		}
+
 		varPtr := env.GetRef(n.VarName)
 
-		runBody := func() (Value, Signal, bool) {
-			rv, sig := evalStatements(n.Body, env)
-			switch sig {
-			case SignalNone, SignalContinueLoop:
-				return Value{}, SignalNone, false
-			case SignalExitLoop:
-				return Value{}, SignalNone, true
-			default:
-				return rv, sig, true
+		// ------------------------------------------------------------
+		// Fast-Path: FOR-Body besteht aus genau einer Anweisung
+		// ------------------------------------------------------------
+		if len(n.Body) == 1 {
+			body := n.Body[0]
+
+			// --------------------------------------------------------
+			// Spezial-Path:
+			// FOR ... : x += wert : NEXT
+			//
+			// Den Type-Switch von evalSingleStatement() vermeiden.
+			// --------------------------------------------------------
+			if bodyNode, ok := body.(*CompoundAssignNode); ok {
+				if v, ok := bodyNode.Left.(*VarNode); ok {
+
+					// Variable einmalig auflösen.
+					var ptr *Value
+
+					if bodyNode.cachedLookupEnv == env && bodyNode.cachedPtr != nil {
+						if bodyNode.cachedConst {
+							return ErrorVal(fmt.Sprintf(
+								"Fehler: Es wird versucht die Konstante '%s' zu verändern",
+								v.Name,
+							)), SignalError
+						}
+
+						ptr = bodyNode.cachedPtr
+					} else {
+						defEnv, p, found := env.GetRefStrictEnv(v.Name)
+						if !found {
+							return ErrorVal("undefined variable: " + v.Name), SignalNone
+						}
+
+						isConst := defEnv.consts != nil && defEnv.consts[v.Name]
+
+						bodyNode.cachedLookupEnv = env
+						bodyNode.cachedPtr = p
+						bodyNode.cachedConst = isConst
+
+						if isConst {
+							return ErrorVal(fmt.Sprintf(
+								"Fehler: Es wird versucht die Konstante '%s' zu verändern",
+								v.Name,
+							)), SignalError
+						}
+
+						ptr = p
+					}
+
+					assignOp := mapAssignOp(bodyNode.Op)
+
+					if step > 0 {
+						for v := startNum; v <= endNum; v += step {
+							varPtr.Kind = KindNum
+							varPtr.Num = v
+
+							rhs := evalExpr(bodyNode.Right, env)
+							if rhs.Kind == KindError {
+								return rhs, SignalNone
+							}
+
+							result := calculateBinaryOp(assignOp, *ptr, rhs)
+							*ptr = result
+
+							if result.Kind == KindError {
+								return result, SignalNone
+							}
+						}
+					} else {
+						for v := startNum; v >= endNum; v += step {
+							varPtr.Kind = KindNum
+							varPtr.Num = v
+
+							rhs := evalExpr(bodyNode.Right, env)
+							if rhs.Kind == KindError {
+								return rhs, SignalNone
+							}
+
+							result := calculateBinaryOp(assignOp, *ptr, rhs)
+							*ptr = result
+
+							if result.Kind == KindError {
+								return result, SignalNone
+							}
+						}
+					}
+
+					return NullVal(), SignalNone
+				}
 			}
+
+			// --------------------------------------------------------
+			// Normaler Single-Statement-Fast-Path
+			// --------------------------------------------------------
+			if step > 0 {
+				for v := startNum; v <= endNum; v += step {
+					varPtr.Kind = KindNum
+					varPtr.Num = v
+
+					rv, sig := evalSingleStatement(body, env)
+
+					switch sig {
+					case SignalNone, SignalContinueLoop:
+						// weiter
+					case SignalExitLoop:
+						return NullVal(), SignalNone
+					default:
+						return rv, sig
+					}
+				}
+			} else {
+				for v := startNum; v >= endNum; v += step {
+					varPtr.Kind = KindNum
+					varPtr.Num = v
+
+					rv, sig := evalSingleStatement(body, env)
+
+					switch sig {
+					case SignalNone, SignalContinueLoop:
+						// weiter
+					case SignalExitLoop:
+						return NullVal(), SignalNone
+					default:
+						return rv, sig
+					}
+				}
+			}
+
+			return NullVal(), SignalNone
 		}
 
-		v := startNum
-		for {
-			if (step > 0 && v > endNum) || (step < 0 && v < endNum) {
-				break
-			}
-			varPtr.Kind = KindNum
-			varPtr.Num = v
+		// ------------------------------------------------------------
+		// Normaler Pfad: mehrere Anweisungen im FOR-Body
+		// ------------------------------------------------------------
+		if step > 0 {
+			for v := startNum; v <= endNum; v += step {
+				varPtr.Kind = KindNum
+				varPtr.Num = v
 
-			if rv, sig, stop := runBody(); stop {
-				if sig != SignalNone {
+				rv, sig := evalStatements(n.Body, env)
+
+				switch sig {
+				case SignalNone, SignalContinueLoop:
+					// weiter
+				case SignalExitLoop:
+					return NullVal(), SignalNone
+				default:
 					return rv, sig
 				}
-				break
 			}
-			v += step
+		} else {
+			for v := startNum; v >= endNum; v += step {
+				varPtr.Kind = KindNum
+				varPtr.Num = v
+
+				rv, sig := evalStatements(n.Body, env)
+
+				switch sig {
+				case SignalNone, SignalContinueLoop:
+					// weiter
+				case SignalExitLoop:
+					return NullVal(), SignalNone
+				default:
+					return rv, sig
+				}
+			}
 		}
+
+		return NullVal(), SignalNone
 
 	case *SelectNode:
 		valToTest := evalExpr(n.Expression, env)
@@ -1015,7 +1410,7 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 			}
 		}
 
-		if n.dispatchOK {
+		if n.dispatchOK && valToTest.Kind != KindBool {
 			var idx int
 			found := false
 
@@ -1504,15 +1899,40 @@ func evalExpr(e Expr, env *Environment) Value {
 			return NilValue
 		}
 
-		// 2. Basis-Variable holen (Scope-Chain!)
-		v, found := env.Get(n.Name)
-		if !found {
-			scopeInfo := "Public (global)"
-			if env.parent != nil {
-				scopeInfo = "lokal (Dim) oder Public (global)"
+		// 2. Basis-Variable holen.
+		//
+		// Bei wiederholten Zugriffen aus derselben Environment muss die
+		// komplette Scope-Kette nicht erneut durchsucht werden.
+		//
+		// Wir cachen bewusst nicht den *Value, sondern die Environment,
+		// in der die Variable gefunden wurde. Dadurch bleibt der Cache auch
+		// korrekt, wenn Define() den Pointer einer Variable ersetzt.
+		var v Value
+
+		if n.cachedLookupEnv == env && n.cachedDefEnv != nil && n.cachedPtr != nil {
+			v = *n.cachedPtr
+		} else {
+			defEnv, ptr, found := env.GetRefStrictEnv(n.Name)
+
+			if !found {
+				scopeInfo := "Public (global)"
+				if env.parent != nil {
+					scopeInfo = "lokal (Dim) oder Public (global)"
+				}
+
+				return ErrorVal(fmt.Sprintf(
+					"Variable '%s' ist weder %s definiert",
+					n.Name,
+					scopeInfo,
+				))
 			}
-			return ErrorVal(fmt.Sprintf("Variable '%s' ist weder %s definiert", n.Name, scopeInfo))
+
+			n.cachedLookupEnv = env
+			n.cachedDefEnv = defEnv
+			n.cachedPtr = ptr
+			v = *ptr
 		}
+
 		if v.Kind == KindNil {
 			return ErrorVal("undefined variable: " + n.Name)
 		}
@@ -1572,6 +1992,23 @@ func evalExpr(e Expr, env *Environment) Value {
 		return v
 
 	case *BinOpNode:
+		if n.cachedConst {
+			return n.cachedValue
+		}
+
+		if left, ok := n.Left.(*NumberNode); ok {
+			if right, ok := n.Right.(*NumberNode); ok {
+				if n.Op == PLUS {
+					n.cachedValue = Value{
+						Kind: KindNum,
+						Num:  left.Value + right.Value,
+					}
+					n.cachedConst = true
+					return n.cachedValue
+				}
+			}
+		}
+
 		l := evalExpr(n.Left, env)
 		if l.Kind == KindError {
 			return l
@@ -1583,14 +2020,15 @@ func evalExpr(e Expr, env *Environment) Value {
 
 		switch n.Op {
 		case PLUS:
-			// Fast-Path: häufigster Fall, keine Konvertierungsversuche nötig
 			if l.Kind == KindNum && r.Kind == KindNum {
-				return NumVal(l.Num + r.Num)
+				return Value{
+					Kind: KindNum,
+					Num:  l.Num + r.Num,
+				}
 			}
 
 			ln, errL := requireNumber(l, "+")
 			rn, errR := requireNumber(r, "+")
-
 			if errL.Kind != KindError && errR.Kind != KindError {
 				return NumVal(ln + rn)
 			}
@@ -1598,6 +2036,10 @@ func evalExpr(e Expr, env *Environment) Value {
 			return StrVal(ToString(l) + ToString(r))
 
 		case MINUS:
+			if l.Kind == KindNum && r.Kind == KindNum {
+				return NumVal(l.Num - r.Num)
+			}
+
 			ln, err := requireNumber(l, "-")
 			if err.Kind == KindError {
 				return err
@@ -1609,6 +2051,10 @@ func evalExpr(e Expr, env *Environment) Value {
 			return NumVal(ln - rn)
 
 		case MUL:
+			if l.Kind == KindNum && r.Kind == KindNum {
+				return NumVal(l.Num * r.Num)
+			}
+
 			ln, err := requireNumber(l, "*")
 			if err.Kind == KindError {
 				return err
@@ -1620,6 +2066,13 @@ func evalExpr(e Expr, env *Environment) Value {
 			return NumVal(ln * rn)
 
 		case DIV:
+			if l.Kind == KindNum && r.Kind == KindNum {
+				if r.Num == 0 {
+					return ErrorVal("Division durch Null")
+				}
+				return NumVal(l.Num / r.Num)
+			}
+
 			ln, err := requireNumber(l, "/")
 			if err.Kind == KindError {
 				return err
@@ -1677,19 +2130,34 @@ func evalExpr(e Expr, env *Environment) Value {
 			return BoolVal(!valuesAreEqual(l, r))
 
 		case LT, GT, LE, GE:
-			// 1. Den Namen des Operators holen
+			// Fast-Path: beide Werte sind bereits numerisch.
+			// requireNumber() und damit die Konvertierungen entfallen.
+			if l.Kind == KindNum && r.Kind == KindNum {
+				switch n.Op {
+				case LT:
+					return BoolVal(l.Num < r.Num)
+				case GT:
+					return BoolVal(l.Num > r.Num)
+				case LE:
+					return BoolVal(l.Num <= r.Num)
+				case GE:
+					return BoolVal(l.Num >= r.Num)
+				}
+			}
+
+			// Normaler Pfad für konvertierbare Werte.
 			opStr := n.Op.String()
 
-			// 2. Den Namen beim Aufruf von requireNumber BENUTZEN
-			ln, err := requireNumber(l, opStr) // Hier wird opStr jetzt benutzt!
+			ln, err := requireNumber(l, opStr)
 			if err.Kind == KindError {
 				return err
 			}
 
-			rn, err := requireNumber(r, opStr) // Und hier auch!
+			rn, err := requireNumber(r, opStr)
 			if err.Kind == KindError {
 				return err
 			}
+
 			switch n.Op {
 			case LT:
 				return BoolVal(ln < rn)
