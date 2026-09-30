@@ -577,9 +577,9 @@ func InitGlobal() {
 		return StrVal(string(text[start:end]))
 	})
 
-	Register("Split", "global", "s, sep", "Zerlegt einen String an einem Separator in ein Array", func(args []Value) Value {
+	Register("Split", "global", "s, sep, [removeEmpty], [unique]", "Zerlegt einen String an einem Separator in ein Array", func(args []Value) Value {
 		if len(args) < 2 {
-			return ErrorVal("usage: Split(s, sep)")
+			return ErrorVal("usage: Split(s, sep, [removeEmpty], [unique])")
 		}
 
 		text := ToString(args[0])
@@ -589,11 +589,37 @@ func InitGlobal() {
 			return ErrorVal("separator cannot be empty")
 		}
 
+		removeEmpty := false
+		unique := false
+
+		if len(args) >= 3 {
+			removeEmpty = ToBool(args[2])
+		}
+
+		if len(args) >= 4 {
+			unique = ToBool(args[3])
+		}
+
 		parts := strings.Split(text, sep)
 
-		var result []Value
-		for _, p := range parts {
-			result = append(result, StrVal(p))
+		result := make([]Value, 0, len(parts))
+		seen := make(map[string]struct{})
+
+		for _, part := range parts {
+			part = strings.TrimSpace(part)
+
+			if removeEmpty && part == "" {
+				continue
+			}
+
+			if unique {
+				if _, exists := seen[part]; exists {
+					continue
+				}
+				seen[part] = struct{}{}
+			}
+
+			result = append(result, StrVal(part))
 		}
 
 		return ArrVal(result)

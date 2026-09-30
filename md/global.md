@@ -1,7 +1,7 @@
 # 🌐 Global – Kern- & Hilfsfunktionen
 
 Enthält grundlegende Typ-Konvertierungen, String-Operationen, Hashing, Kryptografie, Prozesssteuerung und Systemabfragen.
-Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
+Kein Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
 
 ---
 
@@ -167,21 +167,25 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
 
 ## Mid(text, start, [length])
 - **Konkret:**
-  Gibt einen Teilstring ab der angegebenen Position zurück (1-basiert, wie in klassischem VB, runen-basiert wie `Left`/`Right`/`Substring`).
-  Ohne `length`: alles ab `start` bis zum Ende. Liegt `start` hinter dem Stringende, wird ein leerer String zurückgegeben. Ist `length` `0` oder negativ, wird ebenfalls ein leerer String zurückgegeben; reicht `length` über das Stringende hinaus, wird bis zum Ende abgeschnitten.
+  Gibt einen Teilstring ab der angegebenen Position zurück (1-basiert, wie in klassischem VB, Runen-basiert wie `Left`/`Right`/`Substring`).
+  Ohne `length`: alles ab `start` bis zum Ende.
+  Liegt `start` hinter dem Stringende, wird ein leerer String zurückgegeben.
+  Ist `length` `0` oder negativ, wird ebenfalls ein leerer String zurückgegeben.
+  Reicht `length` über das Stringende hinaus, wird bis zum Ende abgeschnitten.
 - **Parameter:**
   - `text`: Quellstring.
   - `start`: 1-basierte Startposition.
   - `length`: Optional. Anzahl der Zeichen. Standard: bis Stringende.
 - **Rückgabe:**
-  `StrVal`. `ErrorVal` bei falscher Parameterzahl, ungültigem `start` (kein Zahlwert oder `< 1`) oder ungültigem `length` (kein Zahlwert) — prüfbar mit `IsError`/`ErrorText`.
+  `StrVal`
+  `ErrorVal` bei falscher Parameterzahl, ungültigem `start` (kein Zahlwert oder `< 1`) oder ungültigem `length` (kein Zahlwert) – prüfbar mit `IsError`/`ErrorText`.
 
 ---
 
 ## Contains(s, sub)
 - **Konkret:**
   Prüft, ob ein Teilstring im Text enthalten ist.
-  Suche ist case-insensitiv.
+  Die Suche ist case-insensitiv.
 - **Parameter:**
   - `s`: String.
   - `sub`: Gesuchter Teilstring.
@@ -191,11 +195,18 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
 ---
 
 ## InStr(s, search)
-**Konkret:** Sucht den Teilstring `search` innerhalb von `s` und gibt dessen 1-basierte Startposition zurück. Die Suche erfolgt Runen-basiert, damit Unicode-Zeichen korrekt behandelt werden. Ist `search` leer, wird (wie in klassischem VB) Position 1 zurückgegeben. Wird der Teilstring nicht gefunden, ist das Ergebnis 0.
-**Parameter:**
-- `s` – Der zu durchsuchende Text.
-- `search` – Der gesuchte Teilstring.
-**Rückgabe:** Zahl – die 1-basierte Position des ersten Vorkommens von `search` in `s`, oder `0`, wenn nicht gefunden. Fehlt einer der Pflichtparameter, wird ein Fehlerwert zurückgegeben (siehe `IsError`/`ErrorText`).
+- **Konkret:**
+  Sucht den Teilstring `search` innerhalb von `s` und gibt dessen 1-basierte Startposition zurück.
+  Die Suche erfolgt Runen-basiert, damit Unicode-Zeichen korrekt behandelt werden.
+  Ist `search` leer, wird (wie in klassischem VB) Position `1` zurückgegeben.
+  Wird der Teilstring nicht gefunden, ist das Ergebnis `0`.
+- **Parameter:**
+  - `s`: Der zu durchsuchende Text.
+  - `search`: Der gesuchte Teilstring.
+- **Rückgabe:**
+  `NumVal`
+  1-basierte Position des ersten Vorkommens von `search` in `s`, oder `0`, wenn nicht gefunden.
+  `ErrorVal`, wenn einer der Pflichtparameter fehlt – prüfbar mit `IsError`/`ErrorText`.
 
 ---
 
@@ -207,7 +218,7 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
   - `sub`: Gesuchter Teilstring.
 - **Rückgabe:**
   `NumVal`
-  `-1` wenn nicht gefunden.
+  `-1`, wenn nicht gefunden.
 
 ---
 
@@ -219,7 +230,7 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
   - `sub`: Gesuchter Teilstring.
 - **Rückgabe:**
   `NumVal`
-  `-1` wenn nicht gefunden.
+  `-1`, wenn nicht gefunden.
 
 ---
 
@@ -236,28 +247,36 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
 ---
 
 ## ReplaceMany(text, find1, repl1, find2, repl2, ...)
-* **Konkret:**
+- **Konkret:**
   Ersetzt mehrere Teilstrings in einem Text in einem Aufruf.
-* **Parameter:**
-  * `text`: Quelltext.
-  * `find, repl`: Beliebig viele Suchtext-/Ersetzungstext-Paare.
-  * Bei einer ungeraden Anzahl zusätzlicher Argumente wird das letzte Argument ignoriert.
-* **Rückgabe:**
+- **Parameter:**
+  - `text`: Quelltext.
+  - `find, repl`: Beliebig viele Suchtext-/Ersetzungstext-Paare.
+    Bei einer ungeraden Anzahl zusätzlicher Argumente wird das letzte Argument ignoriert.
+- **Rückgabe:**
   `StrVal`
 
 ---
 
-## Split(s, sep, [unique])
+## Split(s, sep, [removeEmpty], [unique])
 - **Konkret:**
   Zerlegt einen String anhand eines Trennzeichens in ein Array.
-  Leere Segmente werden übersprungen. Teile werden getrimmt.
-  Bei `sep = " "` wird `strings.Fields` genutzt (mehrere Leerzeichen werden zusammengefasst).
+  Die einzelnen Teile werden getrimmt. Leere Elemente bleiben standardmäßig erhalten.
+  Bei `sep = " "` wird `strings.Fields` verwendet: mehrere aufeinanderfolgende Leerzeichen zählen als ein Trennzeichen, leere Elemente werden automatisch vermieden.
+  `removeEmpty` und `unique` können unabhängig voneinander oder gemeinsam verwendet werden.
 - **Parameter:**
   - `s`: Quellstring.
   - `sep`: Trennzeichen.
-  - `unique`: Optional. `BoolVal` – bei `true` werden Duplikate entfernt.
+  - `removeEmpty`: Optional. `BoolVal` – bei `true` werden leere Elemente entfernt.
+  - `unique`: Optional. `BoolVal` – bei `true` werden Duplikate entfernt. Die Reihenfolge des ersten Auftretens bleibt erhalten.
 - **Rückgabe:**
   `ArrVal`
+- **Beispiel:**
+```vbx
+Split("a;b;;a;c;", ";")              ' ["a", "b", "", "a", "c", ""]
+Split("a;b;;a;c;", ";", true)        ' ["a", "b", "a", "c"]
+Split("a;b;;a;c;", ";", true, true)  ' ["a", "b", "c"]
+```
 
 ---
 
@@ -268,18 +287,6 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
   - `s`: Quellstring.
 - **Rückgabe:**
   `StrVal`
-
----
-
-## LoadModule(name)
-- **Konkret:**
-  Lädt ein optionales Modul (nativ oder als WASM-Plugin) zur Laufzeit,
-  unabhängig von `#use`. War das Modul bereits geladen, wird sofort
-  `True` zurückgegeben, ohne erneut zu laden.
-- **Parameter:**
-  - `name`: Modulname (z. B. `"zip"`, `"pgp"`, `"yaml"`).
-- **Rückgabe:**
-  `BoolVal` bei Erfolg, sonst `ErrorVal` (prüfbar mit `IsError`/`ErrorText`).
 
 ---
 
@@ -301,7 +308,11 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
   - `val`: Zu kodierender String.
 - **Rückgabe:**
   `StrVal`
-  Beispiel: `"Hallo Welt!"` → `"Hallo+Welt%21"`.
+- **Beispiel:**
+```vbx
+Print URLEncode("Hallo Welt!")
+' Hallo+Welt%21
+```
 
 ---
 
@@ -403,6 +414,18 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
 
 ---
 
+## Password([prompt])
+- **Konkret:**
+  Liest eine Eingabe von der Konsole, ohne sie anzuzeigen (Echo unterdrückt).
+  Falls stdin kein echtes Terminal ist (z. B. Pipe), wird auf normales Zeilenlesen zurückgefallen.
+- **Parameter:**
+  - `prompt`: Optional. Text, der vor der Eingabe angezeigt wird.
+- **Rückgabe:**
+  `StrVal`
+  `ErrorVal` bei Lesefehler.
+
+---
+
 ## Alert(text)
 - **Konkret:**
   Gibt Text aus und wartet auf Bestätigung via ENTER.
@@ -426,11 +449,12 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
 
 ## Sleep(wert, [einheit], [showOutput])
 - **Konkret:**
-  Pausiert die Ausführung. Bei Sekunden/Minuten/Stunden wird ein Countdown angezeigt, der per ENTER übersprungen werden kann.
+  Pausiert die Ausführung.
+  Bei Sekunden/Minuten/Stunden wird ein Countdown angezeigt, der per ENTER übersprungen werden kann.
 - **Parameter:**
   - `wert`: Zeitwert.
   - `einheit`: Optional. `"ms"`, `"s"`, `"m"`, `"h"` (Standard: `"ms"`).
-  - `showOutput`: Optional. `BoolVal` – steuert Countdown-Anzeige (Standard: `true`).
+  - `showOutput`: Optional. `BoolVal` – steuert die Countdown-Anzeige (Standard: `true`).
 - **Rückgabe:**
   `NumVal` (übergebener Zeitwert)
 
@@ -451,11 +475,12 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
 ## Inspect(value)
 - **Konkret:**
   Debug-Hilfsfunktion: Zeigt die oberste Struktur eines Wertes auf der Konsole (Typ, bei Maps alle Schlüssel mit Typ und Wert), ohne rekursiv in die Tiefe zu gehen.
-  Bei Arrays wird nur das erste Element als Beispiel gezeigt, nicht jedes Element einzeln – nützlich um schnell zu verstehen, welche Felder z. B. `sftp.List` oder `folder.FindDuplicates` zurückgeben, ohne sich durch hunderte identisch aufgebaute Einträge scrollen zu müssen.
+  Bei Arrays wird nur das erste Element als Beispiel gezeigt, nicht jedes Element einzeln – nützlich, um schnell zu verstehen, welche Felder z. B. `sftp.List` oder `folder.FindDuplicates` zurückgeben, ohne sich durch hunderte identisch aufgebaute Einträge scrollen zu müssen.
 - **Parameter:**
   - `value`: Beliebiger Wert.
 - **Rückgabe:**
-  `NullVal` (die eigentliche Ausgabe erfolgt direkt auf der Konsole, nicht als Rückgabewert).
+  `NullVal`
+  Die eigentliche Ausgabe erfolgt direkt auf der Konsole, nicht als Rückgabewert.
 
 ---
 
@@ -465,29 +490,41 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
 - **Parameter:**
   - `expression`: Zahl oder Datumsstring.
   - `style`: Formatstring.
-- **Stile (Zahlen):**
-  - `"0.00"` – Festkomma
-  - `"Currency"` – Währung mit €
-  - `"Percent"` – Prozent
-  - `"Hex"` – Hexadezimal
-- **Stile (Datum):**
-  - `"YYYY-MM-DD"` – ISO
-  - `"DD.MM.YYYY"` – Deutsch
-  - `"ddd"` – Wochentag (Mo, Di …)
-  - `"dddd"` – Wochentag ausgeschrieben (Montag, Dienstag …)
-  - `"MMM"` – Monatsname (Jan, Feb …)
-  - `"MMMM"` – Monatsname ausgeschrieben (Januar, Februar …)
-  - `"HH"` – Stunde (24h, zweistellig)
-  - `"mm"` – Minute (zweistellig, **kleingeschrieben**)
-  - `"ss"` / `"SS"` – Sekunde (zweistellig, beide Schreibweisen möglich)
-  - **Wichtig:** `MM` (großgeschrieben) steht immer für den Monat, auch mehrfach im selben Formatstring. Für Zeitangaben `HH:mm:ss` verwenden, nicht `HH:MM:SS` – letzteres würde zweimal den Monat einsetzen statt Minute und Sekunde.
-- **Beispiel:**
-```vbx
-  Print Format(file.AccessTime(path), "YYYY-MM-DD HH:mm:ss")
-  ' 2026-08-04 12:42:25
-```
+    - Stile (Zahlen):
+      - `"0.00"` – Festkomma
+      - `"Currency"` – Währung mit €
+      - `"Percent"` – Prozent
+      - `"Hex"` – Hexadezimal
+    - Stile (Datum):
+      - `"YYYY-MM-DD"` – ISO
+      - `"DD.MM.YYYY"` – Deutsch
+      - `"ddd"` – Wochentag (Mo, Di …)
+      - `"dddd"` – Wochentag ausgeschrieben (Montag, Dienstag …)
+      - `"MMM"` – Monatsname (Jan, Feb …)
+      - `"MMMM"` – Monatsname ausgeschrieben (Januar, Februar …)
+      - `"HH"` – Stunde (24h, zweistellig)
+      - `"mm"` – Minute (zweistellig, **kleingeschrieben**)
+      - `"ss"` / `"SS"` – Sekunde (zweistellig, beide Schreibweisen möglich)
 - **Rückgabe:**
   `StrVal`
+- **Beispiel:**
+```vbx
+Print Format(file.AccessTime(path), "YYYY-MM-DD HH:mm:ss")
+' 2026-08-04 12:42:25
+```
+- **Hinweis:**
+  `MM` (großgeschrieben) steht immer für den Monat, auch mehrfach im selben Formatstring.
+  Für Zeitangaben `HH:mm:ss` verwenden, nicht `HH:MM:SS` – letzteres würde zweimal den Monat einsetzen statt Minute und Sekunde.
+
+---
+
+## PrintFormat()
+- **Konkret:**
+  Gibt eine Übersicht aller verfügbaren `Format()`-Optionen auf der Konsole aus.
+- **Parameter:**
+  Keine.
+- **Rückgabe:**
+  `NullVal`
 
 ---
 
@@ -518,7 +555,7 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
   Intern werden zunächst alle Varianten auf `\n` vereinheitlicht.
 - **Parameter:**
   - `content`: String mit gemischten Zeilenumbrüchen.
-  - `target`: Optional. `"lf"`, `"crlf"`, `"cr"`, oder `"auto"` (OS-abhängig, Standard).
+  - `target`: Optional. `"lf"`, `"crlf"`, `"cr"` oder `"auto"` (OS-abhängig, Standard).
 - **Rückgabe:**
   `StrVal`
 
@@ -564,6 +601,16 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
 
 ---
 
+## IsNull(val)
+- **Konkret:**
+  Prüft, ob ein Wert `Null`, `Nothing` oder nicht initialisiert ist (`KindNull`, `KindNil`, `KindNone`).
+- **Parameter:**
+  - `val`: Zu prüfender Wert.
+- **Rückgabe:**
+  `BoolVal`
+
+---
+
 ## IsPrime(n)
 - **Konkret:**
   Prüft, ob `n` eine Primzahl ist.
@@ -575,9 +622,52 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
 
 ---
 
+## IsArray(val)
+- **Konkret:**
+  Prüft, ob ein Wert ein Array ist (`KindArr` oder `KindArr2D`).
+- **Parameter:**
+  - `val`: Zu prüfender Wert.
+- **Rückgabe:**
+  `BoolVal`
+
+---
+
+## IsDate(val)
+- **Konkret:**
+  Prüft, ob ein String als Datum parsebar ist.
+  Unterstützte Formate identisch zu `date.*`: ISO, Deutsch, US, RFC3339.
+- **Parameter:**
+  - `val`: Zu prüfender Wert (nur `StrVal` liefert `true`).
+- **Rückgabe:**
+  `BoolVal`
+
+---
+
+## IsString(val)
+- **Konkret:**
+  Prüft, ob der Wert ein String ist (`KindStr`).
+- **Parameter:**
+  - `val`: Zu prüfender Wert.
+- **Rückgabe:**
+  `BoolVal`
+
+---
+
+## IsMap(val)
+- **Konkret:**
+  Prüft, ob der Wert eine Map ist (`KindMap`).
+- **Parameter:**
+  - `val`: Zu prüfender Wert.
+- **Rückgabe:**
+  `BoolVal`
+
+---
+
 ## Uptime()
 - **Konkret:**
   Gibt die System-Laufzeit in Sekunden zurück.
+- **Parameter:**
+  Keine.
 - **Rückgabe:**
   `NumVal`
 
@@ -586,6 +676,8 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
 ## UptimeString()
 - **Konkret:**
   Gibt die System-Uptime als lesbaren Text zurück (z. B. `"2h 15m"`).
+- **Parameter:**
+  Keine.
 - **Rückgabe:**
   `StrVal`
 
@@ -594,6 +686,8 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
 ## SystemMemory()
 - **Konkret:**
   Gibt Arbeitsspeicher-Informationen des Systems zurück.
+- **Parameter:**
+  Keine.
 - **Rückgabe:**
   `ArrVal`
   Format: `[Total, Available, UsedPercent]`
@@ -604,6 +698,8 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
 ## UserName()
 - **Konkret:**
   Gibt den aktuellen Benutzernamen zurück.
+- **Parameter:**
+  Keine.
 - **Rückgabe:**
   `StrVal`
 
@@ -612,6 +708,8 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
 ## ComputerName()
 - **Konkret:**
   Gibt den Hostnamen des Rechners zurück.
+- **Parameter:**
+  Keine.
 - **Rückgabe:**
   `StrVal`
 
@@ -619,7 +717,9 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
 
 ## UserDomain()
 - **Konkret:**
-  Gibt die Windows-Domäne zurück. Fallback auf Hostnamen (Linux/macOS).
+  Gibt die Windows-Domäne zurück. Fallback auf den Hostnamen (Linux/macOS).
+- **Parameter:**
+  Keine.
 - **Rückgabe:**
   `StrVal`
 
@@ -628,6 +728,8 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
 ## Arch()
 - **Konkret:**
   Gibt die Prozessor-Architektur zurück.
+- **Parameter:**
+  Keine.
 - **Rückgabe:**
   `StrVal`
   Beispiele: `"amd64"`, `"arm64"`.
@@ -637,6 +739,8 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
 ## OS()
 - **Konkret:**
   Gibt das Betriebssystem zurück.
+- **Parameter:**
+  Keine.
 - **Rückgabe:**
   `StrVal`
   Beispiele: `"windows"`, `"linux"`, `"darwin"`.
@@ -674,7 +778,8 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
   Keine.
 - **Rückgabe:**
   `BoolVal`
-  `true`, wenn Text vorhanden ist. `false` auch dann, wenn z.B. ein Bild statt Text in der Zwischenablage liegt. `ErrorVal`, wenn das Betriebssystem nicht unterstützt wird.
+  `true`, wenn Text vorhanden ist. `false` auch dann, wenn z. B. ein Bild statt Text in der Zwischenablage liegt.
+  `ErrorVal`, wenn das Betriebssystem nicht unterstützt wird.
 
 ---
 
@@ -704,8 +809,21 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
 ## GC()
 - **Konkret:**
   Erzwingt den Go-Garbage-Collector, um ungenutzten Speicher sofort freizugeben.
+- **Parameter:**
+  Keine.
 - **Rückgabe:**
   `NullVal`
+
+---
+
+## LoadModule(name)
+- **Konkret:**
+  Lädt ein optionales Modul (nativ oder als WASM-Plugin) zur Laufzeit, unabhängig von `#use`.
+  War das Modul bereits geladen, wird sofort `True` zurückgegeben, ohne erneut zu laden.
+- **Parameter:**
+  - `name`: Modulname (z. B. `"zip"`, `"pgp"`, `"yaml"`).
+- **Rückgabe:**
+  `BoolVal` bei Erfolg, sonst `ErrorVal` (prüfbar mit `IsError`/`ErrorText`).
 
 ---
 
@@ -724,22 +842,20 @@ Keine Namespace-Präfix – alle Funktionen sind direkt aufrufbar.
 
 ## WorkerPool(paths, maxParallel)
 - **Konkret:**
-  Startet mehrere `.vb`-/`.vbc`-Skripte über `Worker` mit einer Obergrenze an
-  gleichzeitig laufenden Prozessen. Sobald ein Skript fertig ist, wird
-  automatisch das nächste aus der Warteschlange gestartet. Kehrt erst zurück,
-  wenn alle Skripte durchgelaufen sind.
+  Startet mehrere `.vb`-/`.vbc`-Skripte über `Worker` mit einer Obergrenze an gleichzeitig laufenden Prozessen.
+  Sobald ein Skript fertig ist, wird automatisch das nächste aus der Warteschlange gestartet.
+  Kehrt erst zurück, wenn alle Skripte durchgelaufen sind.
 - **Parameter:**
   - `paths`: Array von Skript-Pfaden.
-  - `maxParallel`: Maximale Anzahl gleichzeitig laufender Worker. Werte < 1 werden auf 1 gesetzt.
+  - `maxParallel`: Maximale Anzahl gleichzeitig laufender Worker. Werte `< 1` werden auf `1` gesetzt.
 - **Rückgabe:**
   `ArrVal`
   Array von `BoolVal` (Erfolg pro Skript), in derselben Reihenfolge wie `paths`.
   `false` an einer Position, wenn das jeweilige Skript nicht gestartet werden konnte.
-
 - **Beispiel:**
 ```vbx
-DIM shares: shares = {"dedup_share1.vbx", "dedup_share2.vbx", "dedup_share3.vbx", "dedup_share4.vbx"}
-DIM results: results = WorkerPool(shares, 2)   ' nie mehr als 2 gleichzeitig
+DIM shares = {"dedup_share1.vbx", "dedup_share2.vbx", "dedup_share3.vbx", "dedup_share4.vbx"}
+DIM results = WorkerPool(shares, 2)   ' nie mehr als 2 gleichzeitig
 
 FOR EACH i, ok IN results
     IF ok THEN
@@ -749,20 +865,17 @@ FOR EACH i, ok IN results
     END IF
 NEXT
 ```
-
 - **Hinweis:**
-  `WorkerPool` blockiert das Skript, in dem es aufgerufen wird, bis alle
-  übergebenen Skripte durchgelaufen sind — anders als `Worker` selbst, das
-  sofort zurückkehrt. Für den Fire-and-Forget-Effekt aus Nutzersicht das
-  aufrufende Skript wiederum selbst per `Worker` starten:
+  `WorkerPool` blockiert das aufrufende Skript, bis alle übergebenen Skripte durchgelaufen sind – anders als `Worker`, das sofort zurückkehrt.
+  Für den Fire-and-Forget-Effekt aus Nutzersicht das aufrufende Skript wiederum selbst per `Worker` starten:
 ```vbx
 ' orchestrator.vbx
-DIM shares: shares = {"dedup_share1.vbx", "dedup_share2.vbx", "dedup_share3.vbx"}
-DIM results: results = WorkerPool(shares, 2)
+DIM shares = {"dedup_share1.vbx", "dedup_share2.vbx", "dedup_share3.vbx"}
+DIM results = WorkerPool(shares, 2)
 gotify.Send("NAS-Dedup über alle Shares abgeschlossen")
 ```
-```
-Worker("orchestrator.vb")   ' Shell/aufrufendes Skript bekommt sofort die Kontrolle zurück
+```vbx
+Worker("orchestrator.vb")   ' aufrufendes Skript bekommt sofort die Kontrolle zurück
 ```
 
 ---
@@ -776,13 +889,9 @@ Worker("orchestrator.vb")   ' Shell/aufrufendes Skript bekommt sofort die Kontro
 - **Rückgabe:**
   `StrVal`
   Pfad der erzeugten `.vbc`-Datei.
-
-- **⚠️ Sicherheitshinweis:**
-  `.vbc` schützt vor beiläufigem Lesen, ist aber keine kryptographische
-  Geheimhaltung – der Interpreter muss selbst entschlüsseln können, wer
-  gezielt herankommen will, kann das umgehen. Keine Passwörter oder
-  Secrets im Klartext ins Skript schreiben; stattdessen zur Laufzeit
-  über Umgebungsvariablen, Docker Secrets oder config-File einbinden.
+- **Hinweis:**
+  ⚠️ `.vbc` schützt vor beiläufigem Lesen, ist aber keine kryptografische Geheimhaltung – der Interpreter muss selbst entschlüsseln können, wer gezielt herankommen will, kann das umgehen.
+  Keine Passwörter oder Secrets im Klartext ins Skript schreiben; stattdessen zur Laufzeit über Umgebungsvariablen, Docker Secrets oder Config-File einbinden.
 
 ---
 
@@ -791,75 +900,5 @@ Worker("orchestrator.vb")   ' Shell/aufrufendes Skript bekommt sofort die Kontro
   Prüft, ob eine Datei ein gültiges verschlüsseltes `.vbc`-Skript mit Magic-Header ist.
 - **Parameter:**
   - `path`: Dateipfad.
-- **Rückgabe:**
-  `BoolVal`
-
----
-
-## Password([prompt])
-- **Konkret:**
-  Liest eine Eingabe von der Konsole ohne sie anzuzeigen (Echo unterdrückt).
-  Falls stdin kein echtes Terminal ist (z. B. Pipe), wird auf normales Zeilenlesen zurückgefallen.
-- **Parameter:**
-  - `prompt`: Optional. Text der vor der Eingabe angezeigt wird.
-- **Rückgabe:**
-  `StrVal`, `ErrorVal` bei Lesefehler.
-
----
-
-## IsArray(val)
-- **Konkret:**
-  Prüft ob ein Wert ein Array ist (`KindArr` oder `KindArr2D`).
-- **Parameter:**
-  - `val`: Zu prüfender Wert.
-- **Rückgabe:**
-  `BoolVal`
-
----
-
-## IsNull(val)
-- **Konkret:**
-  Prüft ob ein Wert `Null`, `Nothing` oder nicht initialisiert ist (`KindNull`, `KindNil`, `KindNone`).
-- **Parameter:**
-  - `val`: Zu prüfender Wert.
-- **Rückgabe:**
-  `BoolVal`
-
----
-
-## PrintFormat()
-- **Konkret:**
-  Gibt eine Übersicht aller verfügbaren `Format()`-Optionen auf der Konsole aus.
-- **Rückgabe:**
-  `NullVal`
-
----
-
-## IsDate(val)
-- **Konkret:**
-  Prüft ob ein String als Datum parsebar ist.
-  Unterstützte Formate identisch zu `date.*`: ISO, Deutsch, US, RFC3339.
-- **Parameter:**
-  - `val`: Zu prüfender Wert (nur `StrVal` gibt `true`).
-- **Rückgabe:**
-  `BoolVal`
-
----
-
-## IsString(val)
-- **Konkret:**
-  Prüft ob der Wert ein String ist (`KindStr`).
-- **Parameter:**
-  - `val`: Zu prüfender Wert.
-- **Rückgabe:**
-  `BoolVal`
-
----
-
-## IsMap(val)
-- **Konkret:**
-  Prüft ob der Wert eine Map ist (`KindMap`).
-- **Parameter:**
-  - `val`: Zu prüfender Wert.
 - **Rückgabe:**
   `BoolVal`

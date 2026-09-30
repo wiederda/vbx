@@ -248,7 +248,6 @@ werden, reine Aufrufe ohne Zuweisung haben keine Wirkung auf die Variable.
 ---
 
 ## array.NaturalSort(array)
-
 - **Konkret:**
   Sortiert ein Array nach einer natürlichen, menschenlesbaren Reihenfolge und gibt eine sortierte Kopie zurück.
   Im Gegensatz zu `array.Sort` berücksichtigt `NaturalSort` Zahlen innerhalb von Texten. Dadurch werden beispielsweise `Film2` und `Film10` korrekt sortiert.

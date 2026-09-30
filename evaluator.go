@@ -127,7 +127,19 @@ func calculateBinaryOp(op TokenType, l Value, r Value) Value {
 	switch op {
 
 	case PLUS:
-		return NumVal(l.Num + r.Num)
+		// Zwei Strings werden als Strings verkettet.
+		if l.Kind == KindStr && r.Kind == KindStr {
+			return StrVal(l.Str + r.Str)
+		}
+
+		// Zahlen werden addiert.
+		if ln, ok := tryNumber(l); ok {
+			if rn, ok := tryNumber(r); ok {
+				return NumVal(ln + rn)
+			}
+		}
+
+		return StrVal(ToString(l) + ToString(r))
 
 	case MINUS:
 		return NumVal(l.Num - r.Num)
@@ -270,36 +282,34 @@ func (e *Environment) PutInternal(name string, val Value) {
 }
 
 // Define erstellt IMMER eine Variable im aktuellen Scope (für DIM)
+// Define erstellt IMMER eine Variable im aktuellen Scope (für DIM)
 func (e *Environment) Define(name string, val Value, inLoop bool) {
-	// ANSI Farbcodes
+	e.defineInternal(name, val, inLoop, false)
+}
+
+func (e *Environment) defineInternal(name string, val Value, inLoop bool, suppressShadowInfo bool) {
 	const (
 		colorYellow = "\033[33m"
 		colorCyan   = "\033[36m"
 		colorReset  = "\033[0m"
 	)
 
-	_, existsLocally := e.vars[name]
-
-	if existsLocally {
-		if inLoop {
-			// Freifahrtschein: Wert in der Schleife einfach aktualisieren
-			e.vars[name] = &val
-			return
+	if ptr, existsLocally := e.vars[name]; existsLocally {
+		if !inLoop {
+			fmt.Fprintf(os.Stderr, "%s![HINWEIS]: Variable '%s' bereits deklariert.%s\n", colorYellow, name, colorReset)
 		}
-		// Klassischer Doppel-Dim außerhalb einer Schleife -> GELB
-		fmt.Printf("%s![HINWEIS]: Variable '%s' bereits deklariert.%s\n", colorYellow, name, colorReset)
-	} else {
-		// Optional: Falls die Variable in einem äußeren Scope existiert (Shadowing)
-		if e.parent != nil {
-			if _, existsAbove := e.parent.Get(name); existsAbove {
-				// Einmalige Info in Cyan beim ersten Schleifendurchlauf
-				fmt.Printf("%s![INFO]: Variable '%s' wird im lokalen Scope verwendet (Shadowing).%s\n", colorCyan, name, colorReset)
-			}
+		*ptr = val // Pointer bleibt stabil -> gecachte Zugriffe bleiben gültig
+		return
+	}
+
+	if e.parent != nil && !suppressShadowInfo {
+		if _, existsAbove := e.parent.Get(name); existsAbove {
+			fmt.Fprintf(os.Stderr, "%s![INFO]: Variable '%s' wird im lokalen Scope verwendet (Shadowing).%s\n", colorCyan, name, colorReset)
 		}
 	}
 
-	// Wert setzen/speichern
-	e.vars[name] = &val
+	v := val
+	e.vars[name] = &v
 }
 
 // DefineConst wie Define, unterdrückt aber den Shadowing-Hinweis:
@@ -308,33 +318,6 @@ func (e *Environment) Define(name string, val Value, inLoop bool) {
 // gleich benennen wie global), kein warnungswürdiger Sonderfall.
 func (e *Environment) DefineConst(name string, val Value) {
 	e.defineInternal(name, val, false, true)
-}
-
-func (e *Environment) defineInternal(name string, val Value, inLoop bool, suppressShadowInfo bool) {
-	// ANSI Farbcodes
-	const (
-		colorYellow = "\033[33m"
-		colorCyan   = "\033[36m"
-		colorReset  = "\033[0m"
-	)
-
-	_, existsLocally := e.vars[name]
-
-	if existsLocally {
-		if inLoop {
-			e.vars[name] = &val
-			return
-		}
-		fmt.Printf("%s![HINWEIS]: Variable '%s' bereits deklariert.%s\n", colorYellow, name, colorReset)
-	} else {
-		if e.parent != nil && !suppressShadowInfo {
-			if _, existsAbove := e.parent.Get(name); existsAbove {
-				fmt.Printf("%s![INFO]: Variable '%s' wird im lokalen Scope verwendet (Shadowing).%s\n", colorCyan, name, colorReset)
-			}
-		}
-	}
-
-	e.vars[name] = &val
 }
 
 // MarkConst markiert einen im AKTUELLEN Environment bereits vorhandenen
@@ -811,14 +794,11 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 	case *CompoundAssignNode:
 		v, ok := n.Left.(*VarNode)
 		if !ok {
-			return ErrorVal("only variables supported"), SignalNone
+			return ErrorVal("only variables supported"), SignalError
 		}
 
 		var current Value
 
-		// ------------------------------------------------------------
-		// Fast-Path: bereits aufgelöste Variable
-		// ------------------------------------------------------------
 		if n.cachedLookupEnv == env && n.cachedPtr != nil {
 			if n.cachedConst {
 				return ErrorVal(fmt.Sprintf(
@@ -826,16 +806,11 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 					v.Name,
 				)), SignalError
 			}
-
 			current = *n.cachedPtr
 		} else {
-			// --------------------------------------------------------
-			// Erster Zugriff: Variable auflösen und cachen
-			// --------------------------------------------------------
 			defEnv, ptr, found := env.GetRefStrictEnv(v.Name)
-
 			if !found {
-				return ErrorVal("undefined variable: " + v.Name), SignalNone
+				return ErrorVal("undefined variable: " + v.Name), SignalError
 			}
 
 			isConst := defEnv.consts != nil && defEnv.consts[v.Name]
@@ -856,13 +831,15 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 
 		rhs := evalExpr(n.Right, env)
 		if rhs.Kind == KindError {
-			return rhs, SignalNone
+			return rhs, SignalError
 		}
 
 		result := calculateBinaryOp(mapAssignOp(n.Op), current, rhs)
+		if result.Kind == KindError {
+			return result, SignalError // Variable bleibt unverändert
+		}
 
 		*n.cachedPtr = result
-
 		return result, SignalNone
 
 	case *PrintNode:
@@ -911,8 +888,6 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 			// --------------------------------------------------------
 			// Spezial-Path:
 			// WHILE ... : x += wert : WEND
-			//
-			// evalSingleStatement() und dessen Type-Switch vermeiden.
 			// --------------------------------------------------------
 			if bodyNode, ok := body.(*CompoundAssignNode); ok {
 				if v, ok := bodyNode.Left.(*VarNode); ok {
@@ -932,7 +907,7 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 					} else {
 						defEnv, p, found := env.GetRefStrictEnv(v.Name)
 						if !found {
-							return ErrorVal("undefined variable: " + v.Name), SignalNone
+							return ErrorVal("undefined variable: " + v.Name), SignalError // GEÄNDERT (1)
 						}
 
 						isConst := defEnv.consts != nil && defEnv.consts[v.Name]
@@ -965,15 +940,14 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 
 						rhs := evalExpr(bodyNode.Right, env)
 						if rhs.Kind == KindError {
-							return rhs, SignalNone
+							return rhs, SignalError // GEÄNDERT (2)
 						}
 
 						result := calculateBinaryOp(assignOp, *ptr, rhs)
-						*ptr = result
-
-						if result.Kind == KindError {
-							return result, SignalNone
+						if result.Kind == KindError { // GEÄNDERT (3): erst prüfen ...
+							return result, SignalError
 						}
+						*ptr = result // ... dann speichern
 					}
 
 					return NullVal(), SignalNone
@@ -981,9 +955,8 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 			}
 
 			// --------------------------------------------------------
-			// Normaler Single-Statement-Fast-Path
+			// Normaler Single-Statement-Fast-Path (unverändert)
 			// --------------------------------------------------------
-
 			for {
 				cond := evalExpr(n.Condition, env)
 				if cond.Kind == KindError {
@@ -1010,7 +983,7 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 		}
 
 		// ------------------------------------------------------------
-		// Normaler Pfad: mehrere Anweisungen im WHILE-Body
+		// Normaler Pfad: mehrere Anweisungen im WHILE-Body (unverändert)
 		// ------------------------------------------------------------
 		for {
 			cond := evalExpr(n.Condition, env)
@@ -1043,7 +1016,7 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 			case SignalNone:
 				return Value{}, SignalNone, false
 			case SignalContinueLoop:
-				// Bei Do ... Loop: direkt zum nächsten Durchlauf, Fuß-Bedingung überspringen
+				// Bei Do ... Loop: direkt zur Fuß-Bedingung springen
 				return Value{}, SignalContinueLoop, false
 			case SignalExitLoop:
 				return Value{}, SignalNone, true
@@ -1070,9 +1043,6 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 					return rv, sig
 				}
 				break
-			}
-			if sig == SignalContinueLoop {
-				continue
 			}
 
 			// Fuß-Bedingung
@@ -1180,7 +1150,6 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 		} else {
 			return ErrorVal("FOR EACH: Erwartet Array oder Map"), SignalError
 		}
-
 	case *ForNode:
 		startVal := evalExpr(n.Start, env)
 		if startVal.Kind == KindError {
@@ -1210,8 +1179,6 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 			// --------------------------------------------------------
 			// Spezial-Path:
 			// FOR ... : x += wert : NEXT
-			//
-			// Den Type-Switch von evalSingleStatement() vermeiden.
 			// --------------------------------------------------------
 			if bodyNode, ok := body.(*CompoundAssignNode); ok {
 				if v, ok := bodyNode.Left.(*VarNode); ok {
@@ -1231,7 +1198,7 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 					} else {
 						defEnv, p, found := env.GetRefStrictEnv(v.Name)
 						if !found {
-							return ErrorVal("undefined variable: " + v.Name), SignalNone
+							return ErrorVal("undefined variable: " + v.Name), SignalError // GEÄNDERT (1)
 						}
 
 						isConst := defEnv.consts != nil && defEnv.consts[v.Name]
@@ -1253,38 +1220,36 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 					assignOp := mapAssignOp(bodyNode.Op)
 
 					if step > 0 {
-						for v := startNum; v <= endNum; v += step {
+						for cur := startNum; cur <= endNum; cur += step {
 							varPtr.Kind = KindNum
-							varPtr.Num = v
+							varPtr.Num = cur
 
 							rhs := evalExpr(bodyNode.Right, env)
 							if rhs.Kind == KindError {
-								return rhs, SignalNone
+								return rhs, SignalError // GEÄNDERT (2)
 							}
 
 							result := calculateBinaryOp(assignOp, *ptr, rhs)
-							*ptr = result
-
-							if result.Kind == KindError {
-								return result, SignalNone
+							if result.Kind == KindError { // GEÄNDERT (3)
+								return result, SignalError
 							}
+							*ptr = result
 						}
 					} else {
-						for v := startNum; v >= endNum; v += step {
+						for cur := startNum; cur >= endNum; cur += step {
 							varPtr.Kind = KindNum
-							varPtr.Num = v
+							varPtr.Num = cur
 
 							rhs := evalExpr(bodyNode.Right, env)
 							if rhs.Kind == KindError {
-								return rhs, SignalNone
+								return rhs, SignalError // GEÄNDERT (2)
 							}
 
 							result := calculateBinaryOp(assignOp, *ptr, rhs)
-							*ptr = result
-
-							if result.Kind == KindError {
-								return result, SignalNone
+							if result.Kind == KindError { // GEÄNDERT (3)
+								return result, SignalError
 							}
+							*ptr = result
 						}
 					}
 
@@ -1293,7 +1258,7 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 			}
 
 			// --------------------------------------------------------
-			// Normaler Single-Statement-Fast-Path
+			// Normaler Single-Statement-Fast-Path (unverändert)
 			// --------------------------------------------------------
 			if step > 0 {
 				for v := startNum; v <= endNum; v += step {
@@ -1333,7 +1298,7 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 		}
 
 		// ------------------------------------------------------------
-		// Normaler Pfad: mehrere Anweisungen im FOR-Body
+		// Normaler Pfad: mehrere Anweisungen im FOR-Body (unverändert)
 		// ------------------------------------------------------------
 		if step > 0 {
 			for v := startNum; v <= endNum; v += step {
@@ -1393,9 +1358,14 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 					}
 					switch lit.Kind {
 					case KindNum:
-						n.dispatchNumCache[lit.Num] = idx
+						if _, dup := n.dispatchNumCache[lit.Num]; !dup {
+							n.dispatchNumCache[lit.Num] = idx
+						}
 					case KindStr:
-						n.dispatchStrCache[strings.ToLower(lit.Str)] = idx
+						key := strings.ToLower(lit.Str)
+						if _, dup := n.dispatchStrCache[key]; !dup {
+							n.dispatchStrCache[key] = idx
+						}
 					default:
 						// Bool/Null-Case-Werte (selten) -> Fastpath deaktivieren,
 						// linearer Scan uebernimmt komplett.
@@ -1594,9 +1564,16 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 		return NullVal(), SignalNone
 
 	case *ArrayAssignNode:
-		vp, found := env.GetRefStrict(n.Name)
+		defEnv, vp, found := env.GetRefStrictEnv(n.Name)
 		if !found {
 			return ErrorVal("Variable nicht deklariert: " + n.Name), SignalError
+		}
+
+		if defEnv.consts != nil && defEnv.consts[n.Name] {
+			return ErrorVal(fmt.Sprintf(
+				"Fehler: Es wird versucht die Konstante '%s' zu verändern",
+				n.Name,
+			)), SignalError
 		}
 
 		val := evalExpr(n.Value, env)
@@ -1604,18 +1581,22 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 			return val, SignalError
 		}
 
-		idx1Val := evalExpr(n.Index, env)
-		idx1 := int(toNumVal(idx1Val))
+		idx1, errV := toIndex(evalExpr(n.Index, env))
+		if errV.Kind == KindError {
+			return errV, SignalError
+		}
 
 		switch vp.Kind {
 		case KindArr2D:
 			if n.Index2 == nil {
 				return ErrorVal("Zweiter Index fehlt"), SignalError
 			}
-			idx2Val := evalExpr(n.Index2, env)
-			idx2 := int(toNumVal(idx2Val))
+			idx2, errV := toIndex(evalExpr(n.Index2, env))
+			if errV.Kind == KindError {
+				return errV, SignalError
+			}
 
-			if idx1 < 0 || idx1 >= len(vp.Arr2D) || idx2 < 0 || (len(vp.Arr2D) > 0 && idx2 >= len(vp.Arr2D[0])) {
+			if idx1 < 0 || idx1 >= len(vp.Arr2D) || idx2 < 0 || idx2 >= len(vp.Arr2D[idx1]) {
 				return ErrorVal(fmt.Sprintf("Matrix-Index (%d,%d) außerhalb der Grenzen", idx1, idx2)), SignalError
 			}
 			vp.Arr2D[idx1][idx2] = val
@@ -1630,7 +1611,7 @@ func evalSingleStatement(s Stmt, env *Environment) (Value, Signal) {
 				for i := len(vp.Arr); i < len(newArr); i++ {
 					newArr[i] = NumVal(0)
 				}
-				vp.Arr = newArr // direkt über den Pointer — landet sofort im gespeicherten Value
+				vp.Arr = newArr
 			}
 			vp.Arr[idx1] = val
 
@@ -1996,17 +1977,33 @@ func evalExpr(e Expr, env *Environment) Value {
 			return n.cachedValue
 		}
 
+		// Constant Folding: zwei Zahlenliterale mit + - * einmalig verrechnen.
 		if left, ok := n.Left.(*NumberNode); ok {
 			if right, ok := n.Right.(*NumberNode); ok {
-				if n.Op == PLUS {
-					n.cachedValue = Value{
-						Kind: KindNum,
-						Num:  left.Value + right.Value,
-					}
+				switch n.Op {
+				case PLUS, MINUS, MUL:
+					n.cachedValue = calculateBinaryOp(n.Op, NumVal(left.Value), NumVal(right.Value))
 					n.cachedConst = true
 					return n.cachedValue
 				}
 			}
+		}
+
+		// Short-Circuit: rechte Seite nur auswerten, wenn nötig.
+		if n.Op == AND || n.Op == OR {
+			l := evalExpr(n.Left, env)
+			if l.Kind == KindError {
+				return l
+			}
+			lt := isTruthy(l)
+			if (n.Op == AND && !lt) || (n.Op == OR && lt) {
+				return BoolVal(lt)
+			}
+			r := evalExpr(n.Right, env)
+			if r.Kind == KindError {
+				return r
+			}
+			return BoolVal(isTruthy(r))
 		}
 
 		l := evalExpr(n.Left, env)
@@ -2020,154 +2017,67 @@ func evalExpr(e Expr, env *Environment) Value {
 
 		switch n.Op {
 		case PLUS:
-			if l.Kind == KindNum && r.Kind == KindNum {
-				return Value{
-					Kind: KindNum,
-					Num:  l.Num + r.Num,
-				}
+			// Zwei Strings werden als Strings verkettet.
+			if l.Kind == KindStr && r.Kind == KindStr {
+				return StrVal(l.Str + r.Str)
 			}
 
-			ln, errL := requireNumber(l, "+")
-			rn, errR := requireNumber(r, "+")
-			if errL.Kind != KindError && errR.Kind != KindError {
-				return NumVal(ln + rn)
+			// Zahlen werden addiert.
+			if ln, ok := tryNumber(l); ok {
+				if rn, ok := tryNumber(r); ok {
+					return NumVal(ln + rn)
+				}
 			}
 
 			return StrVal(ToString(l) + ToString(r))
 
-		case MINUS:
+		case MINUS, MUL, DIV:
 			if l.Kind == KindNum && r.Kind == KindNum {
-				return NumVal(l.Num - r.Num)
+				return calculateBinaryOp(n.Op, l, r)
 			}
-
-			ln, err := requireNumber(l, "-")
+			ln, err := requireNumber(l, n.Op.String())
 			if err.Kind == KindError {
 				return err
 			}
-			rn, err := requireNumber(r, "-")
+			rn, err := requireNumber(r, n.Op.String())
 			if err.Kind == KindError {
 				return err
 			}
-			return NumVal(ln - rn)
-
-		case MUL:
-			if l.Kind == KindNum && r.Kind == KindNum {
-				return NumVal(l.Num * r.Num)
-			}
-
-			ln, err := requireNumber(l, "*")
-			if err.Kind == KindError {
-				return err
-			}
-			rn, err := requireNumber(r, "*")
-			if err.Kind == KindError {
-				return err
-			}
-			return NumVal(ln * rn)
-
-		case DIV:
-			if l.Kind == KindNum && r.Kind == KindNum {
-				if r.Num == 0 {
-					return ErrorVal("Division durch Null")
-				}
-				return NumVal(l.Num / r.Num)
-			}
-
-			ln, err := requireNumber(l, "/")
-			if err.Kind == KindError {
-				return err
-			}
-			rn, err := requireNumber(r, "/")
-			if err.Kind == KindError {
-				return err
-			}
-			if rn == 0 {
-				return ErrorVal("Division durch Null")
-			}
-			return NumVal(ln / rn)
+			return calculateBinaryOp(n.Op, NumVal(ln), NumVal(rn))
 
 		case AMP:
 			return StrVal(ToString(l) + ToString(r))
 
-		case AND:
-			if !isTruthy(l) {
-				return BoolVal(false)
+		case EQ, NEQ:
+			var eq bool
+			switch {
+			case l.Kind == KindBool && r.Kind == KindBool:
+				eq = l.Bool == r.Bool
+			case l.Kind == KindStr || r.Kind == KindStr:
+				eq = ToString(l) == ToString(r)
+			case l.Kind == KindNum && r.Kind == KindNum:
+				eq = l.Num == r.Num
+			default: // gemischte Typen (z.B. Bool vs Num)
+				eq = valuesAreEqual(l, r)
 			}
-			return BoolVal(isTruthy(r))
-
-		case OR:
-			if isTruthy(l) {
-				return BoolVal(true)
-			}
-			return BoolVal(isTruthy(r))
-
-		case EQ:
-			// 1. Booleans
-			if l.Kind == KindBool && r.Kind == KindBool {
-				return BoolVal(l.Bool == r.Bool)
-			}
-			// 2. Strings (einer von beiden ist String)
-			if l.Kind == KindStr || r.Kind == KindStr {
-				return BoolVal(ToString(l) == ToString(r))
-			}
-			// 3. Zahlen
-			if l.Kind == KindNum && r.Kind == KindNum {
-				return BoolVal(l.Num == r.Num)
-			}
-			// 4. Fallback für gemischte Typen (z.B. Bool vs Num)
-			return BoolVal(valuesAreEqual(l, r))
-
-		case NEQ:
-			if l.Kind == KindBool && r.Kind == KindBool {
-				return BoolVal(l.Bool != r.Bool)
-			}
-			if l.Kind == KindStr || r.Kind == KindStr {
-				return BoolVal(ToString(l) != ToString(r))
-			}
-			if l.Kind == KindNum && r.Kind == KindNum {
-				return BoolVal(l.Num != r.Num)
-			}
-			return BoolVal(!valuesAreEqual(l, r))
+			return BoolVal(eq == (n.Op == EQ))
 
 		case LT, GT, LE, GE:
-			// Fast-Path: beide Werte sind bereits numerisch.
-			// requireNumber() und damit die Konvertierungen entfallen.
 			if l.Kind == KindNum && r.Kind == KindNum {
-				switch n.Op {
-				case LT:
-					return BoolVal(l.Num < r.Num)
-				case GT:
-					return BoolVal(l.Num > r.Num)
-				case LE:
-					return BoolVal(l.Num <= r.Num)
-				case GE:
-					return BoolVal(l.Num >= r.Num)
-				}
+				return BoolVal(compareNum(n.Op, l.Num, r.Num))
 			}
-
-			// Normaler Pfad für konvertierbare Werte.
-			opStr := n.Op.String()
-
-			ln, err := requireNumber(l, opStr)
+			ln, err := requireNumber(l, n.Op.String())
 			if err.Kind == KindError {
 				return err
 			}
-
-			rn, err := requireNumber(r, opStr)
+			rn, err := requireNumber(r, n.Op.String())
 			if err.Kind == KindError {
 				return err
 			}
+			return BoolVal(compareNum(n.Op, ln, rn))
 
-			switch n.Op {
-			case LT:
-				return BoolVal(ln < rn)
-			case GT:
-				return BoolVal(ln > rn)
-			case LE:
-				return BoolVal(ln <= rn)
-			case GE:
-				return BoolVal(ln >= rn)
-			}
+		default:
+			return ErrorVal(fmt.Sprintf("Unbekannter Operator: %v", n.Op))
 		}
 
 	default:

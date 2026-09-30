@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -188,7 +189,7 @@ func ToString(v Value) string {
 		return v.Str
 
 	case KindNum:
-		return strconv.FormatFloat(v.Num, 'g', -1, 64)
+		return formatNum(v.Num)
 
 	case KindBool:
 		if v.Bool {
@@ -312,15 +313,21 @@ func FolderEmpty(args []Value) Value {
 	path := args[0].Str
 	force := false
 	if len(args) >= 2 {
-		val := strings.ToLower(args[1].Str)
-		if val == "true" || val == "1" || val == "force" || val == "-f" {
-			force = true
+		a := args[1]
+		if a.Kind == KindStr {
+			s := strings.ToLower(strings.TrimSpace(a.Str))
+			force = s == "true" || s == "1" || s == "force" || s == "-f"
+		} else {
+			force = ToBool(a) // BoolVal(true), 1, ...
 		}
 	}
 
 	abs, errVal := absPathVal(path)
 	if errVal != nil {
 		return *errVal
+	}
+	if filepath.Dir(abs) == abs {
+		return ErrorVal("folder.EmptyFolder: Wurzelverzeichnis wird nicht geleert: " + abs)
 	}
 
 	entries, err := os.ReadDir(abs)
@@ -336,7 +343,11 @@ func FolderEmpty(args []Value) Value {
 		fullPath := filepath.Join(abs, e.Name())
 
 		if force {
-			os.Chmod(fullPath, 0666) // Schreibschutz aufheben
+			mode := os.FileMode(0666)
+			if e.IsDir() {
+				mode = 0777 // 0666 würde unter Linux das Execute-Bit entziehen
+			}
+			_ = os.Chmod(fullPath, mode)
 		}
 
 		err := os.RemoveAll(fullPath)
@@ -349,6 +360,54 @@ func FolderEmpty(args []Value) Value {
 	// 3. Rückgabe als Array
 	// Wenn alles geklappt hat, ist das Array leer (Länge 0)
 	return Value{Kind: KindArr, Arr: failedItems}
+}
+
+// tryNumber: Zahl oder als Zahl lesbarer String, ohne Fehlerwert/Allokation.
+// "Inf"/"NaN" gelten NICHT als Zahl (ParseFloat würde sie akzeptieren).
+func tryNumber(v Value) (float64, bool) {
+	switch v.Kind {
+	case KindNum:
+		return v.Num, true
+	case KindStr:
+		s := strings.TrimSpace(v.Str)
+		if s == "" {
+			return 0, false
+		}
+		s = strings.ReplaceAll(s, ",", ".")
+		f, err := strconv.ParseFloat(s, 64)
+		if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
+			return 0, false
+		}
+		return f, true
+	}
+	return 0, false
+}
+
+// compareNum: numerischer Vergleich für LT, GT, LE, GE.
+func compareNum(op TokenType, a, b float64) bool {
+	switch op {
+	case LT:
+		return a < b
+	case GT:
+		return a > b
+	case LE:
+		return a <= b
+	default: // GE
+		return a >= b
+	}
+}
+
+// toIndex wandelt einen Index-Ausdruck in int um und lehnt Fehlerwerte,
+// NaN/Inf und absurd große Werte ab.
+func toIndex(v Value) (int, Value) {
+	if v.Kind == KindError {
+		return 0, v
+	}
+	f := toNumVal(v)
+	if math.IsNaN(f) || math.IsInf(f, 0) || f > math.MaxInt32 || f < math.MinInt32 {
+		return 0, ErrorVal("Ungültiger Index: " + ToString(v))
+	}
+	return int(f), Value{}
 }
 
 // Verwendet Readdirnames(1), um bei der ersten gefundenen Datei sofort abzubrechen.
@@ -394,18 +453,51 @@ func FolderIsEmpty(args []Value) Value {
 	return BoolVal(false)
 }
 
-// Hilfsfunktion: längster gemeinsamer Präfix von zwei Pfaden
+// commonPrefix: längster gemeinsamer Pfad-Präfix (komponentenweise).
+// Unter Windows case-insensitiv; Root ("/" bzw. "C:\") bleibt erhalten.
 func commonPrefix(a, b string) string {
-	partsA := strings.Split(filepath.Clean(a), string(os.PathSeparator))
-	partsB := strings.Split(filepath.Clean(b), string(os.PathSeparator))
-	var common []string
-	for i := 0; i < len(partsA) && i < len(partsB); i++ {
-		if partsA[i] != partsB[i] {
+	sep := string(os.PathSeparator)
+	pa := strings.Split(filepath.Clean(a), sep)
+	pb := strings.Split(filepath.Clean(b), sep)
+
+	n := 0
+	for n < len(pa) && n < len(pb) {
+		same := pa[n] == pb[n]
+		if runtime.GOOS == "windows" {
+			same = strings.EqualFold(pa[n], pb[n])
+		}
+		if !same {
 			break
 		}
-		common = append(common, partsA[i])
+		n++
 	}
-	return filepath.Join(common...)
+	if n == 0 {
+		return ""
+	}
+
+	res := strings.Join(pa[:n], sep)
+	if res == "" { // nur der führende "/" war gemeinsam
+		return sep
+	}
+	if runtime.GOOS == "windows" && n == 1 && strings.HasSuffix(res, ":") {
+		res += sep // "C:" -> "C:\"
+	}
+	return res
+}
+
+// formatNum: Ganzzahlen ohne Exponent, sonst kürzeste exakte Darstellung.
+func formatNum(n float64) string {
+	if math.IsNaN(n) || math.IsInf(n, 0) {
+		return strconv.FormatFloat(n, 'g', -1, 64)
+	}
+	abs := math.Abs(n)
+	if n == math.Trunc(n) && abs < 1e15 {
+		return strconv.FormatInt(int64(n), 10)
+	}
+	if abs >= 1e-6 && abs < 1e21 {
+		return strconv.FormatFloat(n, 'f', -1, 64)
+	}
+	return strconv.FormatFloat(n, 'g', -1, 64) // sehr klein/groß (und 0 ist oben schon abgedeckt)
 }
 
 // ---------------- Helper ----------------
@@ -924,32 +1016,28 @@ func parallelFolderScan(root string, ignoreMap map[string]bool) ScanResult {
 
 // copyFileInternalBuffered kopiert eine Datei mit konfigurierbarem Buffer.
 // Kleine Dateien: 32KB (RAM-schonend), große Dateien: 4MB (Netzwerk-optimiert).
-func copyFileInternalBuffered(src, dst string, mode os.FileMode) error {
+func copyFileInternalBuffered(src, dst string, mode os.FileMode) (err error) {
 	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 	defer in.Close()
 
-	// Dateigröße prüfen für optimale Pufferwahl
-	stat, err := in.Stat()
-	if err != nil {
-		return err
-	}
-
-	bufSize := 32 * 1024 // 32KB Standard (lokal/SSD)
-	if stat.Size() > 1024*1024 {
-		bufSize = 4 * 1024 * 1024 // 4MB für große Dateien (Netzwerk)
-	}
-
 	out, err := os.OpenFile(dst, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
 	if err != nil {
 		return err
 	}
-	defer out.Close()
+	defer func() {
+		// Bei Netzlaufwerken meldet oft erst Close den Schreibfehler.
+		if cerr := out.Close(); err == nil {
+			err = cerr
+		}
+		if err != nil {
+			_ = os.Remove(dst) // keine halbe Zieldatei zurücklassen
+		}
+	}()
 
-	buf := make([]byte, bufSize)
-	_, err = io.CopyBuffer(out, in, buf)
+	_, err = io.Copy(out, in)
 	return err
 }
 

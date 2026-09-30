@@ -131,13 +131,15 @@ Alternativ kann das Plugin-Cache über `VBX_PLUGIN_CACHE` festgelegt werden.
 
 ## Operatoren
 
-| Kategorie | Operatoren |
-|---|---|
-| Arithmetisch | `+` `-` `*` `/` |
-| Vergleich | `=` `<>` `<` `>` `<=` `>=` |
-| Logisch | `And` `Or` `Not` |
-| String | `&` (Verkettung) |
-| Erweiterte Zuweisung | `+=` `-=` `*=` `/=` |
+| Kategorie            | Operatoren                 |
+| -------------------- | -------------------------- |
+| Arithmetisch         | `+` `-` `*` `/`            |
+| Vergleich            | `=` `<>` `<` `>` `<=` `>=` |
+| Logisch              | `And` `Or` `Not`           |
+| String               | `&` (Verkettung)           |
+| Erweiterte Zuweisung | `+=` `-=` `*=` `/=`        |
+
+`+` führt numerische Addition durch. Sind beide Operanden Strings, werden sie als Strings verkettet. Numerisch interpretierbare Strings können zusammen mit Zahlen für eine Addition verwendet werden. `&` verkettet immer als String.
 
 ---
 
