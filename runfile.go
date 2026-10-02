@@ -24,6 +24,43 @@ func CanExecuteFile(filename string) (int, error) {
 	return warnCount, err
 }
 
+// ExtractRequires entfernt eine #requires-Zeile aus dem Code
+// und gibt die geforderte VBX-Version zurück.
+//
+// Beispiel:
+//   #requires 2.0.0
+//
+// Die #requires-Zeile wird durch eine leere Zeile ersetzt,
+// damit die ursprünglichen Zeilennummern erhalten bleiben.
+func ExtractRequires(lines []string) ([]string, string) {
+
+	var cleanLines []string
+	var requiredVersion string
+
+	for _, line := range lines {
+
+		trim := strings.TrimSpace(line)
+
+		if strings.HasPrefix(strings.ToLower(trim), "#requires") {
+
+			raw := strings.TrimSpace(trim[len("#requires"):])
+
+			if raw != "" && requiredVersion == "" {
+				requiredVersion = strings.Fields(raw)[0]
+			}
+
+			// #requires nicht an Lexer/Parser weitergeben,
+			// die Zeile aber leer erhalten (Zeilennummern).
+			cleanLines = append(cleanLines, "")
+			continue
+		}
+
+		cleanLines = append(cleanLines, line)
+	}
+
+	return cleanLines, requiredVersion
+}
+
 // runFileInternal ist die gemeinsame Pipeline für RunFile und CanExecuteFile.
 // Bei validateOnly=true wird nach dem Parsen (inkl. registerFuncsAndSubs)
 // abgebrochen, bevor evalStatements läuft - es gibt also keine Ausführung und
@@ -71,7 +108,7 @@ func runFileInternal(filename string, validateOnly bool) (finalVal Value, warnCo
 		return Value{}, 0, fmt.Errorf("formatfehler: '%s' enthält ungültige Binärdaten", filename)
 	}
 
-	return runParsedInternal(data, filename, validateOnly)
+		return runParsedInternal(data, filename, filepath.Dir(filename), validateOnly)
 }
 
 // runContentInternal prüft VBX-Quelltext, der noch NICHT auf der Platte
@@ -96,7 +133,7 @@ func runContentInternal(content string, label string, validateOnly bool) (finalV
 		return Value{}, 0, fmt.Errorf("formatfehler: '%s' enthält ungültige Binärdaten", label)
 	}
 
-	return runParsedInternal(data, label, validateOnly)
+		return runParsedInternal(data, label, "", validateOnly)
 }
 
 // runParsedInternal ist der gemeinsame Kern: Sanity-Check (looksLikeScript
@@ -104,13 +141,28 @@ func runContentInternal(content string, label string, validateOnly bool) (finalV
 // statt echtem Skript-Rohtext nach einem fehlgeschlagenen Download),
 // #use/#requires, Tokenizen, Parsen, Precheck (CheckUnknownCalls) und
 // - falls validateOnly=false - Ausführung.
-func runParsedInternal(data []byte, label string, validateOnly bool) (finalVal Value, warnCount int, err error) {
+func runParsedInternal(data []byte, label string, baseDir string, validateOnly bool) (finalVal Value, warnCount int, err error) {
+
+	// UTF-8-BOM entfernen (Notepad speichert häufig so)
+	if len(data) >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF {
+		data = data[3:]
+	}
 
 	if reason, ok := looksLikeScript(data); !ok {
 		return Value{}, 0, fmt.Errorf("formatfehler: '%s' - %s", label, reason)
 	}
 
 	lines := strings.Split(string(data), "\n")
+
+	// #requires zuerst prüfen, bevor Module geladen werden
+	lines, reqVer := ExtractRequires(lines)
+	if reqVer != "" && isVersionGreater(reqVer, Version) {
+		return Value{}, 0, fmt.Errorf(
+	"inkompatibel: Skript (v%s) erfordert einen neueren VBX (v%s)",
+	reqVer,
+	Version,
+)
+	}
 
 	env := NewEnvironment(nil)
 
@@ -120,23 +172,9 @@ func runParsedInternal(data []byte, label string, validateOnly bool) (finalVal V
 		LoadModules(env, scriptModules)
 	}
 
-	if len(lines) >= 2 {
-		line2 := strings.TrimSpace(lines[1])
-		if strings.HasPrefix(strings.ToLower(line2), "#requires") {
-			reqVer := strings.TrimSpace(line2[9:])
-
-			if reqVer != "" {
-				if isVersionGreater(reqVer, Version) {
-					return Value{}, 0, fmt.Errorf("inkompatibel: Skript (v%s) erfordert einen neueren vbmini (v%s)", reqVer, Version)
-				}
-			}
-			lines[1] = ""
-		}
-	}
-
 	code := strings.Join(lines, "\n")
 	tokens := tokenize(code)
-	parser := &Parser{tokens: tokens, env: env}
+	parser := &Parser{tokens: tokens, env: env, baseDir: baseDir}
 	stmts := parser.parse()
 
 	if len(stmts) == 0 {
@@ -160,7 +198,20 @@ func runParsedInternal(data []byte, label string, validateOnly bool) (finalVal V
 		return Value{}, warnCount, nil
 	}
 
-	finalVal, sig := evalStatements(stmts, env)
+	// Ausführung: ein Go-Panic (Bug in einer Funktion) soll nicht als
+	// "SYNTAX ERROR" erscheinen, sondern als interner Fehler.
+	var sig Signal
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				err = fmt.Errorf("[INTERNAL ERROR] %v", r)
+			}
+		}()
+		finalVal, sig = evalStatements(stmts, env)
+	}()
+	if err != nil {
+		return Value{}, warnCount, err
+	}
 
 	switch sig {
 	case SignalError:
@@ -267,7 +318,9 @@ func ExtractUse(lines []string) ([]string, []string) {
 				}
 			}
 
-			// #use nicht an Lexer/Parser weitergeben
+			// #use nicht an Lexer/Parser weitergeben, die Zeile aber leer
+			// erhalten (damit Zeilennummern in Fehlermeldungen stimmen)
+			cleanLines = append(cleanLines, "")
 			continue
 		}
 

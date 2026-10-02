@@ -1196,13 +1196,16 @@ func InitGlobal() {
 		return BoolVal(args[0].Kind == KindArr || args[0].Kind == KindArr2D)
 	})
 
-	Register("IsNull", "global", "val", "Prüft ob der Wert Null oder nicht initialisiert ist.", func(args []Value) Value {
+	isNullLike := func(args []Value) Value {
 		if len(args) < 1 {
 			return BoolVal(true)
 		}
 		k := args[0].Kind
 		return BoolVal(k == KindNull || k == KindNil || k == KindNone || k == KindUndefined)
-	})
+	}
+
+	Register("IsNull", "global", "val", "Prüft ob der Wert Null oder nicht initialisiert ist.", isNullLike)
+	Register("IsNothing", "global", "b", "Prüft ob ein Wert nicht initialisiert ist (Undefined, Null, Nil, None).", isNullLike)
 
 	Register("LoadModule", "global", "name",
 		"Lädt ein optionales Modul (nativ oder als WASM-Plugin) zur Laufzeit. Gibt True zurück bei Erfolg (auch wenn bereits geladen), sonst einen Error-Wert (prüfbar mit IsError/ErrorText).",

@@ -11,7 +11,7 @@ Weitere Funktionen können über Plugins eingebunden werden.
 * **Modul-System** – Erweiterungen (Netzwerk, Kryptografie, Datenbanken, ...)
 * **Shell-Interface** – Direkte Ausführung von Funktionen über die Kommandozeile
 
-Über **550 Funktionen**, ohne den Kern aufzublähen. Weitere können über Plugins hinzugefügt werden.
+Über **575 Funktionen**, ohne den Kern aufzublähen. Weitere können über Plugins hinzugefügt werden.
 
 ---
 
@@ -81,11 +81,11 @@ Relative Pfade, einmaliges Laden, rekursive Includes werden erkannt und Include-
 
 ## Namespaces
 
-**Permanent:** [app.*](md/app.md), [array.*](md/array.md), [date.*](md/date.md), [file.*](md/file.md), [folder.*](md/folder.md), [global.*](md/global.md), [math.*](md/math.md)
+**Permanent:** app.*, array.*, date.*, file.*, folder.*, global.*, math.*
 
-**Optional:** [ad.*](md/ad.md), [cert.*](md/cert.md), [computer.*](md/computer.md), [convert.*](md/convert.md), [db.*](md/db.md), [debug.*](md/debug.md),  [env.*](md/env.md), [geo.*](md/geo.md), [git.*](md/git.md), [json.*](md/json.md), [uptime-kuma.*](md/kuma.md), [map.*](md/map.md), [net.*](md/net.md), [picture.*](md/picture.md), [proc.*](md/proc.md),  [reg.*](md/reg.md), [service.*](md/service.md), [sftp.*](md/sftp.md), [smtp.*](md/smtp.md), [ssh.*](md/ssh.md), [string.*](md/string.md), [template.*](md/template.md), [win.*](md/win.md)
+**Optional:** ad.*, cert.*, computer.*, convert.*, db.*, debug.*, env.*, export.*, geo.*, git.*, json.*, kuma.*, map.*, net.*, picture.*, proc.*,  reg.*, service.*, sftp.*, smtp.*, ssh.*, string.*, template.*, win.*
 
-**Plugins:** [crypt.*], [data.*], [docker.*], [fin.*], [ini.*], [media.*], [pgp.*], [pqc.*], [qr.*], [rand.*], [steg.*], [tar.*], [vault.*], [xml.*], [yaml.*], [zip.*]
+**Plugins:** crypt.*, data.*, docker.*, fin.*, ini.*, media.*, pgp.*, pqc.*, qr.*, rand.*, steg.*, tar.*, vault.*, xml.*, yaml.*, zip.*
 
 Plugins werden im Verzeichnis `plugins` neben der VBX-Runtime gesucht. Alternativ kann das Plugin-Verzeichnis über `VBX_PLUGIN_PATH` festgelegt werden.
 
@@ -100,7 +100,7 @@ Standardmäßig verwendet VBX dafür:
 ```text
 <vbx-user-cache>/vbx/plugin-cache
 C:\Users\<username>\AppData\Local\vbx\plugin-cache
----
+```
 
 Alternativ kann das Plugin-Cache über `VBX_PLUGIN_CACHE` festgelegt werden.
 
@@ -125,7 +125,7 @@ Alternativ kann das Plugin-Cache über `VBX_PLUGIN_CACHE` festgelegt werden.
 | Array | Eindimensionales Array |
 | Array2D | Zweidimensionales Array |
 | Map | Schlüssel/Wert-Struktur |
-| Null | Leerer Wert |
+| Null | Leerer Wert, Literal `Nothing` (siehe `IsNothing`, `IsNull`) |
 
 ---
 
@@ -139,7 +139,22 @@ Alternativ kann das Plugin-Cache über `VBX_PLUGIN_CACHE` festgelegt werden.
 | String               | `&` (Verkettung)           |
 | Erweiterte Zuweisung | `+=` `-=` `*=` `/=`        |
 
-`+` führt numerische Addition durch. Sind beide Operanden Strings, werden sie als Strings verkettet. Numerisch interpretierbare Strings können zusammen mit Zahlen für eine Addition verwendet werden. `&` verkettet immer als String.
+**`+`** richtet sich nach den Operanden:
+
+| Operanden | Ergebnis |
+|---|---|
+| Zahl + Zahl | Addition |
+| Text + Text | Verkettung (`"12" + "30"` ergibt `1230`) |
+| Zahl + Text, Text als Zahl lesbar | Addition (`"12" + 30` ergibt `42`) |
+| Zahl + Text, Text nicht als Zahl lesbar | Verkettung (`"Name: " + 5` ergibt `Name: 5`) |
+
+**`-` `*` `/`** wandeln als Zahl lesbare Texte um (`7 - "2"` ergibt `5`), sonst gibt es einen Fehler. Division durch 0 ist ein Fehler. Die Vergleiche `<` `>` `<=` `>=` wandeln ebenso um (`2 <= "2"` ist wahr). `=` und `<>` vergleichen, sobald ein Operand ein Text ist, als Text (Groß-/Kleinschreibung zählt).
+
+**`&`** verkettet immer als String.
+
+**`And` / `Or`** werten den rechten Operanden nur aus, wenn das Ergebnis nicht schon feststeht (Short-Circuit): `If x <> 0 And 10 / x > 1 Then` ist sicher.
+
+**Erweiterte Zuweisung:** `a += b` ist gleichbedeutend mit `a = a + b` (entsprechend `-=`, `*=`, `/=`). Bei einem Fehler bleibt die Variable unverändert.
 
 ---
 
@@ -157,25 +172,35 @@ Alternativ kann das Plugin-Cache über `VBX_PLUGIN_CACHE` festgelegt werden.
 
 ## Variablen
 
-**Lokal (`Dim`)** – nur im aktuellen Scope sichtbar, Standardwert `0`, mehrere Deklarationen pro Zeile möglich. In Function/Sub können gleichnamige Variablen mit eigenem Wert existieren (Shadowing, VBX gibt dabei einen Hinweis aus).
+**Lokal (`Dim`)** – nur im aktuellen Scope sichtbar, mehrere Deklarationen pro Zeile möglich. Schreibweise: `Dim x = 5`; ohne Startwert ist der Standardwert `0`. In Function/Sub können gleichnamige Variablen mit eigenem Wert existieren (Shadowing, VBX gibt dabei einen Hinweis aus).
 
 **Global (`Public`)** – im gesamten Skript sichtbar, wird in Function/Sub genutzt, wenn keine lokale Variable gleichen Namens existiert.
 
 **Konstant (`Const`)** – wie `Dim`, aber schreibgeschützt: ein Initialwert ist zwingend erforderlich, eine spätere Zuweisung (auch `+=` etc.) bricht das Skript mit einem Fehler ab. Keine Arrays. In Function/Sub kann eine lokale `Const` denselben Namen wie eine äußere `Const`/Variable tragen (Shadowing, wie bei `Dim` – ohne Hinweis-Ausgabe, da bei `Const` ein gewolltes Pattern). Nicht zu verwechseln mit den vb-Konstanten (siehe Abschnitt „Konstanten" unten) – `vbx -const -h` zeigt Letztere.
 
+**Sichtbarkeit in Function/Sub:** Ein `Dim` auf oberster Ebene des Skripts ist in allen Function/Sub sichtbar (lesen und ändern), genau wie `Public`. Function/Sub sehen **nie** die lokalen Variablen ihres Aufrufers – ein benötigter Wert wird als Parameter übergeben oder `Public` deklariert.
+
+---
+
+## Arrays
+
+`Dim a(n)` legt ein Array mit n+1 Elementen an (Index 0 bis n), `Dim m(r, c)` ein 2D-Array. Alle Elemente starten mit `0`. Lesen außerhalb der Grenzen und negative Indizes sind ein Fehler. Schreiben hinter das Ende eines 1D-Arrays vergrößert es automatisch, bei 2D-Arrays nicht. Bei einem 2D-Array liefert `m(i)` die ganze Zeile als 1D-Array, `m(i, j)` ein einzelnes Element.
+
+`b = a` kopiert **nicht**: beide Variablen teilen sich dasselbe Array (wie in VB.NET), eine Änderung über `b` ist auch über `a` sichtbar. Das gilt auch, wenn ein Array an eine Function/Sub übergeben wird. Wächst eines der beiden Arrays, ist es danach vom anderen getrennt.
+
 ---
 
 ## Optionale Parameter
 
-`Sub`/`Function` unterstützen optionale Parameter per `Optional name = wert` (müssen nach allen Pflichtparametern stehen). Auch `= wert` ohne das Schlüsselwort macht einen Parameter optional. Der Default-Ausdruck wird bei jedem Aufruf neu ausgewertet und kann auf vorherige Parameter zugreifen. Bei zu wenigen/zu vielen Argumenten liefert VBX einen Fehler mit der erwarteten Argumentanzahl (`min`–`max`).
+`Sub`/`Function` unterstützen optionale Parameter per `Optional name = wert` (müssen nach allen Pflichtparametern stehen; `Optional` ist kein reserviertes Wort, es wird nur in Parameterlisten erkannt). Auch `= wert` ohne das Schlüsselwort macht einen Parameter optional. Der Default-Ausdruck wird bei jedem Aufruf neu ausgewertet und kann auf vorherige Parameter zugreifen. Bei zu wenigen/zu vielen Argumenten liefert VBX einen Fehler mit der erwarteten Argumentanzahl (`min`–`max`).
 
 ---
 
 ## Fehlerbehandlung
 
-Funktionen, die scheitern können, geben einen Fehlerwert (`ErrorVal`) statt eines regulären Werts zurück. Wird dieser direkt in Bedingung/Berechnung/Verkettung verwendet, bricht das Skript sofort ab – daher zuerst einer Variable zuweisen und prüfen.
+Funktionen, die scheitern können, geben einen Fehlerwert (`ErrorVal`) zurück. Sobald dieser Wert verwendet wird – in einem Ausdruck, einer Bedingung, einer Zuweisung, bei `Dim` oder als eigenständiger Aufruf –, bricht das Skript mit einer Fehlermeldung ab. Ein Fehlerwert lässt sich also nicht in einer Variablen aufbewahren. Abfangen lässt sich das mit `Try/Catch`.
 
-`IsError(wert)` – prüft, ob `wert` ein Fehlerwert ist.
+`IsError(wert)` – prüft, ob `wert` ein Fehlerwert ist. Funktioniert direkt auf einem Aufruf (`If IsError(Mid(s, 0)) Then`) und auf der Catch-Variablen.
 `ErrorText(wert)` – gibt den Fehlertext als String zurück (leer, falls kein Fehler).
 
 Beide sind Sprach-Kernfunktionen, immer verfügbar, unabhängig von `#use`.
@@ -196,7 +221,7 @@ End Try
 
 `Catch` ist optional, `Finally` ist optional – mindestens einer der beiden Zweige muss vorhanden sein. `Finally` läuft in jedem Fall (Erfolg, abgefangener Fehler, oder ein Signal wie `Return`/`Exit For` aus dem Try-Block).
 
-**Wichtig:** `Try/Catch` fängt nur "harte" Skriptabbrüche ab – also einen Funktionsaufruf, der als eigenständige Zeile steht (`RiskyCall()`), oder einen Fehler in einer Bedingung (`If RiskyCall() = x Then`). Ein Fehler, der einer Variablen zugewiesen wird (`Dim x = RiskyCall()`), löst **keinen** Abbruch aus – `x` enthält dann einfach den `ErrorVal`, weiterhin nur per `IsError(x)` prüfbar. Beide Mechanismen bestehen nebeneinander, je nachdem wie der Aufruf geschrieben ist.
+`Try/Catch` fängt jeden Fehler im Block ab, auch bei `Dim x = RiskyCall()`, bei Zuweisungen und bei `+=`. Die Catch-Variable enthält den Fehlerwert, `ErrorText(err)` den Text. Bei verschachtelten Aufrufen enthält der Text die ganze Kette (`Fehler in Sub 'A': Fehler in Sub 'B': …`).
 
 Ein `Try` außen um eine Schleife bricht bei einem Fehler die **gesamte Schleife** ab (restliche Durchläufe werden nicht mehr erreicht), lässt das Skript danach aber normal weiterlaufen. Um nur den fehlerhaften Durchlauf zu überspringen und mit dem Rest der Schleife fortzufahren, muss `Try` **innerhalb** des Schleifenkörpers stehen:
 
@@ -252,30 +277,31 @@ Folgende Wörter sind reserviert und können nicht als Namen für Variablen, Fun
 | Prozeduren | `Sub`, `Function`, `Return` |
 | Fallunterscheidung | `Select`, `Case`, `Is` |
 | Fehlerbehandlung | `Try`, `Catch`, `Finally` |
-| Logik | `And`, `Or`, `Not`, `True`, `False` |
+| Logik | `And`, `Or`, `Not`, `True`, `False`, `Nothing` |
 | Sonstiges | `Print`, `End`, `Include` |
 
 ---
 
 ## Kontrollstrukturen
 
-| Struktur        | Syntax-Skelett                                                                        | Abschluss      |
-| --------------- | ------------------------------------------------------------------------------------- | -------------- |
-| **If**          | `If bed Then` … `[ElseIf bed Then …]` `[Else …]`                                      | `End If`       |
-| **Select Case** | `Select Case ausdruck` `Case wert / wert1, wert2 / x To y / Is > x` `[Case Else]`     | `End Select`   |
-| **For**         | `For i = start To end [Step n]`                                                       | `Next [i]`     |
-| **For Each**    | `For Each v In array / 2D-array / map` oder `For Each k, v In array / 2D-array / map` | `Next [v]`     |
-| **While**       | `While bed`                                                                           | `End While`    |
-| **Do Loop**     | `Do [While/Until bed]` … `Loop [While/Until bed]`                                     | `Loop`         |
-| **Continue**    | `Continue For` / `Continue While` / `Continue Do`                                     | –              |
-| **Try/Catch**   | `Try` … `[Catch var …]` `[Finally …]` (mind. Catch oder Finally nötig)                | `End Try`      |
-| **Exit**        | `Exit For` / `Exit While` / `Exit Do` / `Exit Sub` / `Exit Function`                  | –              |
-| **Sub**         | `Sub Name(param1, param2 [, Optional param3 = wert])`                                 | `End Sub`      |
-| **Function**    | `Function Name(...)` … `Return wert` oder `Name = wert`                               | `End Function` |
-| **Cls**         | `Cls()`                                                                               | –              |
-| **Print**       | `Print wert`                                                                          | –              |
+| Struktur        | Syntax-Skelett                                                                        | Abschluss                |
+| --------------- | ------------------------------------------------------------------------------------- | ------------------------ |
+| **If**          | `If bed Then` … `[ElseIf bed Then …]` `[Else …]`                                      | `End If`                 |
+| **Select Case** | `Select Case ausdruck` `Case wert / wert1, wert2 / x To y / Is > x` `[Case Else]`     | `End Select`             |
+| **For**         | `For i = start To end [Step n]`                                                       | `Next [i]`               |
+| **For Each**    | `For Each v In array / 2D-array / map` oder `For Each k, v In array / 2D-array / map` | `Next [v]`               |
+| **While**       | `While bed`                                                                           | `End While`              |
+| **Do Loop**     | `Do [While/Until bed]` … `Loop [While/Until bed]`                                     | `Loop`                   |
+| **Continue**    | `Continue For` / `Continue While` / `Continue Do`                                     | –                        |
+| **Try/Catch**   | `Try` … `[Catch var …]` `[Finally …]` (mind. Catch oder Finally nötig)                | `End Try`                |
+| **Exit**        | `Exit For` / `Exit While` / `Exit Do` / `Exit Sub` / `Exit Function`                  | –                        |
+| **Sub**         | `Sub Name(param1, param2 [, Optional param3 = wert])`                                 | `End Sub`                |
+| **Function**    | `Function Name(...)` … `Return wert` oder `Name = wert`                               | `End Function`           |
+| **Cls**         | `Cls()`                                                                               | –                        |
+| **Print**       | `Print wert`                                                                          | –                        |
 
+**For Each:** Mit einer Variable (`For Each v In …`) liefert ein 1D-Array die Elemente, ein 2D-Array die Zeilen (jeweils als 1D-Array), eine Map die Werte. Mit zwei Variablen (`For Each k, v In …`) liefern Arrays Index und Element, Maps Schlüssel und Wert. Maps werden nach Schlüssel sortiert durchlaufen.
 
-`For Each` unterstützt 1D-Arrays, 2D-Arrays und Maps. Bei einem 1D-Array wird über die einzelnen Elemente iteriert. Bei einem 2D-Array wird über die einzelnen Zeilen iteriert. Bei einer Map wird über die Schlüssel und Werte iteriert.
+**Select Case:** Es wird der erste passende `Case` ausgeführt. Überlappende Werte in mehreren `Case`-Zweigen sind erlaubt, der erste Treffer gewinnt.
 
-`Continue For`, `Continue While` und `Continue Do` überspringen nur den Rest des aktuellen Schleifendurchlaufs und setzen die Schleife mit dem nächsten Durchlauf fort. Im Unterschied dazu beenden `Exit For`, `Exit While` und `Exit Do` die jeweilige Schleife vollständig.
+**Continue:** `Continue For`, `Continue While` und `Continue Do` überspringen nur den Rest des aktuellen Schleifendurchlaufs und setzen die Schleife mit dem nächsten Durchlauf fort. Bei `Do … Loop While/Until` springt `Continue Do` zur Bedingung am Ende, die dann normal ausgewertet wird. Im Unterschied dazu beenden `Exit For`, `Exit While` und `Exit Do` die jeweilige Schleife vollständig.

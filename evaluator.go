@@ -124,6 +124,22 @@ func literalValue(e Expr) (Value, bool) {
 }
 
 func calculateBinaryOp(op TokenType, l Value, r Value) Value {
+	if l.Kind == KindNum && r.Kind == KindNum {
+		switch op {
+		case PLUS:
+			return NumVal(l.Num + r.Num)
+		case MINUS:
+			return NumVal(l.Num - r.Num)
+		case MUL:
+			return NumVal(l.Num * r.Num)
+		case DIV:
+			if r.Num != 0 {
+				return NumVal(l.Num / r.Num)
+			}
+			// bei 0 weiter unten: gleiche Fehlermeldung wie sonst
+		}
+	}
+
 	switch op {
 
 	case PLUS:
@@ -142,19 +158,34 @@ func calculateBinaryOp(op TokenType, l Value, r Value) Value {
 		return StrVal(ToString(l) + ToString(r))
 
 	case MINUS:
-		return NumVal(l.Num - r.Num)
+		ln, lok := tryNumber(l)
+		rn, rok := tryNumber(r)
+		if !lok || !rok {
+			return ErrorVal("Operanden müssen numerisch sein")
+		}
+		return NumVal(ln - rn)
 
 	case MUL:
-		return NumVal(l.Num * r.Num)
+		ln, lok := tryNumber(l)
+		rn, rok := tryNumber(r)
+		if !lok || !rok {
+			return ErrorVal("Operanden müssen numerisch sein")
+		}
+		return NumVal(ln * rn)
 
 	case DIV:
-		if r.Num == 0 {
-			return ErrorVal("division by zero")
+		ln, lok := tryNumber(l)
+		rn, rok := tryNumber(r)
+		if !lok || !rok {
+			return ErrorVal("Operanden müssen numerisch sein")
 		}
-		return NumVal(l.Num / r.Num)
+		if rn == 0 {
+			return ErrorVal("Division durch 0")
+		}
+		return NumVal(ln / rn)
 	}
 
-	return ErrorVal("unsupported operator")
+	return ErrorVal("Nicht unterstützter Operator")
 }
 
 func mapAssignOp(op TokenType) TokenType {
@@ -234,6 +265,13 @@ func (e *Environment) Set(name string, val Value) {
 	env.vars[name] = &copyVal
 }
 
+func (e *Environment) root() *Environment {
+	for e.parent != nil {
+		e = e.parent
+	}
+	return e
+}
+
 func (e *Environment) Update(name string, val Value) error {
 	for env := e; env != nil; env = env.parent {
 		if ptr, ok := env.vars[name]; ok {
@@ -278,10 +316,14 @@ func (e *Environment) GetRef(name string) *Value {
 }
 
 func (e *Environment) PutInternal(name string, val Value) {
-	e.vars[name] = &val
+	if ptr, ok := e.vars[name]; ok {
+		*ptr = val // Pointer bleibt stabil -> gecachte Zugriffe bleiben gültig
+		return
+	}
+	v := val
+	e.vars[name] = &v
 }
 
-// Define erstellt IMMER eine Variable im aktuellen Scope (für DIM)
 // Define erstellt IMMER eine Variable im aktuellen Scope (für DIM)
 func (e *Environment) Define(name string, val Value, inLoop bool) {
 	e.defineInternal(name, val, inLoop, false)
@@ -367,7 +409,12 @@ func (e *Environment) SetGlobal(name string, val Value) {
 	for curr.parent != nil {
 		curr = curr.parent
 	}
-	curr.vars[name] = &val
+	if ptr, ok := curr.vars[name]; ok {
+		*ptr = val
+		return
+	}
+	v := val
+	curr.vars[name] = &v
 }
 
 func NewEnvironment(parent *Environment) *Environment {
@@ -549,7 +596,7 @@ func evalFunctionCall(name string, args []Expr, env *Environment) Value {
 		}
 
 		// Anzahl der Parameter ist bekannt -> Map direkt passend anlegen
-		local := NewEnvironmentWithCapacity(env, len(fn.Params))
+		local := NewEnvironmentWithCapacity(env.root(), len(fn.Params)) // bzw. len(s.Params)
 
 		local.fnReturn = NumVal(0)
 		local.currentFuncName = name
@@ -586,7 +633,7 @@ func evalFunctionCall(name string, args []Expr, env *Environment) Value {
 				name, required, len(s.Params), len(evaluated)))
 		}
 
-		local := NewEnvironmentWithCapacity(env, len(s.Params))
+		local := NewEnvironmentWithCapacity(env.root(), len(s.Params)) // bzw. len(s.Params)
 		for i, p := range s.Params {
 			if i < len(evaluated) {
 				local.PutInternal(p.Name, evaluated[i])
@@ -1882,12 +1929,13 @@ func evalExpr(e Expr, env *Environment) Value {
 
 		// 2. Basis-Variable holen.
 		//
-		// Bei wiederholten Zugriffen aus derselben Environment muss die
-		// komplette Scope-Kette nicht erneut durchsucht werden.
-		//
-		// Wir cachen bewusst nicht den *Value, sondern die Environment,
-		// in der die Variable gefunden wurde. Dadurch bleibt der Cache auch
-		// korrekt, wenn Define() den Pointer einer Variable ersetzt.
+		// Bei wiederholten Zugriffen aus derselben Environment wird die Scope-Kette
+		// nicht erneut durchsucht: Environment und Pointer werden am Knoten gecacht.
+		// Das ist sicher, solange Define/PutInternal/SetGlobal den Pointer einer
+		// bestehenden Variable nie ersetzen, sondern durch ihn schreiben.
+		// Bekannte Grenze: Wird in derselben Environment später eine gleichnamige
+		// lokale Variable deklariert, liest ein bereits gecachter Knoten weiter die
+		// äußere.
 		var v Value
 
 		if n.cachedLookupEnv == env && n.cachedDefEnv != nil && n.cachedPtr != nil {
@@ -1896,16 +1944,11 @@ func evalExpr(e Expr, env *Environment) Value {
 			defEnv, ptr, found := env.GetRefStrictEnv(n.Name)
 
 			if !found {
-				scopeInfo := "Public (global)"
+				msg := "Variable '%s' ist nicht als Public (global) definiert"
 				if env.parent != nil {
-					scopeInfo = "lokal (Dim) oder Public (global)"
+					msg = "Variable '%s' ist weder lokal (Dim) noch als Public (global) definiert"
 				}
-
-				return ErrorVal(fmt.Sprintf(
-					"Variable '%s' ist weder %s definiert",
-					n.Name,
-					scopeInfo,
-				))
+				return ErrorVal(fmt.Sprintf(msg, n.Name))
 			}
 
 			n.cachedLookupEnv = env

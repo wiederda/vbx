@@ -70,6 +70,7 @@ const (
 	TRY
 	CATCH
 	FINALLY
+	NOTHING
 )
 
 type Token struct {

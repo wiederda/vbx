@@ -17,8 +17,11 @@ type Parser struct {
 	loopDepth int
 	loopStack []TokenType
 	env       *Environment
-	procStack []TokenType // <-- neu hinzufügen
+	procStack []TokenType
+	baseDir   string // Verzeichnis der Datei, die gerade geparst wird ("" = Arbeitsverzeichnis)
 }
+
+
 
 type MapIndexNode struct {
 	Base Expr
@@ -61,6 +64,22 @@ var (
 	includeCache      = make(map[string]includeCacheEntry)
 	includeCacheMutex sync.Mutex
 )
+
+var includeActive = make(map[string]bool) // geschützt durch includeCacheMutex
+
+// resolveIncludePath löst einen relativen Include-Pfad zuerst relativ zur
+// einbindenden Datei auf; findet sich dort nichts, gilt wie bisher das
+// Arbeitsverzeichnis.
+func resolveIncludePath(baseDir, path string) string {
+	if baseDir == "" || filepath.IsAbs(path) {
+		return path
+	}
+	candidate := filepath.Join(baseDir, path)
+	if _, err := os.Stat(candidate); err == nil {
+		return candidate
+	}
+	return path
+}
 
 type ParamDef struct {
 	Name       string
@@ -136,15 +155,34 @@ func (p *Parser) peekNext() Token {
 	return p.tokens[p.pos+1]
 }
 
+// currentLine zählt die Zeilen bis zur aktuellen Parser-Position
+// (NEWLINE-Tokens plus Zeilenumbrüche in Block-Kommentaren).
+func (p *Parser) currentLine() int {
+	end := p.pos
+	if end > len(p.tokens) {
+		end = len(p.tokens)
+	}
+	line := 1
+	for _, t := range p.tokens[:end] {
+		switch t.Type {
+		case NEWLINE:
+			line++
+		case COMMENT:
+			line += strings.Count(t.Value, "\n")
+		}
+	}
+	return line
+}
+
 func (p *Parser) error(format string, args ...interface{}) {
-	// 1. Die Nachricht formatieren
 	msg := fmt.Sprintf(format, args...)
 
-	// 2. Optional: In die Liste eintragen (falls du sie später gesammelt brauchst)
-	p.Errors = append(p.Errors, msg)
+	// Meldungen vom Lexer tragen die Zeile schon ("Zeile 4: ...")
+	if !strings.HasPrefix(msg, "Zeile ") {
+		msg = fmt.Sprintf("Zeile %d: %s", p.currentLine(), msg)
+	}
 
-	// 3. DAS IST DER ENTSCHEIDENDE PUNKT:
-	// Wir werfen die echte Nachricht in den Panic-Topf!
+	p.Errors = append(p.Errors, msg)
 	panic(msg)
 }
 
@@ -262,32 +300,26 @@ func (p *Parser) parseForEach() Stmt {
 
 	p.skipStuff()
 
-	// Kopf-Newline fressen
-	for p.peek().Type == NEWLINE {
-		p.next()
-	}
-
-	// --- Loop-Tracking starten ---
 	// For Each ist für Continue/Exit vom Typ FOR.
 	p.loopDepth++
 	p.loopStack = append(p.loopStack, FOR)
 
 	body := p.parseBlock("Next", NEXT)
 
-	// --- Loop-Tracking beenden ---
 	p.loopStack = p.loopStack[:len(p.loopStack)-1]
 	p.loopDepth--
 
-	if p.peek().Type == EOF {
-		p.error("Syntaxfehler: Erwartet 'Next', nach For Each.")
+	if p.peek().Type != NEXT {
+		p.error("Erwartet 'Next' am Ende von For Each, gefunden: '%s'", p.peek().Value)
 	}
+	p.next() // NEXT
 
-	// NEXT konsumieren
-	p.next()
-
-	// Optional: NEXT n
-	if p.peek().Type == IDENT && p.peek().Value == keyVar {
-		p.next()
+	// Optional: Next k  oder  Next v (Groß-/Kleinschreibung egal)
+	if p.peek().Type == IDENT {
+		name := p.peek().Value
+		if strings.EqualFold(name, keyVar) || (valVar != "" && strings.EqualFold(name, valVar)) {
+			p.next()
+		}
 	}
 
 	return &ForEachNode{
@@ -421,13 +453,17 @@ func (p *Parser) parseFactor() Expr {
 			Bool: strings.ToLower(tok.Value) == "true",
 		}
 
+	case NOTHING:
+		p.next()
+		return NullVal()
+
 	case STRING:
 		p.next()
 		return &StringNode{Value: tok.Value}
 
 	case NEWLINE:
-		p.next()
-		return nil // Signalisiert dem Haupt-Loop: "Hier war nichts, mach weiter"
+		p.error("Der Ausdruck ist unvollständig - am Zeilenende fehlt ein Wert.")
+		return nil
 
 	case IDENT:
 		p.next()
@@ -564,23 +600,36 @@ func (e *ParseError) Error() string {
 	return "Parse error: " + e.Message
 }
 
-func (p *Parser) parseLogical() Expr {
-	left := p.parseCompare()
-	for {
-		tok := p.peek()
-		if tok.Type == AND || tok.Type == OR {
-			p.next()
-			right := p.parseCompare()
-			left = &BinOpNode{Left: left, Op: tok.Type, Right: right}
-			continue
-		}
-		break
+func (p *Parser) parseExpr() Expr {
+	return p.parseOr()
+}
+
+func (p *Parser) parseOr() Expr {
+	left := p.parseAnd()
+	for p.peek().Type == OR {
+		p.next()
+		right := p.parseAnd()
+		left = &BinOpNode{Left: left, Op: OR, Right: right}
 	}
 	return left
 }
 
-func (p *Parser) parseExpr() Expr {
-	return p.parseLogical()
+func (p *Parser) parseAnd() Expr {
+	left := p.parseNot()
+	for p.peek().Type == AND {
+		p.next()
+		right := p.parseNot()
+		left = &BinOpNode{Left: left, Op: AND, Right: right}
+	}
+	return left
+}
+
+func (p *Parser) parseNot() Expr {
+	if p.peek().Type == NOT {
+		p.next()
+		return &UnaryOpNode{Op: NOT, Right: p.parseNot()}
+	}
+	return p.parseCompare()
 }
 
 // Parameterliste
@@ -863,9 +912,12 @@ func (p *Parser) parseStmt() Stmt {
 			return p.parseForEach()
 		}
 
-		// --- Dein originales FOR mit Loop-Tracking ---
 		p.next() // FOR
-		varName := p.next().Value
+		varTok := p.next()
+		if varTok.Type != IDENT {
+			p.error("Erwartet eine Schleifenvariable nach 'For', gefunden: '%s'", varTok.Value)
+		}
+		varName := varTok.Value
 		p.expect(EQ)
 		start := p.parseExpr()
 		p.expect(TO)
@@ -881,12 +933,13 @@ func (p *Parser) parseStmt() Stmt {
 				p.next() // '-'
 				multiplier = -1.0
 			}
-			if nv, ok := p.parseExpr().(*NumberNode); ok {
-				step = nv.Value * multiplier
+			nv, ok := p.parseExpr().(*NumberNode)
+			if !ok {
+				p.error("'Step' erwartet eine Zahl (z.B. Step 2 oder Step -1), keine Variable oder Berechnung.")
 			}
+			step = nv.Value * multiplier
 		}
 
-		// --- WICHTIG: Loop-Tracking starten ---
 		p.loopDepth++
 		p.loopStack = append(p.loopStack, FOR)
 
@@ -895,12 +948,12 @@ func (p *Parser) parseStmt() Stmt {
 		p.loopStack = p.loopStack[:len(p.loopStack)-1]
 		p.loopDepth--
 
-		if p.peek().Type == EOF {
-			p.error("Syntaxfehler: Erwartet 'Next', nach For")
+		if p.peek().Type != NEXT {
+			p.error("Erwartet 'Next' am Ende der For-Schleife, gefunden: '%s'", p.peek().Value)
 		}
-
 		p.next() // NEXT
-		if p.peek().Type == IDENT && p.peek().Value == varName {
+
+		if p.peek().Type == IDENT && strings.EqualFold(p.peek().Value, varName) {
 			p.next()
 		}
 
@@ -954,8 +1007,8 @@ func (p *Parser) parseStmt() Stmt {
 		params := p.parseParams()
 
 		// Optional: VB.NET 'As Type' Teil überspringen, falls vorhanden
-		if p.peek().Value == "as" {
-			p.next() // 'as'
+		if p.peek().Type == IDENT && strings.EqualFold(p.peek().Value, "as") {
+			p.next() // 'As'
 			p.next() // 'Integer', 'String', etc.
 		}
 
@@ -976,7 +1029,6 @@ func (p *Parser) parseStmt() Stmt {
 
 	case TRY:
 		p.next() // TRY konsumieren
-		p.skipStuff()
 
 		node := &TryNode{
 			TryBody: p.parseBlock("Try", CATCH, FINALLY),
@@ -987,9 +1039,8 @@ func (p *Parser) parseStmt() Stmt {
 		if p.peek().Type == CATCH {
 			hasCatch = true
 			p.next() // CATCH konsumieren
-			p.skipStuff()
 
-			// Variablenname ist optional: nur lesen, wenn wirklich ein IDENT folgt
+			// Variablenname nur, wenn er in derselben Zeile steht
 			if p.peek().Type == IDENT {
 				node.CatchVarName = p.expectIdentifier()
 			}
@@ -998,7 +1049,6 @@ func (p *Parser) parseStmt() Stmt {
 			node.CatchBody = p.parseBlock("Try", FINALLY)
 			p.skipStuff()
 		}
-
 		hasFinally := false
 		if p.peek().Type == FINALLY {
 			hasFinally = true
@@ -1017,6 +1067,13 @@ func (p *Parser) parseStmt() Stmt {
 
 	case RETURN:
 		p.next()
+
+		// Return ohne Wert (z.B. in einer Sub)
+		switch p.peek().Type {
+		case NEWLINE, EOF, END, COMMENT:
+			return &ReturnNode{Value: NullVal()}
+		}
+
 		val := p.parseExpr()
 		return &ReturnNode{Value: val}
 
@@ -1036,17 +1093,17 @@ func (p *Parser) parseStmt() Stmt {
 		return &WhileNode{Condition: cond, Body: body}
 
 	case DO:
-		p.next()
-		p.skipStuff()
+		p.next() // DO
+
 		var cond Expr
 		isUntil := false
 		checkAtEnd := false
 
-		// Kopf-Bedingung
+		// Kopf-Bedingung: nur, wenn While/Until in DERSELBEN Zeile steht
 		if p.peek().Type == WHILE {
 			p.next()
 			cond = p.parseExpr()
-		} else if p.peek().Type == UNTIL { // Token-Typ statt String
+		} else if p.peek().Type == UNTIL {
 			p.next()
 			cond = p.parseExpr()
 			isUntil = true
@@ -1060,10 +1117,13 @@ func (p *Parser) parseStmt() Stmt {
 		p.loopStack = p.loopStack[:len(p.loopStack)-1]
 		p.loopDepth--
 
+		if p.peek().Type != LOOP {
+			p.error("Erwartet 'Loop' am Ende des Do-Blocks, gefunden: '%s'", p.peek().Value)
+		}
 		p.next() // LOOP
 
 		// Fuß-Bedingung
-		if cond == nil && (p.peek().Type == WHILE || p.peek().Type == UNTIL) { // Token-Typ
+		if cond == nil && (p.peek().Type == WHILE || p.peek().Type == UNTIL) {
 			checkAtEnd = true
 			if p.peek().Type == UNTIL {
 				isUntil = true
@@ -1082,17 +1142,21 @@ func (p *Parser) parseStmt() Stmt {
 	case EXIT:
 		p.next() // 'Exit' überspringen
 
-		next := p.peek()
 		exitType := ""
 
-		switch next.Type {
-		case FOR, WHILE, DO, SUB, FUNCTION:
-			exitType = next.Value
+		switch p.peek().Type {
+		case SUB:
+			exitType = "Sub"
 			p.next()
-		default:
-			// optional: leer lassen oder Fehler, je nach gewünschtem Verhalten
-			// z.B. Exit alleine = Exit Loop
-			exitType = ""
+		case FUNCTION:
+			exitType = "Function"
+			p.next()
+		case FOR, WHILE, DO:
+			if p.loopDepth == 0 {
+				p.error("'Exit %s' darf nur innerhalb einer Schleife verwendet werden.", p.peek().Value)
+			}
+			exitType = p.peek().Value
+			p.next()
 		}
 
 		return &ExitNode{ExitType: exitType}
@@ -1123,7 +1187,7 @@ func (p *Parser) parseStmt() Stmt {
 			ContinueType: continueType,
 		}
 
-	case INCLUDE:
+		case INCLUDE:
 		p.next() // include konsumieren
 
 		pathExpr := p.parseExpr()
@@ -1131,10 +1195,11 @@ func (p *Parser) parseStmt() Stmt {
 		if !ok {
 			p.error("Nach 'include' wird ein Dateipfad als String erwartet.")
 		}
-		path := pathNode.Value
+		path := resolveIncludePath(p.baseDir, pathNode.Value)
 
 		if _, err := os.Stat(path); os.IsNotExist(err) {
-			// Optionales Include: Datei nicht vorhanden -> ignorieren
+			// Optionales Include: Datei nicht vorhanden -> überspringen, aber sichtbar machen
+			fmt.Fprintf(os.Stderr, "\033[33m![HINWEIS]: Include-Datei '%s' nicht gefunden - wird übersprungen.\033[0m\n", path)
 			return &MultiStmtNode{Stmts: []Stmt{}}
 		}
 
@@ -1156,14 +1221,31 @@ func (p *Parser) parseStmt() Stmt {
 			return &MultiStmtNode{Stmts: cached.stmts}
 		}
 
+		// Include-Schleifen erkennen
+		includeCacheMutex.Lock()
+		if includeActive[absPath] {
+			includeCacheMutex.Unlock()
+			p.error("Include-Schleife erkannt: '%s' bindet sich (direkt oder indirekt) selbst ein.", path)
+		}
+		includeActive[absPath] = true
+		includeCacheMutex.Unlock()
+		defer func() {
+			includeCacheMutex.Lock()
+			delete(includeActive, absPath)
+			includeCacheMutex.Unlock()
+		}()
+
 		// Datei laden
 		content, err := os.ReadFile(path)
 		if err != nil {
 			p.error("Konnte Datei '%s' nicht öffnen: %v", path, err)
 		}
 
+		// UTF-8-BOM entfernen (Notepad speichert häufig so)
+		text := strings.TrimPrefix(string(content), "\uFEFF")
+
 		// #use aus Include-Datei entfernen
-		contentLines := strings.Split(string(content), "\n")
+		contentLines := strings.Split(text, "\n")
 		contentLines, modules := ExtractUse(contentLines)
 
 		// Module in bestehender Umgebung laden
@@ -1174,21 +1256,27 @@ func (p *Parser) parseStmt() Stmt {
 		// Bereinigten Code erneut lexen
 		includedTokens := tokenize(strings.Join(contentLines, "\n"))
 
-		// Gleicher Parser-Kontext
+		// Gleicher Parser-Kontext, relative Includes ab dem Ordner der Include-Datei
 		subParser := &Parser{
 			tokens:    includedTokens,
 			pos:       0,
 			loopDepth: p.loopDepth,
 			env:       p.env,
+			baseDir:   filepath.Dir(absPath),
 		}
 
-		includedStmts := subParser.parse()
-
-		// Fehler aus Include übernehmen
-		if len(subParser.Errors) > 0 {
-			p.Errors = append(p.Errors, subParser.Errors...)
-			p.error("Fehler in inkludierter Datei '%s'", path)
-		}
+		// Fehler aus der Include-Datei mit Dateinamen weitergeben
+		includedStmts := func() []Stmt {
+			defer func() {
+				if r := recover(); r != nil {
+					if msg, ok := r.(string); ok {
+						p.error("In inkludierter Datei '%s': %s", path, msg)
+					}
+					panic(r)
+				}
+			}()
+			return subParser.parse()
+		}()
 
 		// Nur erfolgreich geparste Includes cachen
 		includeCacheMutex.Lock()
@@ -1248,6 +1336,30 @@ func (p *Parser) parseStmt() Stmt {
 					node.Index2 = args[1]
 				}
 
+				return node
+			}
+
+			// Fall A2: Zuweisung mit Operator an Array-Index -> arr(i) += 1
+			switch p.peek().Type {
+			case PLUS_ASSIGN, MINUS_ASSIGN, MUL_ASSIGN, DIV_ASSIGN:
+				if len(args) == 0 {
+					p.error("Array-Index erwartet")
+				}
+				op := p.next().Type
+				val := p.parseExpr()
+
+				node := &ArrayAssignNode{
+					Name:  fullName,
+					Index: args[0],
+					Value: &BinOpNode{
+						Left:  &CallExprNode{Name: fullName, Args: args},
+						Op:    mapAssignOp(op),
+						Right: val,
+					},
+				}
+				if len(args) > 1 {
+					node.Index2 = args[1]
+				}
 				return node
 			}
 

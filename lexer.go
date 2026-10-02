@@ -27,11 +27,12 @@ var keywords = map[string]TokenType{
 	"include":  INCLUDE,
 	"const":    CONST,
 
-	"true":  BOOL,
-	"false": BOOL,
-	"and":   AND,
-	"or":    OR,
-	"not":   NOT,
+	"true":    BOOL,
+	"false":   BOOL,
+	"nothing": NOTHING,
+	"and":     AND,
+	"or":      OR,
+	"not":     NOT,
 
 	"while":    WHILE,
 	"do":       DO,
@@ -48,14 +49,28 @@ var keywords = map[string]TokenType{
 	"finally": FINALLY,
 }
 
+// PATCH 4: nur ASCII-Ziffern zaehlen als Zahl
+func isASCIIDigit(r rune) bool {
+	return r >= '0' && r <= '9'
+}
+
 // ---------------- Lexer ----------------
+
+// PATCH 3: tokenize bleibt als Wrapper bestehen, alle bisherigen Aufrufer
+// funktionieren unveraendert.
 func tokenize(input string) []Token {
+	return tokenizeFrom(input, 1)
+}
+
+// tokenizeFrom wie tokenize, aber mit frei waehlbarer Startzeile
+// (fuer Ausdruecke in interpolierten Strings).
+func tokenizeFrom(input string, startLine int) []Token {
 	// Grobe Heuristik: ~1 Token pro 3 Zeichen, spart Reallocations bei größeren Skripten.
 	tokens := make([]Token, 0, len(input)/3+16)
 
 	runes := []rune(input)
 	i := 0
-	line := 1
+	line := startLine // PATCH 3: war: line := 1
 
 	emit := func(t TokenType, value string) {
 		tokens = append(tokens, Token{
@@ -82,6 +97,9 @@ func tokenize(input string) []Token {
 
 			for i+1 < len(runes) &&
 				!(runes[i] == '\'' && runes[i+1] == '/') {
+				if runes[i] == '\n' { // PATCH 2a: Zeilen im Kommentar mitzaehlen
+					line++
+				}
 				i++
 			}
 
@@ -252,11 +270,11 @@ func tokenize(input string) []Token {
 			i = j + 1
 			// Zahlen
 			// Zahlen / Identifier mit führender Zahl
-		case unicode.IsDigit(ch):
+		case isASCIIDigit(ch): // PATCH 4: war: unicode.IsDigit(ch)
 			j := i
 
 			// Zuerst die Ziffern lesen
-			for j < len(runes) && unicode.IsDigit(runes[j]) {
+			for j < len(runes) && isASCIIDigit(runes[j]) { // PATCH 4
 				j++
 			}
 
@@ -286,7 +304,7 @@ func tokenize(input string) []Token {
 			if j < len(runes) && runes[j] == '.' {
 				j++
 
-				for j < len(runes) && unicode.IsDigit(runes[j]) {
+				for j < len(runes) && isASCIIDigit(runes[j]) { // PATCH 4
 					j++
 				}
 			}
@@ -315,6 +333,7 @@ func tokenize(input string) []Token {
 						i++
 					}
 					i++      // Überspringe das Newline-Zeichen
+					line++   // PATCH 2b: Zeile mitzaehlen
 					continue // Nächstes Token in der neuen Zeile suchen
 				}
 
@@ -350,6 +369,11 @@ func tokenize(input string) []Token {
 			}
 
 			i = j
+
+		// PATCH 1: unbekanntes Zeichen -> Fehler statt Endlosschleife
+		default:
+			emitError("Unerwartetes Zeichen '%c' (U+%04X)", ch, ch)
+			i++
 		}
 	}
 
@@ -464,7 +488,7 @@ func tokenizeInterpolatedString(runes []rune, i *int, line int, emit func(TokenT
 		first = false
 		if isExpr {
 			emit(LPAREN, "(")
-			subTokens := tokenize(exprSegments[idx])
+			subTokens := tokenizeFrom(exprSegments[idx], line) // PATCH 3: war: tokenize(exprSegments[idx])
 			for _, t := range subTokens {
 				if t.Type == EOF {
 					continue
