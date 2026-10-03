@@ -21,8 +21,6 @@ type Parser struct {
 	baseDir   string // Verzeichnis der Datei, die gerade geparst wird ("" = Arbeitsverzeichnis)
 }
 
-
-
 type MapIndexNode struct {
 	Base Expr
 	Key  Expr
@@ -66,6 +64,15 @@ var (
 )
 
 var includeActive = make(map[string]bool) // geschützt durch includeCacheMutex
+
+var includeSeen = make(map[string]bool) // geschützt durch includeCacheMutex
+
+// resetIncludeState setzt "schon eingebunden" für einen neuen Lauf zurück.
+func resetIncludeState() {
+	includeCacheMutex.Lock()
+	includeSeen = make(map[string]bool)
+	includeCacheMutex.Unlock()
+}
 
 // resolveIncludePath löst einen relativen Include-Pfad zuerst relativ zur
 // einbindenden Datei auf; findet sich dort nichts, gilt wie bisher das
@@ -850,6 +857,12 @@ func (p *Parser) parseStmt() Stmt {
 	case PRINT:
 		p.next() // 'Print' überspringen
 
+		// Print ohne Argument -> Leerzeile
+		switch p.peek().Type {
+		case NEWLINE, EOF, COMMENT:
+			return &PrintNode{Value: &StringNode{Value: ""}}
+		}
+
 		// 1. Das erste Argument parsen (z.B. 'a')
 		valExpr := p.parseExpr()
 		node := &PrintNode{Value: valExpr}
@@ -1187,7 +1200,7 @@ func (p *Parser) parseStmt() Stmt {
 			ContinueType: continueType,
 		}
 
-		case INCLUDE:
+	case INCLUDE:
 		p.next() // include konsumieren
 
 		pathExpr := p.parseExpr()
@@ -1210,9 +1223,27 @@ func (p *Parser) parseStmt() Stmt {
 			absPath = path // Fallback, falls Abs() aus irgendeinem Grund scheitert
 		}
 
+		// NEU: ein Block statt zwei (Schleife prüfen, Include-once, Cache nachschlagen)
 		includeCacheMutex.Lock()
+		// 1. Include-Schleife: die Datei wird gerade eingelesen
+		if includeActive[absPath] {
+			includeCacheMutex.Unlock()
+			p.error("Include-Schleife erkannt: '%s' bindet sich (direkt oder indirekt) selbst ein.", path)
+		}
+		// 2. Include-once: in diesem Lauf schon eingebunden -> nichts mehr tun
+		if includeSeen[absPath] {
+			includeCacheMutex.Unlock()
+			return &MultiStmtNode{Stmts: []Stmt{}}
+		}
+		includeSeen[absPath] = true
+		includeActive[absPath] = true
 		cached, found := includeCache[absPath]
 		includeCacheMutex.Unlock()
+		defer func() {
+			includeCacheMutex.Lock()
+			delete(includeActive, absPath)
+			includeCacheMutex.Unlock()
+		}()
 
 		if found {
 			if len(cached.modules) > 0 {
@@ -1220,20 +1251,7 @@ func (p *Parser) parseStmt() Stmt {
 			}
 			return &MultiStmtNode{Stmts: cached.stmts}
 		}
-
-		// Include-Schleifen erkennen
-		includeCacheMutex.Lock()
-		if includeActive[absPath] {
-			includeCacheMutex.Unlock()
-			p.error("Include-Schleife erkannt: '%s' bindet sich (direkt oder indirekt) selbst ein.", path)
-		}
-		includeActive[absPath] = true
-		includeCacheMutex.Unlock()
-		defer func() {
-			includeCacheMutex.Lock()
-			delete(includeActive, absPath)
-			includeCacheMutex.Unlock()
-		}()
+		// ENDE NEU
 
 		// Datei laden
 		content, err := os.ReadFile(path)
