@@ -52,6 +52,7 @@ var optionalModulesMap = map[string]func(*Environment){
 	//"data": func(e *Environment) { InitDataFunctions() },
 	//"fin":      func(e *Environment) { InitFinFunctions() },
 	"computer": func(e *Environment) { InitComputerFunctions() },
+	"makemkv":  func(e *Environment) { InitMakeMKVFunctions() },
 	"map":      func(e *Environment) { InitMapFunctions() },
 	//"ini":      func(e *Environment) { InitIniFunctions() },
 	"json": func(e *Environment) { InitJsonFunctions() },
@@ -69,8 +70,9 @@ var optionalModulesMap = map[string]func(*Environment){
 	"sftp": func(e *Environment) { InitSftpFunctions() },
 	"ssh":  func(e *Environment) { InitSSHFunctions() },
 	//"steg":     func(e *Environment) { InitStegFunctions() },
-	"template": func(e *Environment) { InitTemplateFunctions() },
-	"win":      func(e *Environment) { InitWinFunctions() },
+	"template":  func(e *Environment) { InitTemplateFunctions() },
+	"websocket": func(e *Environment) { InitWebSocketFunctions() },
+	"win":       func(e *Environment) { InitWinFunctions() },
 }
 
 // LoadModules lädt zuerst die Pflichtmodule und anschließend nur die optionalen Module, die angegeben wurden

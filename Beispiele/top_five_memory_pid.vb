@@ -1,6 +1,6 @@
 #use proc,date
 
-Print "--- vbmini System-Monitor (" & vbPlatform() & ") ---"
+Print "--- vbx System-Monitor (" & vbPlatform() & ") ---"
 Print "Drücke STRG+C zum Beenden."
 Print "------------------------------------------"
 

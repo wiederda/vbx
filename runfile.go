@@ -28,7 +28,8 @@ func CanExecuteFile(filename string) (int, error) {
 // und gibt die geforderte VBX-Version zurück.
 //
 // Beispiel:
-//   #requires 2.0.0
+//
+//	#requires 2.0.0
 //
 // Die #requires-Zeile wird durch eine leere Zeile ersetzt,
 // damit die ursprünglichen Zeilennummern erhalten bleiben.
@@ -108,7 +109,7 @@ func runFileInternal(filename string, validateOnly bool) (finalVal Value, warnCo
 		return Value{}, 0, fmt.Errorf("formatfehler: '%s' enthält ungültige Binärdaten", filename)
 	}
 
-		return runParsedInternal(data, filename, filepath.Dir(filename), validateOnly)
+	return runParsedInternal(data, filename, filepath.Dir(filename), validateOnly)
 }
 
 // runContentInternal prüft VBX-Quelltext, der noch NICHT auf der Platte
@@ -133,7 +134,7 @@ func runContentInternal(content string, label string, validateOnly bool) (finalV
 		return Value{}, 0, fmt.Errorf("formatfehler: '%s' enthält ungültige Binärdaten", label)
 	}
 
-		return runParsedInternal(data, label, "", validateOnly)
+	return runParsedInternal(data, label, "", validateOnly)
 }
 
 // runParsedInternal ist der gemeinsame Kern: Sanity-Check (looksLikeScript
@@ -158,10 +159,10 @@ func runParsedInternal(data []byte, label string, baseDir string, validateOnly b
 	lines, reqVer := ExtractRequires(lines)
 	if reqVer != "" && isVersionGreater(reqVer, Version) {
 		return Value{}, 0, fmt.Errorf(
-	"inkompatibel: Skript (v%s) erfordert einen neueren VBX (v%s)",
-	reqVer,
-	Version,
-)
+			"inkompatibel: Skript (v%s) erfordert einen neueren VBX (v%s)",
+			reqVer,
+			Version,
+		)
 	}
 
 	env := NewEnvironment(nil)
@@ -201,14 +202,14 @@ func runParsedInternal(data []byte, label string, baseDir string, validateOnly b
 	// Ausführung: ein Go-Panic (Bug in einer Funktion) soll nicht als
 	// "SYNTAX ERROR" erscheinen, sondern als interner Fehler.
 	var sig Signal
-	func() {
+	runWithShutdownHook(func() {
 		defer func() {
 			if r := recover(); r != nil {
 				err = fmt.Errorf("[INTERNAL ERROR] %v", r)
 			}
 		}()
 		finalVal, sig = evalStatements(stmts, env)
-	}()
+	})
 	if err != nil {
 		return Value{}, warnCount, err
 	}

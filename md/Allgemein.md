@@ -11,7 +11,7 @@ Weitere Funktionen können über Plugins eingebunden werden.
 * **Modul-System** – Erweiterungen (Netzwerk, Kryptografie, Datenbanken, ...)
 * **Shell-Interface** – Direkte Ausführung von Funktionen über die Kommandozeile
 
-Über **575 Funktionen**, ohne den Kern aufzublähen. Weitere können über Plugins hinzugefügt werden.
+Über **580 Funktionen**, ohne den Kern aufzublähen. Weitere können über Plugins hinzugefügt werden.
 
 ---
 
@@ -83,7 +83,7 @@ Relative Pfade, einmaliges Laden, rekursive Includes werden erkannt und Include-
 
 **Permanent:** app.*, array.*, date.*, file.*, folder.*, global.*, math.*
 
-**Optional:** ad.*, cert.*, computer.*, convert.*, db.*, debug.*, env.*, export.*, geo.*, git.*, json.*, kuma.*, map.*, net.*, picture.*, proc.*,  reg.*, service.*, sftp.*, smtp.*, ssh.*, string.*, template.*, win.*
+**Optional:** ad.*, cert.*, computer.*, convert.*, db.*, debug.*, env.*, export.*, geo.*, git.*, json.*, kuma.*, makemkv.*, map.*, net.*, picture.*, proc.*,  reg.*, service.*, sftp.*, smtp.*, ssh.*, string.*, template.*, websocket.*, win.*
 
 **Plugins:** crypt.*, data.*, docker.*, fin.*, ini.*, media.*, pgp.*, pqc.*, qr.*, rand.*, steg.*, tar.*, vault.*, xml.*, yaml.*, zip.*
 

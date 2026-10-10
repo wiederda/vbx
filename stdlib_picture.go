@@ -12,8 +12,17 @@ import (
 	"github.com/KarpelesLab/gowebp"
 	ico "github.com/Kodeworks/golang-image-ico"
 	"github.com/disintegration/imaging"
+	"github.com/gen2brain/jpegxl"
 	"github.com/kbinani/screenshot"
 )
+
+// Liefert Argument i als String, oder "" wenn es fehlt.
+func argStr(args []Value, i int) string {
+	if i < len(args) {
+		return ToString(args[i])
+	}
+	return ""
+}
 
 func init() {
 	// Registriert WebP global bei Go, damit imaging.Open (und image.Decode
@@ -91,6 +100,8 @@ func InitPictureFunctions() {
 			switch format {
 			case "jpg", "jpeg":
 				saveErr = imaging.Save(src, outFile, imaging.JPEGQuality(quality))
+			case "jxl":
+				saveErr = saveJxl(src, outFile, quality)
 			case "png":
 				saveErr = imaging.Save(src, outFile)
 			case "webp":
@@ -106,52 +117,70 @@ func InitPictureFunctions() {
 		})
 
 	// ---------------- picture.ConvertAll ---------------- (unverändert, profitiert automatisch mit)
-	Register(ns+"ConvertAll", "picture", "inDir, outDir, fmt [, filter, w, h, q]",
-		"Konvertiert alle Bilder eines Ordners.",
+	Register(ns+"Convert", "picture", "in, out, fmt [, w, h, q]",
+		"Konvertiert ein Bild. Formate: jpg, png, webp, jxl (auch als Input). Bei ico: w/h/q durch Größen-Liste (16,32) ersetzen.",
 		func(args []Value) Value {
 			if len(args) < 3 {
-				return ErrorVal("usage: picture.ConvertAll(...)")
+				return ErrorVal("usage: picture.Convert(infile, outfile, format [, width, height, quality | icoSizes])")
 			}
 
-			inFolder, errIn := absPathVal(args[0].Str)
+			inFile, errIn := absPathVal(argStr(args, 0))
 			if errIn != nil {
 				return *errIn
 			}
-			outFolder, errOut := absPathVal(args[1].Str)
+
+			outFile, errOut := absPathVal(argStr(args, 1))
 			if errOut != nil {
 				return *errOut
 			}
 
-			files, err := os.ReadDir(inFolder)
+			format := strings.ToLower(argStr(args, 2))
+			src, err := imaging.Open(inFile)
 			if err != nil {
-				return ErrorVal(err.Error())
+				return ErrorVal("Bild-Ladefehler: " + err.Error())
 			}
-			os.MkdirAll(outFolder, 0755)
 
-			converted, failed := 0, 0
-			convertFunc := builtins[ns+"Convert"].Fn
-
-			for _, f := range files {
-				if f.IsDir() {
-					continue
+			if format == "ico" {
+				sizes := argStr(args, 3)
+				if sizes == "" {
+					return ErrorVal("Fehlende ICO-Größen (z.B. '16,32,48')")
 				}
+				return handleIcoExport(src, outFile, sizes)
+			}
 
-				inFile := filepath.Join(inFolder, f.Name())
-				baseName := strings.TrimSuffix(f.Name(), filepath.Ext(f.Name()))
-				outFile := filepath.Join(outFolder, baseName+"."+args[2].Str)
+			width, _ := strconv.Atoi(argStr(args, 3))
+			height, _ := strconv.Atoi(argStr(args, 4))
+			quality := 100
+			if q, err := strconv.Atoi(argStr(args, 5)); err == nil {
+				quality = q
+			}
 
-				res := convertFunc([]Value{
-					StrVal(inFile), StrVal(outFile), args[2],
-					args[3], args[4], args[5], args[6],
-				})
-
-				if res.Kind == KindError {
-					failed++
+			if width > 0 || height > 0 {
+				if width > 0 && height > 0 {
+					src = imaging.Fill(src, width, height, imaging.Center, imaging.Lanczos)
 				} else {
-					converted++
+					src = imaging.Resize(src, width, height, imaging.Lanczos)
 				}
 			}
-			return StrVal(fmt.Sprintf("Erfolg: %d, Fehler: %d", converted, failed))
+
+			var saveErr error
+			switch format {
+			case "jpg", "jpeg":
+				saveErr = imaging.Save(src, outFile, imaging.JPEGQuality(quality))
+			case "png":
+				saveErr = imaging.Save(src, outFile)
+			case "webp":
+				saveErr = saveWebp(src, outFile, quality)
+			case "jxl":
+				saveErr = saveJxl(src, outFile, quality)
+			default:
+				return ErrorVal("Nicht unterstütztes Format: " + format)
+			}
+
+			if saveErr != nil {
+				return ErrorVal("Speicherfehler: " + saveErr.Error())
+			}
+			return NullVal()
 		})
 
 	Register(ns+"Snapshot", "picture", "outFile [, monitorIndex]",
@@ -197,6 +226,19 @@ func saveWebp(img image.Image, outFile string, quality int) error {
 		Lossy:   true,
 		Quality: float32(quality),
 		Method:  4,
+	})
+}
+
+func saveJxl(img image.Image, outFile string, quality int) error {
+	f, err := os.Create(outFile)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	return jpegxl.Encode(f, img, jpegxl.Options{
+		Quality: quality,
+		Effort:  jpegxl.DefaultEffort,
 	})
 }
 
