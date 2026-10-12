@@ -166,7 +166,7 @@ Immer verfügbar:
 
 [ad.*](md/ad.md), [cert.*](md/cert.md), [computer.*](md/computer.md), [convert.*](md/convert.md), [db.*](md/db.md), [debug.*](md/debug.md), [env.*](md/env.md), [export.*](md/export.md), [geo.*](md/geo.md), [git.*](md/git.md), [hash.*](md/hash.md), [json.*](md/json.md), [makemkv.*](md/makemkv.md) [map.*](md/map.md), [net.*](md/net.md), [picture.*](md/picture.md), [proc.*](md/proc.md), [reg.*](md/reg.md), [service.*](md/service.md), [sftp.*](md/sftp.md), [smtp.*](md/smtp.md), [ssh.*](md/ssh.md), [string.*](md/string.md), [template.*](md/template.md), [kuma.*](md/kuma.md), [websocket.*](md/websocket.md), [win.*](md/win.md)
 
-**Plugins:** crypt.*, data.*, docker.*, fin.*, ini.*, media.*, pgp.*, pqc.*, qr.*, rand.*, steg.*, tar.*, vault.*, xml.*, yaml.*, zip.*
+**Plugins:** crypt.*, data.*, doc.*, docker.*, fin.*, ini.*, media.*, pgp.*, pqc.*, qr.*, rand.*, steg.*, tar.*, vault.*, xml.*, yaml.*, zip.*
 
 Plugins werden im Verzeichnis `plugins` neben der VBX-Runtime gesucht. Alternativ kann das Plugin-Verzeichnis über `VBX_PLUGIN_PATH` festgelegt werden.
 

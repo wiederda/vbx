@@ -128,14 +128,21 @@ Plattformübergreifend (Windows, Linux, macOS). Einige Funktionen sind plattform
 
 ---
 
-## computer.Shutdown()
+## computer.Shutdown([wert], [einheit], [showOutput])
 - **Konkret:**
-  Fährt das Betriebssystem sofort herunter.
+  Fährt das Betriebssystem herunter.
+  Ohne Argumente erfolgt das Herunterfahren sofort.
+  Mit Wartezeit wird ein Countdown angezeigt, der per ENTER (oder Strg+C) abgebrochen werden kann. Bei Abbruch wird nicht heruntergefahren.
+- **Parameter:**
+  - `wert`: Optional. Wartezeit vor dem Herunterfahren (Standard: keine).
+  - `einheit`: Optional. `"ms"`, `"s"`, `"m"`, `"h"` (Standard: `"s"`).
+  - `showOutput`: Optional. `BoolVal` – steuert die Countdown-Anzeige (Standard: `true`). Bei `false` wird still gewartet und es gibt keine Abbruchmöglichkeit per ENTER.
 - **Hinweis:**
   Benötigt normalerweise Administrator- oder Root-Rechte.
 - **Rückgabe:**
   `ArrVal`
   Format: `[OK, Msg]`
+  Bei Abbruch per ENTER: `[False, "Abgebrochen"]`.
 
 ---
 

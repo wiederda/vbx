@@ -798,76 +798,18 @@ func InitGlobal() {
 			if len(args) < 1 {
 				return ErrorVal("Sleep: Zeitwert erwartet")
 			}
-
 			val := toNumVal(args[0])
-			unitRaw := "ms"
-			showOutput := true // Standardmäßig interaktiv
-
+			unit := "ms"
+			showOutput := true
 			if len(args) >= 2 {
-				unitRaw = strings.ToLower(ToString(args[1]))
+				unit = strings.ToLower(ToString(args[1]))
 			}
 			if len(args) >= 3 {
-				showOutput = ToBool(args[2]) // Neuer Flag-Parameter
+				showOutput = ToBool(args[2])
 			}
-
-			// 1. Zeitberechnung (totalSeconds & d)
-			var totalSeconds int
-			var d time.Duration
-			switch unitRaw {
-			case "ms", "msec":
-				d = time.Duration(val) * time.Millisecond
-				totalSeconds = int(val / 1000)
-			case "s", "sec", "seconds":
-				d = time.Duration(val) * time.Second
-				totalSeconds = int(val)
-			case "m", "min", "minutes":
-				d = time.Duration(val) * time.Minute
-				totalSeconds = int(val * 60)
-			case "h", "hr", "hour", "hours":
-				d = time.Duration(val) * time.Hour
-				totalSeconds = int(val * 3600)
-			default:
-				return ErrorVal("Sleep: unbekannte Einheit")
+			if _, errMsg := waitInteractive(val, unit, showOutput, "ENTER zum Überspringen", "Übersprungen"); errMsg != "" {
+				return ErrorVal("Sleep: " + errMsg)
 			}
-
-			// 2. Ausführung
-			if showOutput && totalSeconds >= 1 {
-				done := make(chan bool, 1)
-
-				// Goroutine für den Tastenanschlag
-				go func() {
-					var b [1]byte
-					os.Stdin.Read(b[:])
-					done <- true
-				}()
-
-				fmt.Println("\n(ENTER zum Überspringen)")
-
-				for i := totalSeconds; i > 0; i-- {
-					select {
-					case <-done:
-						fmt.Print("\r\033[K[Übersprungen]          \n")
-						return NumVal(val)
-					default:
-						if totalSeconds >= 60 {
-							h, m, s := i/3600, (i%3600)/60, i%60
-							if h > 0 {
-								fmt.Printf("\rWartezeit: %02d:%02d:%02d...   ", h, m, s)
-							} else {
-								fmt.Printf("\rWartezeit: %02d:%02d...   ", m, s)
-							}
-						} else {
-							fmt.Printf("\rWartezeit: %d s...   ", i)
-						}
-						time.Sleep(1 * time.Second)
-					}
-				}
-				fmt.Print("\r\033[K")
-			} else {
-				// Silent Mode oder Millisekunden: Einfach warten
-				time.Sleep(d)
-			}
-
 			return NumVal(val)
 		})
 
@@ -1625,4 +1567,60 @@ func resolveIncludes(source string, visited map[string]bool) ([]byte, error) {
 	}
 
 	return result, nil
+}
+
+// Gibt (übersprungen, fehler) zurück
+func waitInteractive(val float64, unitRaw string, showOutput bool, hint, skipMsg string) (bool, string) {
+	var totalSeconds int
+	var d time.Duration
+	switch unitRaw {
+	case "ms", "msec":
+		d = time.Duration(val) * time.Millisecond
+		totalSeconds = int(val / 1000)
+	case "s", "sec", "seconds":
+		d = time.Duration(val) * time.Second
+		totalSeconds = int(val)
+	case "m", "min", "minutes":
+		d = time.Duration(val) * time.Minute
+		totalSeconds = int(val * 60)
+	case "h", "hr", "hour", "hours":
+		d = time.Duration(val) * time.Hour
+		totalSeconds = int(val * 3600)
+	default:
+		return false, "unbekannte Einheit"
+	}
+
+	if showOutput && totalSeconds >= 1 {
+		done := make(chan bool, 1)
+		go func() {
+			var b [1]byte
+			os.Stdin.Read(b[:])
+			done <- true
+		}()
+
+		fmt.Printf("\n(%s)\n", hint)
+		for i := totalSeconds; i > 0; i-- {
+			select {
+			case <-done:
+				fmt.Printf("\r\033[K[%s]          \n", skipMsg)
+				return true, ""
+			default:
+				if totalSeconds >= 60 {
+					h, m, s := i/3600, (i%3600)/60, i%60
+					if h > 0 {
+						fmt.Printf("\rWartezeit: %02d:%02d:%02d...   ", h, m, s)
+					} else {
+						fmt.Printf("\rWartezeit: %02d:%02d...   ", m, s)
+					}
+				} else {
+					fmt.Printf("\rWartezeit: %d s...   ", i)
+				}
+				time.Sleep(1 * time.Second)
+			}
+		}
+		fmt.Print("\r\033[K")
+	} else {
+		time.Sleep(d)
+	}
+	return false, ""
 }

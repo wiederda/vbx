@@ -85,7 +85,7 @@ Relative Pfade, einmaliges Laden, rekursive Includes werden erkannt und Include-
 
 **Optional:** ad.*, cert.*, computer.*, convert.*, db.*, debug.*, env.*, export.*, geo.*, git.*, json.*, kuma.*, makemkv.*, map.*, net.*, picture.*, proc.*,  reg.*, service.*, sftp.*, smtp.*, ssh.*, string.*, template.*, websocket.*, win.*
 
-**Plugins:** crypt.*, data.*, docker.*, fin.*, ini.*, media.*, pgp.*, pqc.*, qr.*, rand.*, steg.*, tar.*, vault.*, xml.*, yaml.*, zip.*
+**Plugins:** crypt.*, data.*, doc.*, docker.*, fin.*, ini.*, media.*, pgp.*, pqc.*, qr.*, rand.*, steg.*, tar.*, vault.*, xml.*, yaml.*, zip.*
 
 Plugins werden im Verzeichnis `plugins` neben der VBX-Runtime gesucht. Alternativ kann das Plugin-Verzeichnis über `VBX_PLUGIN_PATH` festgelegt werden.
 
