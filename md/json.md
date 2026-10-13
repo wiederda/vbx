@@ -247,6 +247,25 @@ Thread-sicher via `sync.RWMutex`.
 
 ---
 
+## json.SearchDeepWhereGetContains(jsonStr, returnKey, cond1, cond2, ...)
+- **Konkret:**
+  Erweiterung von [json.SearchDeepWhereGet](/path/to/md/json.md) um Teilstring-Bedingungen.
+  Durchsucht ein JSON-Dokument rekursiv über alle Verschachtelungsebenen nach dem ersten Objekt, das alle Bedingungen erfüllt, und gibt den Wert von `returnKey` zurück.
+  Bedingungen aus übergeordneten Objekten werden vererbt (ein Kind überschreibt gleichnamige Werte des Elternobjekts). Die Bedingungen dürfen sich daher auf mehrere Ebenen verteilen.
+  Für Bedingungen zählen nur String-Werte (Zahlen, Booleans und `null` werden nicht verglichen). Alle Vergleiche sind case-insensitiv, der zurückgegebene Wert behält seine Originalschreibweise.
+  Trifft ein Objekt zu, enthält aber `returnKey` nicht, wird in den Kindobjekten weitergesucht.
+- **Parameter:**
+  - `jsonStr`: JSON als String.
+  - `returnKey`: Key dessen Wert beim ersten Treffer zurückgegeben wird.
+  - `cond1, cond2, ...`: Filterbedingungen (alle müssen erfüllt sein):
+    - `"key=value"` oder `"key:value"`: exakter Vergleich (`:` gilt nur, wenn die Bedingung kein `=` enthält)
+    - `"key~teil"`: Teilstring-Suche (enthält)
+    Getrennt wird am ersten Trennzeichen, der Wert darf also weitere enthalten (`"zeit:12:30"` ergibt Key `zeit`, Wert `12:30`). Enthält eine Bedingung ein `~`, hat es Vorrang vor `=` und `:`.
+- **Rückgabe:**
+  `StrVal` (Wert von `returnKey` beim ersten Treffer, Zahlen und verschachtelte Werte werden in einen String konvertiert). Leerer String wenn kein passendes Objekt gefunden wurde. `ErrorVal` bei ungültigem JSON, leerem `jsonStr`/`returnKey`, ungültiger Bedingung oder weniger als 2 Argumenten.
+
+---
+
 ## json.SearchWhereExists(jsonStr, cond1, cond2, ...)
 - **Konkret:**
   Prüft ob mindestens ein Objekt im JSON alle Bedingungen erfüllt.

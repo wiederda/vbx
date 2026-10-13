@@ -647,6 +647,135 @@ func InitJsonFunctions() {
 			return StrVal(result)
 		})
 
+	// ---------------- json.SearchDeepWhereGetContains ----------------
+	// Rekursive Suche mit exakten Bedingungen (= oder :)
+	// und Teilstringsuche (~). Vererbt Kontext aus Elternobjekten.
+	Register(ns+"SearchDeepWhereGetContains", "json",
+		"jsonStr, returnKey, cond1, cond2, ...",
+		"Rekursive JSON-Suche. Bedingungen mit = oder : werden exakt verglichen, Bedingungen mit ~ suchen nach einem Teilstring. Vergleiche sind case-insensitive.",
+		func(args []Value) Value {
+			if len(args) < 2 {
+				return ErrorVal("json.SearchDeepWhereGetContains: mindestens 2 Argumente erforderlich (jsonStr, returnKey)")
+			}
+
+			jsonStr := strings.TrimSpace(ToString(args[0]))
+			returnKey := strings.TrimSpace(ToString(args[1]))
+
+			if jsonStr == "" {
+				return ErrorVal("json.SearchDeepWhereGetContains: jsonStr ist leer")
+			}
+			if returnKey == "" {
+				return ErrorVal("json.SearchDeepWhereGetContains: returnKey ist leer")
+			}
+
+			type condition struct {
+				value    string
+				contains bool
+			}
+
+			conds := make(map[string]condition)
+
+			for i := 2; i < len(args); i++ {
+				raw := strings.TrimSpace(ToString(args[i]))
+
+				sep := "="
+				contains := false
+
+				if strings.Contains(raw, "~") {
+					sep = "~"
+					contains = true
+				} else if !strings.Contains(raw, "=") && strings.Contains(raw, ":") {
+					sep = ":"
+				}
+
+				parts := strings.SplitN(raw, sep, 2)
+				if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" {
+					return ErrorVal("json.SearchDeepWhereGetContains: ungültige Bedingung: " + raw)
+				}
+
+				key := strings.ToLower(strings.TrimSpace(parts[0]))
+				value := strings.ToLower(strings.TrimSpace(parts[1]))
+
+				conds[key] = condition{
+					value:    value,
+					contains: contains,
+				}
+			}
+
+			var data interface{}
+			if err := json.Unmarshal([]byte(jsonStr), &data); err != nil {
+				return ErrorVal("json.SearchDeepWhereGetContains: ungültiges JSON: " + err.Error())
+			}
+
+			var search func(interface{}, map[string]string) (string, bool)
+
+			search = func(v interface{}, inherited map[string]string) (string, bool) {
+				switch obj := v.(type) {
+				case []interface{}:
+					for _, item := range obj {
+						if result, found := search(item, inherited); found {
+							return result, true
+						}
+					}
+
+				case map[string]interface{}:
+					current := make(map[string]string, len(inherited)+len(obj))
+
+					for k, value := range inherited {
+						current[k] = value
+					}
+
+					for k, value := range obj {
+						if s, ok := value.(string); ok {
+							current[strings.ToLower(k)] = strings.ToLower(s)
+						}
+					}
+
+					matches := true
+					for key, cond := range conds {
+						value, ok := current[key]
+						if !ok {
+							matches = false
+							break
+						}
+
+						if cond.contains {
+							if !strings.Contains(value, cond.value) {
+								matches = false
+								break
+							}
+						} else if value != cond.value {
+							matches = false
+							break
+						}
+					}
+
+					if matches {
+						for key, value := range obj {
+							if strings.EqualFold(key, returnKey) {
+								return anyToStr(value), true
+							}
+						}
+					}
+
+					for _, child := range obj {
+						if result, found := search(child, current); found {
+							return result, true
+						}
+					}
+				}
+
+				return "", false
+			}
+
+			result, found := search(data, make(map[string]string))
+			if !found {
+				return StrVal("")
+			}
+
+			return StrVal(result)
+		})
+
 	// ---------------- json.FindKey ----------------
 	Register(ns+"FindKey", "json", "pfad, wert",
 		"Sucht in einem JSON-Objekt nach einem Wert und gibt den zugehörigen Schlüssel zurück.",
