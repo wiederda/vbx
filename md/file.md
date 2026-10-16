@@ -303,6 +303,20 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
 
 ---
 
+## file.ProductVersion(path)
+- **Konkret:**
+  Liest die numerische Produktversion einer ausführbaren Datei (exe/dll) aus der Versionsressource (`VS_FIXEDFILEINFO`).
+  **Nur unter Windows verfügbar.** Unter Linux/macOS liefert die Funktion einen `ErrorVal`.
+- **Parameter:**
+  - `path`: Pfad zur exe/dll.
+- **Rückgabe:**
+  `StrVal`
+  Format: `"Major.Minor.Build.Revision"` (z. B. `"10.0.19041.1"`). `ErrorVal`, falls die Datei keine Versionsinfo enthält, nicht lesbar ist oder die Plattform nicht unterstützt wird.
+- **Hinweis:**
+  Gelesen wird die numerische Version, nicht der Text aus der Stringtabelle. Trägt ein Programm dort etwas Abweichendes ein (z. B. `"1.2.3-beta"`), stimmt das Ergebnis nicht zwingend damit überein.
+
+---
+
 ## file.ReadAllText(path)
 - **Konkret:**
   Liest den gesamten Inhalt einer Datei als einen String.

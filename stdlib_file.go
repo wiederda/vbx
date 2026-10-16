@@ -84,6 +84,22 @@ func InitFileFunctions() {
 		return NullVal()
 	})
 
+	Register(ns+"ProductVersion", "file", "path", "Gibt die Produktversion einer exe/dll zurück (Windows).", func(args []Value) Value {
+		pathStr, errS := expectStr(args, 0, "file.ProductVersion(path)")
+		if errS != nil {
+			return *errS
+		}
+		path, errVal := absPathVal(pathStr)
+		if errVal != nil {
+			return *errVal
+		}
+		v, err := productVersion(path)
+		if err != nil {
+			return ErrorVal("file.ProductVersion: " + err.Error())
+		}
+		return StrVal(v)
+	})
+
 	Register(ns+"FindWords", "file", "words, inputFile, outputFile", "Sucht beliebige Wörter in einer Datei und schreibt alle Trefferzeilen mit Zeilennummer in eine Ausgabedatei.", func(args []Value) Value {
 		// 1. Parameter prüfen
 		if len(args) < 3 {

@@ -8,7 +8,23 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unsafe"
 )
+
+var (
+	modVersion   = syscall.NewLazyDLL("version.dll")
+	procVerSize  = modVersion.NewProc("GetFileVersionInfoSizeW")
+	procVerInfo  = modVersion.NewProc("GetFileVersionInfoW")
+	procVerQuery = modVersion.NewProc("VerQueryValueW")
+)
+
+type vsFixedFileInfo struct {
+	Signature, StrucVersion                    uint32
+	FileVersionMS, FileVersionLS               uint32
+	ProductVersionMS, ProductVersionLS         uint32
+	FileFlagsMask, FileFlags, FileOS, FileType uint32
+	FileSubtype, FileDateMS, FileDateLS        uint32
+}
 
 func watchLogInternal(path, pattern, ansiSequence string, silent bool, timeoutMs int) Value {
 	// Wir nutzen hier kein defer file.Close(), da wir das Handle bei Rotation selbst schließen müssen
@@ -129,4 +145,42 @@ func openFileShared(path string) (*os.File, error) {
 
 	// Verwandelt das Win32-Handle in ein Standard Go *os.File Objekt
 	return os.NewFile(uintptr(handle), path), nil
+}
+
+// productVersion liest die numerische Produktversion (VS_FIXEDFILEINFO) einer exe/dll.
+func productVersion(path string) (string, error) {
+	p, err := syscall.UTF16PtrFromString(path)
+	if err != nil {
+		return "", err
+	}
+
+	var handle uint32
+	size, _, e := procVerSize.Call(uintptr(unsafe.Pointer(p)), uintptr(unsafe.Pointer(&handle)))
+	if size == 0 {
+		return "", fmt.Errorf("keine Versionsinfo gefunden: %v", e)
+	}
+
+	buf := make([]byte, size)
+	r, _, e := procVerInfo.Call(uintptr(unsafe.Pointer(p)), 0, size, uintptr(unsafe.Pointer(&buf[0])))
+	if r == 0 {
+		return "", fmt.Errorf("GetFileVersionInfo: %v", e)
+	}
+
+	sub, _ := syscall.UTF16PtrFromString(`\`)
+	var ptr unsafe.Pointer
+	var l uint32
+	r, _, e = procVerQuery.Call(
+		uintptr(unsafe.Pointer(&buf[0])),
+		uintptr(unsafe.Pointer(sub)),
+		uintptr(unsafe.Pointer(&ptr)),
+		uintptr(unsafe.Pointer(&l)),
+	)
+	if r == 0 || ptr == nil {
+		return "", fmt.Errorf("VerQueryValue: %v", e)
+	}
+
+	ffi := (*vsFixedFileInfo)(ptr)
+	return fmt.Sprintf("%d.%d.%d.%d",
+		ffi.ProductVersionMS>>16, ffi.ProductVersionMS&0xFFFF,
+		ffi.ProductVersionLS>>16, ffi.ProductVersionLS&0xFFFF), nil
 }

@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -87,4 +88,8 @@ func watchLogInternal(path, pattern, ansiSequence string, silent bool, timeoutMs
 
 func openFileShared(path string) (*os.File, error) {
 	return os.Open(path)
+}
+
+func productVersion(path string) (string, error) {
+	return "", errors.New("nur unter Windows verfügbar")
 }
