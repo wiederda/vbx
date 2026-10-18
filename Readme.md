@@ -1,6 +1,6 @@
 # 📖 VBX – Referenz
 
-VBX ist eine modulare, in Go geschriebene VB-Skriptsprache. Sie orientiert sich an der Einfachheit und Vertrautheit von VB.NET und bietet die Performance und Portabilität moderner System-Tools. Skripte können direkt mit dem Interpreter vbx ausgeführt oder mit dem Compiler vbxc in Bytecode übersetzt und von einer schlanken Runtime ausgeführt werden. Der Kern bleibt schlank und stabil – Komplexität wird in Module ausgelagert.
+VBX ist eine modulare, in Go geschriebene VB-Skriptsprache. Sie orientiert sich an der Einfachheit und Vertrautheit von VB.NET und bietet die Performance und Portabilität moderner System-Tools. Skripte können direkt mit dem Interpreter `vbx` ausgeführt oder mit dem Compiler `vbxc` in Bytecode übersetzt und von einer schlanken Runtime ausgeführt werden. Der Kern bleibt schlank und stabil – Komplexität wird in Module ausgelagert.
 
 ---
 
@@ -16,93 +16,91 @@ VBX besteht aus drei Hauptkomponenten:
   * **Compiler (`vbxc`)** – Übersetzt `.vb`-Quelltext in Bytecode (`.vbb`) und führt Skripte auf Wunsch direkt aus. Enthält außerdem Werkzeuge zur Analyse (Disassembler, AST, Tokens).
   * **Runtime (`vbxr`)** – Nur VM und Standardbibliothek, ohne Lexer, Parser und Compiler. Führt fertige `.vbb`-Dateien aus.
 
-Viele Funktionen stehen zur Verfügung, ohne den Kern unnötig aufzublähen. Eine Übersicht mit der Anzahl der Funktionen je Namespace zeigt `vbxc help`.
-
-Diese Referenz beschreibt die Sprache sowie Compiler und Runtime.
+Über **580 Funktionen** stehen zur Verfügung, ohne den Kern unnötig aufzublähen.
 
 ---
 
 # Aufruf
 
-## Compiler (vbxc)
-
 ```bash
-vbxc build  <quelle.vb> [-o <ziel.vbb>]
-vbxc run    <quelle.vb | ziel.vbb>
-vbxc dis    <quelle.vb | ziel.vbb>
-vbxc ast    <quelle.vb>
-vbxc tokens <quelle.vb>
+vbx <quelle.vb>
+vbx <quelle.vbc>
 
-vbxc help
-vbxc help <namespace>
-vbxc -h
-vbxc -v
+vbx -modules=json,net <quelle.vb>
+
+vbx -h
+vbx -shell -h
+vbx -const -h
+vbx -modules=file -h
 ```
-
-| Befehl   | Beschreibung |
-|----------|--------------|
-| `build`  | Kompiliert den Quelltext und schreibt eine Bytecode-Datei. Ohne `-o` hat die Zieldatei den Namen der Quelle mit der Endung `.vbb`. |
-| `run`    | Führt ein Skript aus. Quelltext wird vorher kompiliert, `.vbb`-Dateien werden direkt gestartet. |
-| `dis`    | Gibt den Bytecode lesbar aus (Disassembler). |
-| `ast`    | Zeigt den Syntaxbaum mit Zeilennummern. |
-| `tokens` | Zeigt die Tokens mit Zeilennummern. |
-| `help`   | Zeigt die Namespaces mit Funktionsanzahl. Mit Namespace-Namen (`vbxc help json`) werden dessen Funktionen aufgelistet. |
-
-## Runtime (vbxr)
-
-```bash
-vbxr <ziel.vbb>
-
-vbxr -h
-vbxr -v
-```
-
-`vbxr` führt ausschließlich Bytecode-Dateien aus. Eine `.vb`-Quelldatei wird abgelehnt, mit dem Hinweis, sie zuerst mit `vbxc build` zu kompilieren.
 
 ---
 
 # Besonderheiten von VBX
 
-## Bytecode-Dateien
+## Verschlüsselte Skripte
 
-```bash
-vbxc build server.vb
+VBX kann Skripte in verschlüsselter Form bereitstellen.
+
+```vbx
+vbx Build server.vb
 ```
 
 Erzeugt:
 
 ```text
-server.vbb
+server.vbc
 ```
 
 Eigenschaften:
 
-* verarbeitet alle Includes automatisch, die Datei ist in sich vollständig
-* enthält die benötigten Module (`#use`)
-* ist komprimiert, der Inhalt (Texte, Pfade, Namen) ist nicht als Klartext lesbar
-* ist **nicht verschlüsselt**: wer die Datei ausführen kann, kann den Inhalt mit entsprechendem Aufwand auch auslesen. Geheimnisse gehören daher nicht ins Skript
-* erzeugt ein festes Dateiformat mit Kennung und Formatversion
-* Zielsystem benötigt nur `vbxr`, keinen Compiler
+* verarbeitet alle Includes automatisch
+* verschlüsselt den vollständigen Quelltext
+* erzeugt einen Magic Header
+* Quelltext ist nicht direkt lesbar
+* Zielsystem benötigt nur die Runtime
 
-Es werden ausschließlich `.vbb`-Dateien erzeugt, keine ausführbaren `.exe`-Dateien.
+---
+
+## Hintergrundprozesse
+
+VBX kann Skripte direkt als Hintergrundprozess starten.
+
+```vbx
+vbx Worker server.vb
+```
+
+Eigenschaften:
+
+* startet einen eigenen Prozess
+* liefert die Prozess-ID zurück
+* automatische Log-Datei
+* unterstützt `.vb` und `.vbc`
+* ideal für Dienste und Daemons
 
 ---
 
 ## Ausführungsschutz
 
-VBX prüft Dateien, bevor etwas ausgeführt wird.
+VBX prüft jede Datei vor der Ausführung – nicht nur anhand der Dateiendung.
 
-**Beim Kompilieren (Quelltext):**
+Eigenschaften:
 
-* das komplette Skript wird geparst und kompiliert, bevor auch nur eine Zeile ausgeführt wird
-* Syntaxfehler werden sauber mit Dateiname und Zeile gemeldet, statt den Prozess abstürzen oder hängen zu lassen
+* erkennt Binärdaten, ungültiges Encoding und leere Dateien
+* erkennt typische Fehl-Downloads (z. B. eine HTML-Fehlerseite oder eine GitHub/GitLab-API-JSON-Antwort statt der eigentlichen Rohdatei)
+* parst das komplette Skript, bevor auch nur eine Zeile ausgeführt wird
+* Syntaxfehler werden sauber abgefangen, statt den Prozess abstürzen oder hängen zu lassen
+* besonders relevant für automatisierte Update-/Deploy-Skripte
 
-**Beim Laden einer `.vbb`-Datei:**
+---
 
-* die Kennung und die Formatversion müssen passen, alte oder fremde Dateien werden abgelehnt
-* beschädigte Dateien werden erkannt
-* jede Instruktion wird geprüft: Operanden müssen auf vorhandene Einträge zeigen, jeder Sprung muss ein gültiges Ziel haben
-* erst danach wird die Datei an die VM übergeben
+## Shell-Interface
+
+Funktionen können direkt über die Kommandozeile ausgeführt werden.
+
+```bash
+vbx -shell -h
+```
 
 ---
 
@@ -113,15 +111,19 @@ Standardmodule sind immer verfügbar. Komplexere Funktionen müssen explizit akt
 Im Skript:
 
 ```vbx
-#use json,net,hash
+#use json,net,crypt
 ```
 
-Die Module werden beim Kompilieren im Bytecode vermerkt, `vbxr` braucht dafür keine zusätzlichen Parameter.
+Per CLI:
+
+```bash
+vbx -modules=json,net script.vb
+```
 
 Modul-Hilfe:
 
 ```bash
-vbxc help json
+vbx -modules=json -h
 ```
 
 ---
@@ -131,19 +133,19 @@ vbxc help json
 Direktiven müssen am Anfang des Skripts stehen.
 
 ```vbx
-#use hash
+#use zip
 #requires 1.0.23
 ```
 
 **#use** – Lädt optionale Module.
 
-**#requires** – Definiert eine Mindestversion. Ist die installierte Version älter, wird die Ausführung abgebrochen.
+**#requires** – Definiert eine Mindestversion der Runtime. Ist die installierte Version älter, wird die Ausführung abgebrochen.
 
 ---
 
 # Include
 
-Bindet weitere Dateien ein. Includes werden beim Kompilieren aufgelöst und in den Bytecode übernommen.
+Bindet weitere Dateien ein.
 
 ```vbx
 include "tools.vb"
@@ -154,7 +156,6 @@ include "lib/helpers.vb"
 * Dateien werden nur einmal geladen
 * rekursive Includes werden erkannt
 * Include-Schleifen führen zu einem Fehler
-* eine `.vbb`-Datei braucht zur Laufzeit keine Include-Dateien mehr
 
 ---
 
@@ -167,7 +168,26 @@ Immer verfügbar:
 
 ## Optionale Module
 
-[ad.*](md/ad.md), [cert.*](md/cert.md), [computer.*](md/computer.md), [convert.*](md/convert.md), [db.*](md/db.md), [debug.*](md/debug.md), [env.*](md/env.md), [export.*](md/export.md), [geo.*](md/geo.md), [git.*](md/git.md), [hash.*](md/hash.md), [json.*](md/json.md), [makemkv.*](md/makemkv.md), [map.*](md/map.md), [net.*](md/net.md), [picture.*](md/picture.md), [proc.*](md/proc.md), [reg.*](md/reg.md), [service.*](md/service.md), [sftp.*](md/sftp.md), [smtp.*](md/smtp.md), [ssh.*](md/ssh.md), [string.*](md/string.md), [template.*](md/template.md), [kuma.*](md/kuma.md), [websocket.*](md/websocket.md)
+[ad.*](md/ad.md), [cert.*](md/cert.md), [computer.*](md/computer.md), [convert.*](md/convert.md), [db.*](md/db.md), [debug.*](md/debug.md), [env.*](md/env.md), [export.*](md/export.md), [geo.*](md/geo.md), [git.*](md/git.md), [hash.*](md/hash.md), [json.*](md/json.md), [makemkv.*](md/makemkv.md) [map.*](md/map.md), [net.*](md/net.md), [picture.*](md/picture.md), [proc.*](md/proc.md), [reg.*](md/reg.md), [service.*](md/service.md), [sftp.*](md/sftp.md), [smtp.*](md/smtp.md), [ssh.*](md/ssh.md), [string.*](md/string.md), [template.*](md/template.md), [kuma.*](md/kuma.md), [websocket.*](md/websocket.md), [win.*](md/win.md)
+
+**Plugins:** crypt.*, data.*, doc.*, docker.*, fin.*, ini.*, media.*, pgp.*, pqc.*, qr.*, rand.*, steg.*, tar.*, vault.*, xml.*, yaml.*, zip.*
+
+Plugins werden im Verzeichnis `plugins` neben der VBX-Runtime gesucht. Alternativ kann das Plugin-Verzeichnis über `VBX_PLUGIN_PATH` festgelegt werden.
+
+---
+
+## Plugin-Cache
+
+Die kompilierten WASM-Plugins werden von VBX in einem Compilation-Cache gespeichert.
+
+Standardmäßig verwendet VBX dafür:
+
+```text
+<vbx-user-cache>/vbx/plugin-cache
+C:\Users\<username>\AppData\Local\vbx\plugin-cache
+```
+
+Alternativ kann das Plugin-Cache über `VBX_PLUGIN_CACHE` festgelegt werden.
 
 ---
 
@@ -360,7 +380,7 @@ Const maxTries = 3
 * eine spätere Zuweisung (auch `+=` etc.) bricht das Skript mit einem Fehler ab
 * keine Arrays
 * in Function/Sub kann eine lokale `Const` denselben Namen wie eine äußere `Const`/Variable tragen (Shadowing, ohne Hinweis-Ausgabe)
-* nicht zu verwechseln mit den vb-Konstanten (siehe Abschnitt „Konstanten“ unten)
+* nicht zu verwechseln mit den vb-Konstanten (siehe Abschnitt „Konstanten“ unten) – `vbx -const -h` zeigt Letztere
 
 ## Sichtbarkeit in Function und Sub
 
