@@ -1,6 +1,6 @@
 # 📖 VBX – Referenz
 
-VBX ist eine modulare, in Go geschriebene VB-Skriptsprache. Sie orientiert sich an der Einfachheit und Vertrautheit von VB.NET und bietet die Performance und Portabilität moderner System-Tools. Skripte können direkt mit dem Interpreter `vbx` ausgeführt oder mit dem Compiler `vbxc` in Bytecode übersetzt und von einer schlanken Runtime ausgeführt werden. Der Kern bleibt schlank und stabil – Komplexität wird in Module ausgelagert.
+VBX ist eine modulare, in Go geschriebene Runtime für eine VB-Skriptsprache. Sie vereint die vertraute Einfachheit von Visual Basic mit der Performance und Portabilität moderner System-Tools. Der Kern bleibt schlank und stabil – Komplexität wird in Module ausgelagert.
 
 ---
 
@@ -11,10 +11,6 @@ VBX besteht aus drei Hauptkomponenten:
 * **Core Runtime** – Sprachlogik, Kontrollstrukturen und Standardfunktionen
 * **Modul-System** – Erweiterungen für Netzwerk, Kryptografie, Datenbanken und mehr
 * **Shell-Interface** – Direkte Ausführung von Funktionen über die Kommandozeile
-* **Programme** – Drei Wege, ein Skript auszuführen:
-  * **Interpreter (`vbx`)** – Führt `.vb`-Quelltext direkt aus. Er hat eine eigene Referenz und bietet zusätzlich Plugins, Hintergrundprozesse (`Worker`) und ein Shell-Interface, die in Compiler und Runtime nicht enthalten sind.
-  * **Compiler (`vbxc`)** – Übersetzt `.vb`-Quelltext in Bytecode (`.vbb`) und führt Skripte auf Wunsch direkt aus. Enthält außerdem Werkzeuge zur Analyse (Disassembler, AST, Tokens).
-  * **Runtime (`vbxr`)** – Nur VM und Standardbibliothek, ohne Lexer, Parser und Compiler. Führt fertige `.vbb`-Dateien aus.
 
 Über **580 Funktionen** stehen zur Verfügung, ohne den Kern unnötig aufzublähen.
 
@@ -43,7 +39,7 @@ vbx -modules=file -h
 VBX kann Skripte in verschlüsselter Form bereitstellen.
 
 ```vbx
-vbx Build server.vb
+vbx build server.vb
 ```
 
 Erzeugt:
