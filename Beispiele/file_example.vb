@@ -29,9 +29,9 @@ Print "CreateTime=" & file.CreateTime("text.txt")
 Print "AccessTime=" & file.AccessTime("text.txt")
 
 ' Prüfen ob Datei existiert
-if file.Exists("text.txt") = 1 Then
+If file.Exists("text.txt") = true Then
     Print "Datei existiert"
-EndIf
+End If
 
 ' Unblock Windows-Datei
 file.Unblock("text.txt")

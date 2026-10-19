@@ -72,7 +72,3 @@ Print array.IsEmpty(arr4)
 Print "=== Clear ==="
 Dim cleared = array.Clear(arr4)
 Print array.Count(cleared)
-
-Print "=== Split ==="
-Dim parts = array.Split("one,two,three", ",")
-Print array.Join(parts, "|")
