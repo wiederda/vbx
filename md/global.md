@@ -549,6 +549,32 @@ Print Format(file.AccessTime(path), "YYYY-MM-DD HH:mm:ss")
 
 ---
 
+## Compare(v1, v2)
+- **Konkret:**
+  Vergleicht zwei Versionsnummern segmentweise (Segmente durch `.` getrennt) als Ganzzahlen.
+  Es werden beliebig viele Segmente unterstützt (z. B. `0.9.0` oder `1.2.3.4`). Fehlende Segmente zählen als `0`, d. h. `0.9.0` und `0.9.0.0` sind gleich.
+  Ein führendes `v`/`V` (z. B. `v1.2.0`) sowie alles ab dem ersten `-`, `+` oder Leerzeichen (z. B. `-beta`) wird ignoriert.
+  Segmente, die keine Zahl sind, zählen als `0`. Ein leerer String zählt als Version ohne Segmente (also `0`).
+  Der Vergleich ist numerisch, nicht alphabetisch: `0.10.0` ist neuer als `0.9.0`.
+- **Parameter:**
+  - `v1`: Erste Version.
+  - `v2`: Zweite Version.
+- **Rückgabe:**
+  `NumVal`
+  `1`, wenn `v1` neuer ist als `v2`. `-1`, wenn `v1` älter ist. `0`, wenn beide gleich sind.
+  `ErrorVal`, wenn weniger als zwei Parameter übergeben werden – prüfbar mit `IsError`/`ErrorText`.
+- **Hinweis:**
+  Typischer Einsatz ist der Update-Check gegen die Versionsnummer eines GitHub-Releases:
+```vbx
+If Compare(latestVersion, installedVersion) > 0 Then
+    Print "Update verfügbar"
+End If
+```
+  Ist keine Version installiert (leerer String), liefert `Compare` immer `1`, sofern die neue Version mindestens ein Segment größer als `0` hat. Eine Sonderbehandlung für "nicht installiert" ist dann nicht nötig.
+  Pre-Release-Suffixe werden nicht bewertet: `1.0.0-beta` und `1.0.0` gelten als gleich.
+
+---
+
 ## ConvNewLine(content, [target])
 - **Konkret:**
   Normalisiert Zeilenumbrüche in einem String.
