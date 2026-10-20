@@ -70,67 +70,50 @@ Print ""
 
 Print "--- Fehlerfälle ---"
 
-Dim result
+Print "ByteToKb(""test""):         IsError = " & IsError(data.ByteToKb("test"))
+Print "  Fehler: " & ErrorText(data.ByteToKb("test"))
 
-result = data.ByteToKb("test")
-Print "ByteToKb(""test""): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "KbToMb(""test""):           IsError = " & IsError(data.KbToMb("test"))
+Print "  Fehler: " & ErrorText(data.KbToMb("test"))
 
-result = data.KbToMb("test")
-Print "KbToMb(""test""): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "MbToGb(""test""):           IsError = " & IsError(data.MbToGb("test"))
+Print "  Fehler: " & ErrorText(data.MbToGb("test"))
 
-result = data.MbToGb("test")
-Print "MbToGb(""test""): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "GbToTb(""test""):           IsError = " & IsError(data.GbToTb("test"))
+Print "  Fehler: " & ErrorText(data.GbToTb("test"))
 
-result = data.GbToTb("test")
-Print "GbToTb(""test""): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "ByteToKiB(""test""):        IsError = " & IsError(data.ByteToKiB("test"))
+Print "  Fehler: " & ErrorText(data.ByteToKiB("test"))
 
-result = data.ByteToKiB("test")
-Print "ByteToKiB(""test""): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "KiBToMiB(""test""):         IsError = " & IsError(data.KiBToMiB("test"))
+Print "  Fehler: " & ErrorText(data.KiBToMiB("test"))
 
-result = data.KiBToMiB("test")
-Print "KiBToMiB(""test""): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "MiBToGiB(""test""):         IsError = " & IsError(data.MiBToGiB("test"))
+Print "  Fehler: " & ErrorText(data.MiBToGiB("test"))
 
-result = data.MiBToGiB("test")
-Print "MiBToGiB(""test""): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "GiBToTiB(""test""):         IsError = " & IsError(data.GiBToTiB("test"))
+Print "  Fehler: " & ErrorText(data.GiBToTiB("test"))
 
-result = data.GiBToTiB("test")
-Print "GiBToTiB(""test""): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "WattToKilowatt(""test""):   IsError = " & IsError(data.WattToKilowatt("test"))
+Print "  Fehler: " & ErrorText(data.WattToKilowatt("test"))
 
-result = data.WattToKilowatt("test")
-Print "WattToKilowatt(""test""): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "KilowattToWatt(""test""):   IsError = " & IsError(data.KilowattToWatt("test"))
+Print "  Fehler: " & ErrorText(data.KilowattToWatt("test"))
 
-result = data.KilowattToWatt("test")
-Print "KilowattToWatt(""test""): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "MinutesToHours(""test""):   IsError = " & IsError(data.MinutesToHours("test"))
+Print "  Fehler: " & ErrorText(data.MinutesToHours("test"))
 
-result = data.MinutesToHours("test")
-Print "MinutesToHours(""test""): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "HoursToMinutes(""test""):   IsError = " & IsError(data.HoursToMinutes("test"))
+Print "  Fehler: " & ErrorText(data.HoursToMinutes("test"))
 
-result = data.HoursToMinutes("test")
-Print "HoursToMinutes(""test""): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "SecondsToDays(""test""):    IsError = " & IsError(data.SecondsToDays("test"))
+Print "  Fehler: " & ErrorText(data.SecondsToDays("test"))
 
-result = data.SecondsToDays("test")
-Print "SecondsToDays(""test""): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "DaysToSeconds(""test""):    IsError = " & IsError(data.DaysToSeconds("test"))
+Print "  Fehler: " & ErrorText(data.DaysToSeconds("test"))
 
-result = data.DaysToSeconds("test")
-Print "DaysToSeconds(""test""): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
-
-result = data.FormatSeconds("test")
-Print "FormatSeconds(""test""): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "FormatSeconds(""test""):    IsError = " & IsError(data.FormatSeconds("test"))
+Print "  Fehler: " & ErrorText(data.FormatSeconds("test"))
 
 Print ""
 

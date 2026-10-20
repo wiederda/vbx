@@ -1,4 +1,4 @@
-#use json, template
+#use json,template
 
 ' ============================
 ' Template Beispiele für VBX
@@ -7,11 +7,11 @@
 Dim data = json.FromJSON("{""name"":""Max"",""server"":""srv01"",""fehler"":""Dienst nicht erreichbar""}")
 
 Dim tmpl = "Hallo {{.name}}," & vbNewLine() & _
-           "" & vbNewLine() & _
-           "auf Server {{.server}} wurde folgender Fehler erkannt:" & vbNewLine() & _
-           "{{.fehler}}" & vbNewLine() & _
-           "" & vbNewLine() & _
-           "Bitte prüfen."
+"" & vbNewLine() & _
+"auf Server {{.server}} wurde folgender Fehler erkannt:" & vbNewLine() & _
+"{{.fehler}}" & vbNewLine() & _
+"" & vbNewLine() & _
+"Bitte prüfen."
 
 Print template.Render(tmpl, data)
 
@@ -39,8 +39,8 @@ Print "Konfiguration geschrieben."
 Dim data2 = json.FromJSON("{""user"":""admin"",""rechte"":[""lesen"",""schreiben"",""loeschen""]}")
 
 Dim tmpl2 = "Benutzer: {{.user}}" & vbNewLine() & _
-            "Rechte:" & vbNewLine() & _
-            "{{range .rechte}}- {{.}}" & vbNewLine() & "{{end}}"
+"Rechte:" & vbNewLine() & _
+"{{range .rechte}}- {{.}}" & vbNewLine() & "{{end}}"
 
 Print template.Render(tmpl2, data2)
 
@@ -60,12 +60,12 @@ Print template.Render(tmpl3, srv)
 ' ----------------------------------------
 '#use json, template
 Dim data = json.FromJSON("{" & _
-    """datum"":""15.07.2026""," & _
-    """user"":""admin""," & _
-    """server"":""srv01""," & _
-    """ok"":true," & _
-    """anzahl"":42," & _
-    """dateien"":[""backup.zip"",""log.txt"",""config.ini""]" & _
+"""datum"":""15.07.2026""," & _
+"""user"":""admin""," & _
+"""server"":""srv01""," & _
+"""ok"":true," & _
+"""anzahl"":42," & _
+"""dateien"":[""backup.zip"",""log.txt"",""config.ini""]" & _
 "}")
 
 template.RenderToFile("report.tmpl", "bericht_heute.txt", data)

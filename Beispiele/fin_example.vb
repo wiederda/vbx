@@ -92,50 +92,39 @@ Print ""
 
 Print "--- Fehlerfälle ---"
 
-Dim result
+Print "Fv(""test"", 10, 100):              IsError = " & IsError(fin.Fv("test", 10, 100))
+Print "  Fehler: " & ErrorText(fin.Fv("test", 10, 100))
 
-result = fin.Fv("test", 10, 100)
-Print "Fv(""test"", 10, 100): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "Pmt(""test"", 10, 1000):            IsError = " & IsError(fin.Pmt("test", 10, 1000))
+Print "  Fehler: " & ErrorText(fin.Pmt("test", 10, 1000))
 
-result = fin.Pmt("test", 10, 1000)
-Print "Pmt(""test"", 10, 1000): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "Npv(""test"", {100,200,300}):       IsError = " & IsError(fin.Npv("test", {100, 200, 300}))
+Print "  Fehler: " & ErrorText(fin.Npv("test", {100, 200, 300}))
 
-result = fin.Npv("test", {100, 200, 300})
-Print "Npv(""test"", {100, 200, 300}): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "Irr({""test"", 110}):               IsError = " & IsError(fin.Irr({"test", 110}))
+Print "  Fehler: " & ErrorText(fin.Irr({"test", 110}))
 
-result = fin.Irr({"test", 110})
-Print "Irr({""test"", 110}): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "Fact(""test""):                     IsError = " & IsError(fin.Fact("test"))
+Print "  Fehler: " & ErrorText(fin.Fact("test"))
 
-result = fin.Fact("test")
-Print "Fact(""test""): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "Fact(-1):                         IsError = " & IsError(fin.Fact(-1))
+Print "  Fehler: " & ErrorText(fin.Fact(-1))
 
-result = fin.Fact(-1)
-Print "Fact(-1): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "Gamma(""test""):                    IsError = " & IsError(fin.Gamma("test"))
+Print "  Fehler: " & ErrorText(fin.Gamma("test"))
 
-result = fin.Gamma("test")
-Print "Gamma(""test""): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "Log10(""test""):                    IsError = " & IsError(fin.Log10("test"))
+Print "  Fehler: " & ErrorText(fin.Log10("test"))
 
-result = fin.Log10("test")
-Print "Log10(""test""): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "Log2(""test""):                     IsError = " & IsError(fin.Log2("test"))
+Print "  Fehler: " & ErrorText(fin.Log2("test"))
 
-result = fin.Log2("test")
-Print "Log2(""test""): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "Hypot(""test"", 4):                 IsError = " & IsError(fin.Hypot("test", 4))
+Print "  Fehler: " & ErrorText(fin.Hypot("test", 4))
 
-result = fin.Hypot("test", 4)
-Print "Hypot(""test"", 4): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "Remainder(""test"", 3):             IsError = " & IsError(fin.Remainder("test", 3))
+Print "  Fehler: " & ErrorText(fin.Remainder("test", 3))
 
-result = fin.Remainder("test", 3)
-Print "Remainder(""test"", 3): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print ""
 
 Print ""

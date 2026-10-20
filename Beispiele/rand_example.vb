@@ -146,58 +146,41 @@ Print ""
 
 Print "--- Fehlerfälle ---"
 
-Dim result
+Print "Choice():                  IsError = " & IsError(rand.Choice())
+Print "  Fehler: " & ErrorText(rand.Choice())
 
-result = rand.Choice()
-Print "Choice(): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "Choice(""test""):            IsError = " & IsError(rand.Choice("test"))
+Print "  Fehler: " & ErrorText(rand.Choice("test"))
 
-result = rand.Choice("test")
-Print "Choice(""test""): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "Choice({}):                IsError = " & IsError(rand.Choice({}))
+Print "  Fehler: " & ErrorText(rand.Choice({}))
 
-Dim emptyArray
-emptyArray = {}
+Print "Range():                   IsError = " & IsError(rand.Range())
+Print "  Fehler: " & ErrorText(rand.Range())
 
-result = rand.Choice(emptyArray)
-Print "Choice({}): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "Range(""test"", 10):         IsError = " & IsError(rand.Range("test", 10))
+Print "  Fehler: " & ErrorText(rand.Range("test", 10))
 
-result = rand.Range()
-Print "Range(): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "Range(1, ""test""):          IsError = " & IsError(rand.Range(1, "test"))
+Print "  Fehler: " & ErrorText(rand.Range(1, "test"))
 
-result = rand.Range("test", 10)
-Print "Range(""test"", 10): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "Range(10, 1):              IsError = " & IsError(rand.Range(10, 1))
+Print "  Fehler: " & ErrorText(rand.Range(10, 1))
 
-result = rand.Range(1, "test")
-Print "Range(1, ""test""): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "RangeFloat():              IsError = " & IsError(rand.RangeFloat())
+Print "  Fehler: " & ErrorText(rand.RangeFloat())
 
-result = rand.Range(10, 1)
-Print "Range(10, 1): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "RangeFloat(""test"", 10):    IsError = " & IsError(rand.RangeFloat("test", 10))
+Print "  Fehler: " & ErrorText(rand.RangeFloat("test", 10))
 
-result = rand.RangeFloat()
-Print "RangeFloat(): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "RangeFloat(1, ""test""):     IsError = " & IsError(rand.RangeFloat(1, "test"))
+Print "  Fehler: " & ErrorText(rand.RangeFloat(1, "test"))
 
-result = rand.RangeFloat("test", 10)
-Print "RangeFloat(""test"", 10): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "RangeFloat(10, 1):         IsError = " & IsError(rand.RangeFloat(10, 1))
+Print "  Fehler: " & ErrorText(rand.RangeFloat(10, 1))
 
-result = rand.RangeFloat(1, "test")
-Print "RangeFloat(1, ""test""): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
-
-result = rand.RangeFloat(10, 1)
-Print "RangeFloat(10, 1): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
-
-result = rand.Seed("test")
-Print "Seed(""test""): IsError = " & IsError(result)
-Print "Fehler: " & ErrorText(result)
+Print "Seed(""test""):              IsError = " & IsError(rand.Seed("test"))
+Print "  Fehler: " & ErrorText(rand.Seed("test"))
 
 Print ""
 

@@ -1,3 +1,4 @@
+#use string
 
 ' ============================
 ' File Beispiele für VBX
@@ -46,7 +47,7 @@ file.Rename("text2.txt", "backup1.txt")
 ' Vergleich
 if file.Compare("text.txt", "text1.txt") = 0 Then
     Print "Dateien identisch"
-EndIf
+End If
 
 ' Suchen & Ersetzen
 'file.Replace("d.txt", "alt", "neu")
@@ -54,9 +55,9 @@ EndIf
 'lines = file.Search("d.txt", "Suchwort")
 
 ' Dateiname & Pfad
-Print file.Ext("text.txt")      
-Print file.Name("text.txt")    
-Print file.Dir("text.txt")      
+Print file.Ext("text.txt")
+Print file.Name("text.txt")
+Print file.Dir("text.txt")
 
 ' Base64 Encode/Decode
 'file.Base64Encode("image.jpg", "image.b64")
@@ -70,13 +71,13 @@ file.Delete("backup1.txt", true)
 
 DO
     IF file.WatchLog(path, "ERROR", "", True, 5000) THEN   ' bis zu 5s auf 'ERROR' warten
-        gotify.Send("Fehler im Log gefunden!")
-    END IF
+    gotify.Send("Fehler im Log gefunden!")
+END IF
 LOOP
 
 DO
     IF file.Tail(path, 10, "1s", True) THEN
-        DIM neu: neu = file.Tail(path, 5)   ' aktuelle letzte Zeilen separat holen
+        DIM neu = file.Tail(path, 5)   ' aktuelle letzte Zeilen separat holen
         IF Contains(neu, "ERROR") THEN
             gotify.Send("Fehler im Log gefunden")
         END IF

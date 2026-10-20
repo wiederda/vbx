@@ -4,10 +4,10 @@
 ' ============================
 
 Print "=== Hashes ==="
-Print "MD5:    " & MD5("Hello VBmini")
-Print "SHA1:   " & SHA1("Hello VBmini")
-Print "SHA256: " & SHA256("Hello VBmini")
-Print "SHA512: " & SHA512("Hello VBmini")
+Print "MD5:    " & MD5("Hello VBX")
+Print "SHA1:   " & SHA1("Hello VBX")
+Print "SHA256: " & SHA256("Hello VBX")
+Print "SHA512: " & SHA512("Hello VBX")
 Print ""
 
 Print "=== Random / GUID ==="
@@ -20,7 +20,7 @@ Print ""
 
 Print "=== Base64 ==="
 Dim b64
-b64 = EncodeBase64("Hello VBmini")
+b64 = EncodeBase64("Hello VBX")
 Print "Encoded: " & b64
 Print "Decoded: " & DecodeBase64(b64)
 Print ""

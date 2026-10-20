@@ -7,12 +7,12 @@
 Dim res,sections,dbKeys,cacheKeys
 
 Print "=== file.Create ==="
-file.Create("/home/vbmini/test.ini")
+file.Create("/home/vbx/test.ini")
 Print "test.ini angelegt"
 Print ""
 
 Print "=== ini.Load ==="
-res = ini.Load("/home/vbmini/test.ini")
+res = ini.Load("/home/vbx/test.ini")
 If res <> "" Then
     Print "Fehler beim Laden: " & res
 Else
