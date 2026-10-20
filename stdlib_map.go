@@ -76,6 +76,18 @@ func InitMapFunctions() {
 	})
 
 	// ------------------------
+	// Has (Alias für ContainsKey)
+	// ------------------------
+	Register(ns+"Has", "map", "map, key", "Alias für ContainsKey: Prüft, ob ein Schlüssel existiert", func(args []Value) Value {
+		if len(args) < 2 || args[0].Kind != KindMap {
+			return BoolVal(false)
+		}
+
+		_, ok := args[0].Map[ToString(args[1])]
+		return BoolVal(ok)
+	})
+
+	// ------------------------
 	// Remove
 	// ------------------------
 	Register(ns+"Remove", "map", "map, key", "Entfernt einen Schlüssel aus der Map", func(args []Value) Value {
