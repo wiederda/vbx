@@ -81,7 +81,7 @@ func InitFileFunctions() {
 			return ErrorVal("Schreibfehler in WriteAllText: " + err.Error())
 		}
 
-		return NullVal()
+		return BoolVal(true)
 	})
 
 	Register(ns+"ProductVersion", "file", "path", "Gibt die Produktversion einer exe/dll zurück (Windows).", func(args []Value) Value {
@@ -223,7 +223,7 @@ func InitFileFunctions() {
 			f.Close()
 		}
 
-		return NullVal()
+		return BoolVal(true)
 	})
 
 	// ------------------------
@@ -264,7 +264,7 @@ func InitFileFunctions() {
 			return ErrorVal("Fehler beim Flushen des Buffers: " + err.Error())
 		}
 
-		return NullVal()
+		return BoolVal(true)
 	})
 
 	// ---------------- Exists ----------------
@@ -436,17 +436,15 @@ func InitFileFunctions() {
 			if errVal != nil {
 				return ErrorVal("file.Delete: ungültiger Pfad")
 			}
-
 			err := os.Remove(path)
 			if err != nil {
-				// "nicht existiert" ist kein echter Fehler
 				if os.IsNotExist(err) {
-					return NullVal()
+					return BoolVal(true) // war schon weg = Ziel erreicht
 				}
 				return ErrorVal("file.Delete: " + err.Error() + " path=" + path)
 			}
+			return BoolVal(true)
 
-			return NullVal()
 		})
 
 	// ---------------- Copy ----------------
@@ -498,8 +496,7 @@ func InitFileFunctions() {
 			if err := copyFile(src, dst); err != nil {
 				return ErrorVal("file.Copy: " + err.Error())
 			}
-
-			return NullVal()
+			return BoolVal(true)
 		})
 
 	// ---------------- Move ----------------
@@ -550,15 +547,12 @@ func InitFileFunctions() {
 
 			// 1. Versuch: Rename (schnell, atomar)
 			if err := os.Rename(src, dst); err == nil {
-				return NullVal()
+				return BoolVal(true)
 			}
-
-			// 2. Fallback: Copy + Delete (Cross-Drive)
 			if err := copyAndDelete(src, dst); err != nil {
 				return ErrorVal("file.Move: Cross-Drive-Fallback fehlgeschlagen: " + err.Error() + " src=" + src + " dst=" + dst)
 			}
-
-			return NullVal()
+			return BoolVal(true)
 		})
 
 	// ------------------------
@@ -932,7 +926,7 @@ func InitFileFunctions() {
 			return ErrorVal("Fehler beim Speichern der Änderungen: " + err.Error())
 		}
 
-		return NullVal() // Erfolg
+		return BoolVal(true)
 	})
 
 	Register(ns+"GitBlobHash", "file", "path",
@@ -961,6 +955,46 @@ func InitFileFunctions() {
 			h.Write(data)
 
 			return StrVal(hex.EncodeToString(h.Sum(nil)))
+		})
+
+	Register(ns+"GitBlobCompare", "file", "path, remoteSha",
+		"Vergleicht den Git-Blob-SHA1 einer Datei mit einem Remote-SHA. Gibt 0 = gleich, 1 = unterschiedlich, -1 = Datei nicht vorhanden zurück.",
+		func(args []Value) Value {
+			if len(args) < 2 {
+				return ErrorVal("file.GitBlobCompare(path, remoteSha) benötigt 2 Argumente")
+			}
+
+			pathStr, errS := expectStr(args, 0, "file.GitBlobCompare(path, remoteSha)")
+			if errS != nil {
+				return *errS
+			}
+			remoteSha, errS := expectStr(args, 1, "file.GitBlobCompare(path, remoteSha)")
+			if errS != nil {
+				return *errS
+			}
+
+			path, errVal := absPathVal(pathStr)
+			if errVal != nil {
+				return *errVal
+			}
+
+			data, err := os.ReadFile(path)
+			if err != nil {
+				if os.IsNotExist(err) {
+					return NumVal(-1)
+				}
+				return ErrorVal("file.GitBlobCompare: " + err.Error())
+			}
+
+			h := sha1.New()
+			h.Write([]byte(fmt.Sprintf("blob %d\x00", len(data))))
+			h.Write(data)
+			local := hex.EncodeToString(h.Sum(nil))
+
+			if strings.EqualFold(local, strings.TrimSpace(remoteSha)) {
+				return NumVal(0)
+			}
+			return NumVal(1)
 		})
 
 	// ---------------- Hash ----------------
@@ -1141,7 +1175,7 @@ func InitFileFunctions() {
 			return ErrorVal("Fehler beim Umbenennen/Verschieben: " + err.Error())
 		}
 
-		return NullVal()
+		return BoolVal(true)
 	})
 
 	// ------------------------
@@ -1181,7 +1215,7 @@ func InitFileFunctions() {
 			return ErrorVal("Schreibfehler beim Anhängen: " + err.Error())
 		}
 
-		return NullVal()
+		return BoolVal(true)
 	})
 
 	// ------------------------
@@ -1389,7 +1423,7 @@ func InitFileFunctions() {
 			return ErrorVal("Fehler beim Schreiben der Datei: " + err.Error())
 		}
 
-		return NullVal()
+		return BoolVal(true)
 	})
 
 	Register(ns+"TextStats", "file", "path", "Zählt Wörter, Zeichen (ohne Leerzeichen) und Leerzeichen im Inhalt einer Datei.", func(args []Value) Value {
@@ -1710,7 +1744,7 @@ func InitFileFunctions() {
 				return ErrorVal("Fehler beim Schreiben: " + err.Error())
 			}
 
-			return NullVal()
+			return BoolVal(true)
 		})
 
 	// ------------------------------------------------------------
