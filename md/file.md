@@ -5,6 +5,15 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
 
 ---
 
+## Rückgabekonvention
+
+- **Aktionen** (schreiben, kopieren, löschen, umbenennen ...) liefern `BoolVal` (`true`) bei Erfolg und `ErrorVal` bei Fehler.
+- **Datenfunktionen** (lesen, suchen, hashen ...) liefern ihren Wert, bei Fehler `ErrorVal`.
+- Fehler werden mit `IsError()` und `ErrorText()` geprüft. Ein Vergleich wie `If file.Move(...) = true` ist für den Erfolgsfall zulässig, ein `ErrorVal` als eigenständige Anweisung ohne Zuweisung bricht jedoch das Skript ab (außer innerhalb von `Try/Catch`).
+- Ausnahme im Namespace `net`: `net.Download` liefert bei Erfolg den Zielpfad (`StrVal`), nicht `true`.
+
+---
+
 ## file.WriteAllText(path, content)
 - **Konkret:**
   Schreibt den gesamten Text in eine Datei. Vorhandene Inhalte werden überschrieben.
@@ -12,7 +21,7 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   - `path`: Zieldatei.
   - `content`: Zu schreibender Text.
 - **Rückgabe:**
-  `NullVal`
+  `BoolVal` (`true` bei Erfolg), `ErrorVal` bei Fehler.
 
 ---
 
@@ -23,7 +32,7 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
 - **Parameter:**
   - `path`: Zielpfad der Datei.
 - **Rückgabe:**
-  `NullVal`
+  `BoolVal` (`true` bei Erfolg, auch wenn die Datei bereits existierte), `ErrorVal` bei Fehler.
 
 ---
 
@@ -36,7 +45,7 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   - `path`: Zieldatei.
   - `content`: Anzuhängender Text.
 - **Rückgabe:**
-  `NullVal`
+  `BoolVal` (`true` bei Erfolg), `ErrorVal` bei Fehler.
 
 ---
 
@@ -49,7 +58,7 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   - `path`: Zieldatei.
   - `text`: Anzuhängender Text.
 - **Rückgabe:**
-  `NullVal`
+  `BoolVal` (`true` bei Erfolg), `ErrorVal` bei Fehler.
 
 ---
 
@@ -61,7 +70,7 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   - `path`: Zieldatei.
   - `line`: Anzuhängende Zeile (ohne eigenen Zeilenumbruch).
 - **Rückgabe:**
-  `BoolVal` (`true`) bei Erfolg, `ErrorVal` bei Fehler.
+  `BoolVal` (`true` bei Erfolg), `ErrorVal` bei Fehler.
 
 ---
 
@@ -87,18 +96,17 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
 
 ---
 
-## file.FindWords(words, inputFile, outputFile, [caseInsensitive])
+## file.FindWords(words, inputFile, outputFile)
 - **Konkret:**
   Sucht beliebige Wörter aus einem Array in einer Datei und schreibt alle Trefferzeilen mit vorangestellter Zeilennummer in eine Ausgabedatei.
   `words` muss ein Array aus Strings sein (leere Strings werden ignoriert, das Array darf nach dem Filtern nicht komplett leer sein).
-  Eine Zeile gilt als Treffer, sobald mindestens eines der Suchwörter darin vorkommt (Teilstring-Suche).
-  `caseInsensitive` (optional, Standard `false`) steuert, ob Groß-/Kleinschreibung beim Vergleich ignoriert wird. Die geschriebene Zeile bleibt dabei immer im Original, nur der Vergleich läuft case-insensitive.
+  Eine Zeile gilt als Treffer, sobald mindestens eines der Suchwörter darin vorkommt (Teilstring-Suche, Groß-/Kleinschreibung wird beachtet).
   Die Ausgabedatei wird erzeugt bzw. überschrieben, falls sie schon existiert.
   Unterstützt auch sehr lange Zeilen (bis 16 MB pro Zeile).
 - **Rückgabe:**
   `NumVal` (Anzahl der gefundenen Trefferzeilen)
 
----  
+---
 
 ## file.HasContent(path)
 - **Konkret:**
@@ -109,7 +117,7 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   `BoolVal`
   `true` = Datei existiert und ist größer als 0 Byte. `false` = Datei existiert nicht oder ist leer.
 
---- 
+---
 
 ## file.Delete(path)
 - **Konkret:**
@@ -117,8 +125,7 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
 - **Parameter:**
   - `path`: Zu löschende Datei.
 - **Rückgabe:**
-  `ArrVal`
-  Format: `[OK, Msg]`. Bei Erfolg ist `Msg` immer `Null` (auch wenn intern eine leere Meldung übergeben wird).
+  `BoolVal` (`true` bei Erfolg), `ErrorVal` bei Fehler. Eine nicht vorhandene Datei ist kein Fehler und ergibt ebenfalls `true`.
 
 ---
 
@@ -132,8 +139,7 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   - `dst`: Zieldatei.
   - `overwrite`: Optional. `BoolVal` – bei `true` wird ein bereits vorhandenes Ziel überschrieben. Standard: `false`.
 - **Rückgabe:**
-  `ArrVal`
-  Format: `[OK, Msg]`
+  `BoolVal` (`true` bei Erfolg), `ErrorVal` bei Fehler (Quelle fehlt, Zielverzeichnis fehlt, Ziel existiert bereits ohne `overwrite`).
 
 ---
 
@@ -146,9 +152,9 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   - `src`: Quelldatei.
   - `dst`: Zieldatei.
   - `overwrite`: Optional. `BoolVal` – bei `true` wird ein bereits vorhandenes Ziel überschrieben. Standard: `false`.
+    Typischer Fall: `file.Move(datei, datei & ".old", true)` scheitert nicht an einer übrig gebliebenen `.old`.
 - **Rückgabe:**
-  `ArrVal`
-  Format: `[OK, Msg]`
+  `BoolVal` (`true` bei Erfolg), `ErrorVal` bei Fehler.
 
 ---
 
@@ -160,7 +166,7 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   - `oldPath`: Aktueller Pfad.
   - `newPath`: Neuer Pfad.
 - **Rückgabe:**
-  `NullVal`
+  `BoolVal` (`true` bei Erfolg), `ErrorVal` bei Fehler.
 - **Hinweis:** Anders als `file.Move` gibt es hier **keinen** Cross-Drive-Fallback und **keine** Prüfung, ob `newPath` bereits existiert – Verhalten bei existierendem Ziel ist plattformabhängig.
 
 ---
@@ -174,7 +180,7 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   - `path2`: Zweite Datei.
 - **Rückgabe:**
   `NumVal`
-  `0` = identisch, `1` = unterschiedlich.
+  `0` = identisch, `1` = unterschiedlich. `ErrorVal` bei Lesefehler.
 
 ---
 
@@ -212,7 +218,7 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   - `workers`: Optional. Anzahl paralleler Worker (Standard: 8).
 - **Rückgabe:**
   `MapVal` – Pfad (Schlüssel) auf Hash (`StrVal`) oder `ErrorVal` bei Lesefehler der jeweiligen Datei.
-  
+
 ---
 
 ## file.HashVerify(hash, algo)
@@ -267,6 +273,30 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
 - **Rückgabe:**
   `StrVal`
   Hex-kodierter SHA1-String, `ErrorVal` bei Lesefehler.
+- **Hinweis:**
+  Bei nicht vorhandener Datei liefert `GitBlobHash` einen `ErrorVal`, keinen leeren String. Für Update-Prüfungen gegen einen Remote-SHA siehe `file.GitBlobCompare`.
+
+---
+
+## file.GitBlobCompare(path, remoteSha)
+- **Konkret:**
+  Vergleicht den Git-Blob-SHA1 einer lokalen Datei mit einem Remote-SHA (z. B. Feld `sha` der GitHub-API).
+  Gedacht für Update-Prüfungen: Eine nicht vorhandene Datei ist ein eigener Rückgabewert und kein Fehler.
+  Der Vergleich ist case-insensitiv, Leerzeichen um `remoteSha` werden ignoriert.
+- **Parameter:**
+  - `path`: Lokale Datei.
+  - `remoteSha`: Erwarteter Git-Blob-SHA1 als String.
+- **Rückgabe:**
+  `NumVal`
+  `0` = identisch, `1` = unterschiedlich, `-1` = Datei nicht vorhanden. `ErrorVal` bei Lesefehler oder ungültigem Parameter.
+  (Konvention analog zu `file.Compare`: `0` = gleich.)
+- **Beispiel:**
+```vbx
+  Dim cmp = file.GitBlobCompare(localFile, remoteHash)
+  If cmp <> 0 Then
+      ' 1 = geändert, -1 = neu -> laden
+  End If
+```
 
 ---
 
@@ -383,7 +413,7 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   - `path`: Zieldatei.
   - `byteArray`: `ArrVal` mit `NumVal`-Einträgen (0–255).
 - **Rückgabe:**
-  `NullVal`
+  `BoolVal` (`true` bei Erfolg), `ErrorVal` bei Fehler.
 
 ---
 
@@ -396,7 +426,8 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   - `pattern`: Suchmuster (Substring).
   - `newContent`: Ersetzungszeile.
 - **Rückgabe:**
-  `NullVal`
+  `BoolVal`
+  `true` = Zeile gefunden und ersetzt, `false` = nicht gefunden (Datei bleibt unverändert). `ErrorVal` bei Lese-/Schreibfehler.
 
 ---
 
@@ -408,7 +439,7 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   - `old`: Zu ersetzender Text.
   - `new`: Ersatztext.
 - **Rückgabe:**
-  `NullVal`
+  `BoolVal` (`true` bei Erfolg, auch wenn nichts ersetzt wurde), `ErrorVal` bei Lese-/Schreibfehler.
 
 ---
 
@@ -423,7 +454,7 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   - `suchtext`: Suchmuster (Substring). Darf nicht leer sein.
   - `einfügen`: Text, der direkt nach dem Suchtext eingefügt wird.
 - **Rückgabe:**
-  `NullVal`, `ErrorVal` bei leerem Suchtext, fehlenden Parametern oder Lese-/Schreibfehler.
+  `BoolVal` (`true` bei Erfolg), `ErrorVal` bei leerem Suchtext, fehlenden Parametern oder Lese-/Schreibfehler.
 - **Hinweis:**
   Zeilenumbrüche werden beim Verarbeiten normalisiert: die Ausgabedatei hat immer `\n`-Zeilenenden (auch wenn das Original `\r\n` verwendet hat) und keine abschließende Leerzeile am Dateiende, selbst wenn das Original eine hatte.
 
@@ -483,7 +514,7 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   - `newValue`: Neue vollständige Zeile.
 - **Rückgabe:**
   `BoolVal`
-  `true` = Zeile gefunden und ersetzt, `false` = nicht gefunden.
+  `true` = Zeile gefunden und ersetzt, `false` = nicht gefunden. `ErrorVal` bei Lese-/Schreibfehler.
 - **Fix:** Der Pfad läuft jetzt über `absPathVal` (vorher ungeprüft).
 
 ---
@@ -496,8 +527,7 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   - `path`: Zieldatei.
   - `caseSensitive`: `BoolVal` – ob Groß-/Kleinschreibung berücksichtigt wird.
 - **Rückgabe:**
-  `BoolVal`
-  `true` bei Erfolg.
+  `BoolVal` (`true` bei Erfolg), `ErrorVal` bei Fehler.
 
 ---
 
@@ -558,7 +588,6 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
 - **Rückgabe:**
   - Ohne `silent`: `NullVal` (blockierend, läuft dauerhaft).
   - Mit `silent = True`: `BoolVal` – `true` bei Treffer, `false` bei Timeout.
-
 - **Hinweis:**
   Anders als bei `file.Tail` (das im `silent`-Modus nur EIN Poll-Intervall abwartet) wartet `file.WatchLog` im `silent`-Modus fortlaufend, bis wirklich ein Treffer für `pattern` auftaucht oder `timeoutMs` abläuft – weil ein Muster nicht bei jedem Poll-Zyklus zwangsläufig erscheint.
 
@@ -570,8 +599,7 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
 - **Parameter:**
   - `path`: Zu löschende Datei.
 - **Rückgabe:**
-  `BoolVal`
-  `true` bei Erfolg.
+  `BoolVal` (`true` bei Erfolg), `ErrorVal` bei Fehler.
 
 ---
 
@@ -583,8 +611,8 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   - `inFile`: Quelldatei.
   - `outFile`: Zieldatei.
 - **Rückgabe:**
-  `NullVal`
-- **Fix:** Prüft jetzt wie `file.Base64Decode`, ob das Zielverzeichnis existiert, bevor geschrieben wird (vorher fehlte dieser Check, was zu einem rohen OS-Fehler statt einer sprechenden Meldung führte).
+  `BoolVal` (`true` bei Erfolg), `ErrorVal` bei Fehler.
+- **Fix:** Prüft jetzt wie `file.Base64Decode`, ob das Zielverzeichnis existiert, bevor geschrieben wird (vorher fehlte dieser Check, was zu einem rohen OS-Fehler statt einer sprechenden Meldung führte). Fehler beim Kodieren und beim Abschließen des Encoders werden jetzt als `ErrorVal` gemeldet statt verschluckt.
 
 ---
 
@@ -596,7 +624,7 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   - `inFile`: Base64-Quelldatei.
   - `outFile`: Zieldatei.
 - **Rückgabe:**
-  `NullVal`
+  `BoolVal` (`true` bei Erfolg), `ErrorVal` bei Fehler.
 
 ---
 
@@ -608,7 +636,7 @@ Plattformübergreifend (Windows, Linux, macOS). Schreiboperationen nutzen `absPa
   - `linkPath`: Pfad des zu erstellenden Links.
   - `replaceExisting`: Optional, `BoolVal` (Standard `false`). Steuert, ob ein bereits vorhandener Link/Datei an `linkPath` ersetzt wird.
 - **Rückgabe:**
-  `BoolVal`
+  `BoolVal` (`true` bei Erfolg), `ErrorVal` bei Fehler.
 - **Fix:** Der dritte Parameter wurde bisher entgegengenommen, aber ignoriert (`createSymlinkInternal` erhielt intern immer `false`). Er wird jetzt tatsächlich ausgewertet und durchgereicht.
 
 ---
